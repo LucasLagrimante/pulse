@@ -1,5 +1,8 @@
 use serde::Serialize;
+use std::os::windows::process::CommandExt;
 use std::process::Command;
+
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -20,6 +23,7 @@ pub struct PerformanceDetails {
 pub fn get_performance_details() -> PerformanceDetails {
     let script = r#"$c=Get-CimInstance Win32_VideoController; $c | Select-Object -First 1 Name,AdapterRAM,CurrentTemperature | ConvertTo-Json -Compress"#;
     let result = Command::new("powershell.exe")
+        .creation_flags(CREATE_NO_WINDOW)
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .output();
     let Ok(output) = result else {

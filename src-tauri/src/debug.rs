@@ -75,6 +75,34 @@ pub fn record(operation: &str, duration_ms: u128, result: Result<(), &str>) {
 }
 
 #[tauri::command]
+pub fn record_client_error(message: String, _component_stack: String) {
+    let timestamp_unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let message = message
+        .lines()
+        .next()
+        .unwrap_or("Falha de interface")
+        .chars()
+        .take(240)
+        .collect();
+    if let Ok(mut entries) = log_store().lock() {
+        entries.push(DebugEntry {
+            timestamp_unix_ms,
+            operation: "interface_render".into(),
+            duration_ms: 0,
+            outcome: "error".into(),
+            message,
+        });
+        let overflow = entries.len().saturating_sub(MAX_ENTRIES);
+        if overflow > 0 {
+            entries.drain(0..overflow);
+        }
+    }
+}
+
+#[tauri::command]
 pub fn get_debug_log() -> Vec<DebugEntry> {
     log_store()
         .lock()

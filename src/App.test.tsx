@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { invoke } from "@tauri-apps/api/core";
 import { vi } from "vitest";
 import App from "./App";
 
@@ -33,7 +34,8 @@ describe("Pulse application shell", () => {
     expect(screen.getByText("Disco C:")).toBeInTheDocument();
     expect(screen.getByText("Inicialização")).toBeInTheDocument();
     expect(screen.getByText("Inicialização e cobertura")).toBeInTheDocument();
-    expect(screen.getByText("Iniciar com o Windows")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Iniciar com o Windows" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Modo Debug" })).toBeInTheDocument();
   });
 
   it("opens the corresponding module from a telemetry card", () => {
@@ -43,5 +45,12 @@ describe("Pulse application shell", () => {
 
     expect(screen.getByRole("button", { name: /Desempenho/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("heading", { name: "Desempenho — recursos em uso" })).toBeInTheDocument();
+  });
+
+  it("renders desempenho after the native data arrives", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => Promise.resolve(command === "get_performance_details" ? { gpu: { value: "GPU de teste" }, vramBytes: { value: 1024 }, temperatureCelsius: { value: 42 } } : command === "get_system_overview" ? { cpuPercent: 2, memoryUsedGb: 1, memoryTotalGb: 2, diskUsedGb: 3, diskTotalGb: 4, startupItemCount: 0, topProcesses: [] } : command === "list_recent_files" ? [] : command === "list_startup_items" ? [] : { enabled: false }) as never);
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Desempenho/ }));
+    await waitFor(() => expect(screen.getByText("GPU de teste")).toBeInTheDocument());
   });
 });

@@ -15,6 +15,7 @@ pub fn run() {
             debug::get_debug_mode,
             debug::set_debug_mode,
             debug::get_debug_log,
+            debug::record_client_error,
             startup::get_startup_registration,
             startup::set_startup_registration,
             system_overview::get_system_overview,

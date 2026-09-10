@@ -10,16 +10,14 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Pulse",
-        "width": 1200,
-        "height": 780,
-        "minWidth": 960,
-        "minHeight": 640,
-        "resizable": true
-      }
-    ],
+    "windows": [{
+      "title": "Pulse",
+      "width": 1200,
+      "height": 780,
+      "minWidth": 960,
+      "minHeight": 640,
+      "resizable": true
+    }],
     "security": {
       "csp": {
         "default-src": "'self' asset:",
@@ -32,6 +30,12 @@
   "bundle": {
     "active": true,
     "targets": "nsis",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "startMenuFolder": "Pulse"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

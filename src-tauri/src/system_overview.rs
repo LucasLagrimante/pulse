@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
+use std::os::windows::process::CommandExt;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -41,7 +44,9 @@ $os = Get-CimInstance Win32_OperatingSystem
 $cpu = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
 $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
 $startup = @(Get-CimInstance Win32_StartupCommand).Count
-$processes = @(Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 15 @{N='name';E={$_.ProcessName}}, @{N='id';E={$_.Id}}, @{N='memoryMb';E={[math]::Round($_.WorkingSet64 / 1MB, 1)}})
+$top = @(Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 15 @{N='name';E={$_.ProcessName}}, @{N='id';E={$_.Id}}, @{N='memoryMb';E={[math]::Round($_.WorkingSet64 / 1MB, 1)}})
+$self = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {$_.ProcessName -like 'pulse*'} | Select-Object @{N='name';E={$_.ProcessName}}, @{N='id';E={$_.Id}}, @{N='memoryMb';E={[math]::Round($_.WorkingSet64 / 1MB, 1)}})
+$processes = @($self + $top | Group-Object id | ForEach-Object {$_.Group[0]} | Sort-Object memoryMb -Descending | Select-Object -First 15)
 @{
   cpuPercent = [math]::Round([double]$cpu, 1)
   memoryUsedGb = [math]::Round((($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / 1MB), 1)
@@ -81,6 +86,7 @@ pub fn get_system_overview() -> Result<SystemOverview, String> {
     let started = std::time::Instant::now();
     let result = (|| {
         let output = Command::new("powershell.exe")
+            .creation_flags(CREATE_NO_WINDOW)
             .args(["-NoProfile", "-NonInteractive", "-Command", OVERVIEW_SCRIPT])
             .output()
             .map_err(|e| format!("Não foi possível iniciar a coleta do Windows: {e}"))?;
