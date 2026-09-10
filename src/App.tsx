@@ -28,6 +28,10 @@ type SystemOverview = {
   source: string;
 };
 
+type StartupRegistration = {
+  enabled: boolean;
+};
+
 function metric(value: number | undefined, suffix: string) {
   return value === undefined ? "—" : `${value.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}${suffix}`;
 }
@@ -35,13 +39,26 @@ function metric(value: number | undefined, suffix: string) {
 function App() {
   const [activeArea, setActiveArea] = useState(navigationItems[0]);
   const [overview, setOverview] = useState<SystemOverview>();
+  const [startupEnabled, setStartupEnabled] = useState(false);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
     invoke<SystemOverview>("get_system_overview")
       .then(setOverview)
       .catch(() => setError("Não foi possível coletar agora. Tente atualizar."));
+    invoke<StartupRegistration>("get_startup_registration")
+      .then((registration) => setStartupEnabled(registration.enabled))
+      .catch(() => setError("Não foi possível consultar a inicialização do Pulse."));
   }, []);
+
+  async function changeStartupRegistration(enabled: boolean) {
+    try {
+      const registration = await invoke<StartupRegistration>("set_startup_registration", { enabled });
+      setStartupEnabled(registration.enabled);
+    } catch {
+      setError("O Windows não permitiu alterar a inicialização do Pulse.");
+    }
+  }
 
   const memoryPercent = overview && overview.memoryTotalGb > 0
     ? Math.round((overview.memoryUsedGb / overview.memoryTotalGb) * 100)
@@ -154,6 +171,18 @@ function App() {
                 <li><span>Arquivos recentes</span><small>Em migração</small></li>
                 <li><span>Riscos explicáveis</span><small>Sem ações automáticas</small></li>
               </ul>
+              <label className="startup-toggle">
+                <span>
+                  <strong>Iniciar com o Windows</strong>
+                  <small>Registra o Pulse apenas para este usuário.</small>
+                </span>
+                <input
+                  aria-label="Iniciar com o Windows"
+                  checked={startupEnabled}
+                  onChange={(event) => void changeStartupRegistration(event.target.checked)}
+                  type="checkbox"
+                />
+              </label>
             </section>
           </div>
 

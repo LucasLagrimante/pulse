@@ -33,5 +33,6 @@ describe("Pulse application shell", () => {
     expect(screen.getByText("Disco C:")).toBeInTheDocument();
     expect(screen.getByText("Itens na inicialização")).toBeInTheDocument();
     expect(screen.getByText("Próximos sinais")).toBeInTheDocument();
+    expect(screen.getByText("Iniciar com o Windows")).toBeInTheDocument();
   });
 });
