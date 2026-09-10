@@ -39,7 +39,7 @@ describe("Pulse application shell", () => {
   it("opens the corresponding module from a telemetry card", () => {
     render(<App />);
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Abrir desempenho" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Abrir desempenho — CPU" }));
 
     expect(screen.getByRole("button", { name: /Desempenho/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("heading", { name: "Desempenho — recursos em uso" })).toBeInTheDocument();

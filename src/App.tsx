@@ -108,10 +108,10 @@ function App() {
         <p className="sample-status">{overview ? "AMOSTRA RECEBIDA AGORA" : "AGUARDANDO PRIMEIRA AMOSTRA"}</p>
       </div>
       <div className="metric-grid">
-        <button aria-label="Abrir desempenho" className="metric-card" onClick={() => goTo("Desempenho")} type="button">
+        <button aria-label="Abrir desempenho — CPU" className="metric-card" onClick={() => goTo("Desempenho")} type="button">
           <div className="metric-top"><p>CPU agora</p><span>01</span></div><strong>{metric(overview?.cpuPercent, "%")}</strong><Meter value={overview?.cpuPercent} /><small>USO TOTAL DO PROCESSADOR · ABRIR MÓDULO</small>
         </button>
-        <button aria-label="Abrir desempenho" className="metric-card" onClick={() => goTo("Desempenho")} type="button">
+        <button aria-label="Abrir desempenho — memória" className="metric-card" onClick={() => goTo("Desempenho")} type="button">
           <div className="metric-top"><p>Memória RAM</p><span>02</span></div><strong>{overview ? `${metric(overview.memoryUsedGb, " GB")}` : "—"}</strong><Meter value={memoryPercent} /><small>{overview ? `${metric(overview.memoryTotalGb, " GB")} INSTALADOS · ${memoryPercent ?? "—"}% EM USO` : "AGUARDANDO COLETA"}</small>
         </button>
         <button aria-label="Abrir armazenamento" className="metric-card metric-alert" onClick={() => goTo("Armazenamento")} type="button">
