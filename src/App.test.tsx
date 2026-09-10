@@ -54,4 +54,13 @@ describe("Pulse application shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /Desempenho/ }));
     await waitFor(() => expect(screen.getByText("GPU de teste")).toBeInTheDocument());
   });
+
+  it("keeps startup usable when the native command returns an invalid payload", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => Promise.resolve(command === "list_startup_items" ? null : command === "list_recent_files" ? [] : command === "get_system_overview" ? { cpuPercent: 2, memoryUsedGb: 1, memoryTotalGb: 2, diskUsedGb: 3, diskTotalGb: 4, startupItemCount: 0, topProcesses: [] } : { enabled: false }) as never);
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Inicialização e segurança/ }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Itens do Windows" })).toBeInTheDocument());
+    expect(screen.getByText("Nenhum item de inicialização disponível.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });
