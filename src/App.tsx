@@ -36,6 +36,11 @@ function metric(value: number | undefined, suffix: string) {
   return value === undefined ? "—" : `${value.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}${suffix}`;
 }
 
+function Meter({ value }: { value?: number }) {
+  const safeValue = Math.max(0, Math.min(100, value ?? 0));
+  return <span aria-hidden="true" className="meter"><i style={{ width: `${safeValue}%` }} /></span>;
+}
+
 function App() {
   const [activeArea, setActiveArea] = useState(navigationItems[0]);
   const [overview, setOverview] = useState<SystemOverview>();
@@ -71,16 +76,17 @@ function App() {
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">P</span>
+          <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
           <div>
             <h1>Pulse</h1>
-            <p>Saúde do seu Windows</p>
+            <p>Windows observability</p>
           </div>
         </div>
 
         <nav aria-label="Navegação principal">
+          <p className="nav-label">MÓDULOS</p>
           <ul>
-            {navigationItems.map((item) => (
+            {navigationItems.map((item, index) => (
               <li key={item}>
                 <button
                   aria-current={activeArea === item ? "page" : undefined}
@@ -88,106 +94,110 @@ function App() {
                   onClick={() => setActiveArea(item)}
                   type="button"
                 >
-                  {item}
+                  <span className="nav-index">0{index + 1}</span>{item}
                 </button>
               </li>
             ))}
           </ul>
         </nav>
 
-        <p className="local-first">Dados locais · sem conta</p>
+        <div className="sidebar-foot">
+          <span className="connection-state">LOCAL</span>
+          <p>Sem nuvem<br />Sem conta</p>
+        </div>
       </aside>
 
       <section className="content" aria-labelledby="overview-title">
+        <header className="command-bar">
+          <div><span>HOST</span><b>ESTAÇÃO LOCAL</b></div>
+          <div><span>COLETA</span><b className={overview ? "state-good" : "state-pending"}>{overview ? "ATIVA" : "INICIANDO"}</b></div>
+          <button className="refresh-button" onClick={() => window.location.reload()} type="button">RELER DADOS <span>↻</span></button>
+        </header>
+
         <div className="overview-heading">
           <div>
-            <p className="eyebrow">{activeArea.toUpperCase()}</p>
-            <h2 id="overview-title">Seu PC, explicado.</h2>
-            <p className="intro">Uma leitura rápida do que está consumindo recursos agora, sem enviar seus dados para a nuvem.</p>
+            <p className="eyebrow">{activeArea.toUpperCase()} / 01</p>
+            <h2 id="overview-title">Estado da máquina.<br /><em>Sem interpretação vazia.</em></h2>
           </div>
-          <button className="refresh-button" onClick={() => window.location.reload()} type="button">Atualizar</button>
+          <p className="intro">Telemetria local para acompanhar recurso, processo e inicialização. Os números abaixo vêm deste computador.</p>
         </div>
 
         <section className="dashboard" aria-labelledby="system-summary-title">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">AGORA</p>
-              <h3 id="system-summary-title">Resumo do sistema</h3>
+              <p className="eyebrow">LEITURA ATUAL</p>
+              <h3 id="system-summary-title">Painel de telemetria local</h3>
             </div>
-            <p className="sample-status">{overview ? "Atualizado agora" : "Coletando dados locais…"}</p>
+            <p className="sample-status">{overview ? "AMOSTRA RECEBIDA AGORA" : "AGUARDANDO PRIMEIRA AMOSTRA"}</p>
           </div>
 
           <div className="metric-grid">
-            <article className="metric-card accent-cyan">
-              <p>CPU agora</p>
+            <article className="metric-card">
+              <div className="metric-top"><p>CPU agora</p><span>01</span></div>
               <strong>{metric(overview?.cpuPercent, "%")}</strong>
-              <span>Uso total do processador</span>
+              <Meter value={overview?.cpuPercent} />
+              <small>USO TOTAL DO PROCESSADOR</small>
             </article>
-            <article className="metric-card accent-blue">
-              <p>Memória RAM</p>
-              <strong>{overview ? `${metric(overview.memoryUsedGb, " GB")} / ${metric(overview.memoryTotalGb, " GB")}` : "—"}</strong>
-              <span>{memoryPercent === undefined ? "Aguardando coleta" : `${memoryPercent}% em uso`}</span>
+            <article className="metric-card">
+              <div className="metric-top"><p>Memória RAM</p><span>02</span></div>
+              <strong>{overview ? `${metric(overview.memoryUsedGb, " GB")}` : "—"}</strong>
+              <Meter value={memoryPercent} />
+              <small>{overview ? `${metric(overview.memoryTotalGb, " GB")} INSTALADOS · ${memoryPercent ?? "—"}% EM USO` : "AGUARDANDO COLETA"}</small>
             </article>
-            <article className="metric-card accent-violet">
-              <p>Disco C:</p>
-              <strong>{overview ? `${metric(overview.diskUsedGb, " GB")} / ${metric(overview.diskTotalGb, " GB")}` : "—"}</strong>
-              <span>{diskPercent === undefined ? "Aguardando coleta" : `${diskPercent}% ocupado`}</span>
+            <article className="metric-card metric-alert">
+              <div className="metric-top"><p>Disco C:</p><span>03</span></div>
+              <strong>{overview ? `${metric(overview.diskUsedGb, " GB")}` : "—"}</strong>
+              <Meter value={diskPercent} />
+              <small>{overview ? `${metric(overview.diskTotalGb, " GB")} · ${diskPercent ?? "—"}% OCUPADO` : "AGUARDANDO COLETA"}</small>
             </article>
-            <article className="metric-card accent-amber">
-              <p>Itens na inicialização</p>
+            <article className="metric-card">
+              <div className="metric-top"><p>Inicialização</p><span>04</span></div>
               <strong>{overview?.startupItemCount ?? "—"}</strong>
-              <span>Inventário inicial do Windows</span>
+              <div className="startup-status">{startupEnabled ? "PULSE REGISTRADO" : "PULSE FORA DO BOOT"}</div>
+              <small>ITENS NO INVENTÁRIO DO WINDOWS</small>
             </article>
           </div>
 
           <div className="detail-grid">
-            <section className="panel" aria-labelledby="processes-title">
+            <section className="panel process-panel" aria-labelledby="processes-title">
               <div className="panel-title">
                 <div>
-                  <p className="eyebrow">MEMÓRIA</p>
+                  <p className="eyebrow">MAIOR CONSUMO</p>
                   <h3 id="processes-title">Processos com mais RAM</h3>
                 </div>
-                <span className="live-dot">Ao vivo</span>
+                <span className="live-dot">AO VIVO</span>
               </div>
+              <div className="table-head"><span>PROCESSO</span><span>MEMÓRIA PRIVADA</span></div>
               {overview?.topProcesses.length ? (
                 <ol className="process-list">
-                  {overview.topProcesses.map((process) => (
+                  {overview.topProcesses.map((process, index) => (
                     <li key={process.id}>
-                      <span className="process-name">{process.name}</span>
+                      <span className="process-rank">0{index + 1}</span>
+                      <span className="process-name">{process.name}<small>PID {process.id}</small></span>
                       <span>{metric(process.memoryMb, " MB")}</span>
                     </li>
                   ))}
                 </ol>
-              ) : (
-                <p className="muted">Aguardando a leitura dos processos.</p>
-              )}
+              ) : <p className="muted">Aguardando a leitura dos processos.</p>}
             </section>
 
-            <section className="panel" aria-labelledby="next-signals-title">
-              <p className="eyebrow">EM BREVE</p>
-              <h3 id="next-signals-title">Próximos sinais</h3>
-              <ul className="signal-list">
-                <li><span>GPU e temperatura</span><small>Depende do driver</small></li>
-                <li><span>Arquivos recentes</span><small>Em migração</small></li>
-                <li><span>Riscos explicáveis</span><small>Sem ações automáticas</small></li>
-              </ul>
+            <section className="panel controls-panel" aria-labelledby="next-signals-title">
+              <p className="eyebrow">MODO DE OPERAÇÃO</p>
+              <h3 id="next-signals-title">Inicialização e cobertura</h3>
               <label className="startup-toggle">
-                <span>
-                  <strong>Iniciar com o Windows</strong>
-                  <small>Registra o Pulse apenas para este usuário.</small>
-                </span>
-                <input
-                  aria-label="Iniciar com o Windows"
-                  checked={startupEnabled}
-                  onChange={(event) => void changeStartupRegistration(event.target.checked)}
-                  type="checkbox"
-                />
+                <span><strong>Iniciar com o Windows</strong><small>Registro por usuário no Windows.</small></span>
+                <input aria-label="Iniciar com o Windows" checked={startupEnabled} onChange={(event) => void changeStartupRegistration(event.target.checked)} type="checkbox" />
               </label>
+              <ul className="signal-list">
+                <li><span>GPU e temperatura</span><small>DRIVER</small></li>
+                <li><span>Arquivos recentes</span><small>MIGRAÇÃO</small></li>
+                <li><span>Riscos explicáveis</span><small>PRÓXIMO</small></li>
+              </ul>
             </section>
           </div>
 
           {error && <p className="collection-error" role="status">{error}</p>}
-          {overview && <p className="source-note">Fonte: {overview.source} · somente neste dispositivo</p>}
+          {overview && <footer className="source-note"><span>FONTE / {overview.source}</span><span>ESCOPO / DISPOSITIVO ATUAL</span></footer>}
         </section>
       </section>
     </main>

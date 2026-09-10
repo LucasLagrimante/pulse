@@ -27,12 +27,12 @@ describe("Pulse application shell", () => {
       "Inicialização e segurança",
     );
 
-    expect(screen.getByRole("heading", { name: "Resumo do sistema" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Painel de telemetria local" })).toBeInTheDocument();
     expect(screen.getByText("CPU agora")).toBeInTheDocument();
     expect(screen.getByText("Memória RAM")).toBeInTheDocument();
     expect(screen.getByText("Disco C:")).toBeInTheDocument();
-    expect(screen.getByText("Itens na inicialização")).toBeInTheDocument();
-    expect(screen.getByText("Próximos sinais")).toBeInTheDocument();
+    expect(screen.getByText("Inicialização")).toBeInTheDocument();
+    expect(screen.getByText("Inicialização e cobertura")).toBeInTheDocument();
     expect(screen.getByText("Iniciar com o Windows")).toBeInTheDocument();
   });
 });
