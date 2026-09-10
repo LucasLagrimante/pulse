@@ -1,163 +1,51 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
-const navigationItems = [
-  "Visão geral",
-  "Atividade",
-  "Desempenho",
-  "Armazenamento",
-  "Inicialização e segurança",
-];
+const navigationItems = ["Visão geral", "Atividade", "Desempenho", "Armazenamento", "Inicialização e segurança", "Debug"];
+type TopProcess = { name: string; id: number; memoryMb: number };
+type SystemOverview = { cpuPercent: number; memoryUsedGb: number; memoryTotalGb: number; diskUsedGb: number; diskTotalGb: number; startupItemCount: number; topProcesses: TopProcess[]; sampledAtUnixMs: number; source: string };
+type RecentFile = { path: string; name: string; category: string; sizeBytes: number; modifiedAtUnixMs: number };
+type Capability<T> = { value?: T; unavailableReason?: string };
+type Performance = { gpu?: Capability<string>; vramBytes?: Capability<number>; temperatureCelsius?: Capability<number> };
+type StartupItem = { name: string; origin: string; command: string; enabled: boolean; canChange: boolean; unavailableReason?: string };
+type DebugEntry = { timestampUnixMs: number; operation: string; durationMs: number; outcome: string; message: string };
+type StartupRegistration = { enabled: boolean };
 
-const moduleCopy: Record<string, { eyebrow: string; title: string; intro: string }> = {
-  "Visão geral": {
-    eyebrow: "VISÃO GERAL",
-    title: "Estado da máquina.",
-    intro: "Telemetria local para acompanhar recurso, processo e inicialização. Os números abaixo vêm deste computador.",
-  },
-  Atividade: {
-    eyebrow: "ATIVIDADE",
-    title: "Atividade — processos em execução",
-    intro: "Leitura local dos processos que mais consomem memória neste momento.",
-  },
-  Desempenho: {
-    eyebrow: "DESEMPENHO",
-    title: "Desempenho — recursos em uso",
-    intro: "CPU e memória em tempo real, sem dados estimados ou enviados à nuvem.",
-  },
-  Armazenamento: {
-    eyebrow: "ARMAZENAMENTO",
-    title: "Armazenamento — capacidade local",
-    intro: "Leitura atual do volume C:. O detalhamento por diretórios será adicionado neste módulo.",
-  },
-  "Inicialização e segurança": {
-    eyebrow: "INICIALIZAÇÃO E SEGURANÇA",
-    title: "Inicialização — controle local",
-    intro: "Inventário do boot do Windows e a opção para registrar o Pulse na sua sessão.",
-  },
+const copy: Record<string, { eyebrow: string; title: string; intro: string }> = {
+  "Visão geral": { eyebrow: "VISÃO GERAL", title: "Estado da máquina.", intro: "Telemetria local para acompanhar recursos, processos, arquivos e inicialização." },
+  Atividade: { eyebrow: "ATIVIDADE", title: "Atividade — processos em execução", intro: "Leitura local dos processos que mais consomem memória neste momento." },
+  Desempenho: { eyebrow: "DESEMPENHO", title: "Desempenho — recursos em uso", intro: "CPU, memória e capacidades de hardware sem dados estimados." },
+  Armazenamento: { eyebrow: "ARMAZENAMENTO", title: "Armazenamento — capacidade local", intro: "Arquivos modificados recentemente dentro do escopo de pastas do usuário." },
+  "Inicialização e segurança": { eyebrow: "INICIALIZAÇÃO E SEGURANÇA", title: "Inicialização — controle local", intro: "Inventário do boot do Windows e alterações somente onde suportadas." },
+  Debug: { eyebrow: "DEBUG", title: "Debug — diagnóstico local", intro: "Eventos estruturados fornecidos pelo backend, sem inventar dados." },
 };
-
-type TopProcess = { name: string; id: number; memoryMb: number; };
-type SystemOverview = {
-  cpuPercent: number;
-  memoryUsedGb: number;
-  memoryTotalGb: number;
-  diskUsedGb: number;
-  diskTotalGb: number;
-  startupItemCount: number;
-  topProcesses: TopProcess[];
-  sampledAtUnixMs: number;
-  source: string;
-};
-type StartupRegistration = { enabled: boolean; };
-
-function metric(value: number | undefined, suffix: string) {
-  return value === undefined ? "—" : `${value.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}${suffix}`;
-}
-
-function Meter({ value }: { value?: number }) {
-  const safeValue = Math.max(0, Math.min(100, value ?? 0));
-  return <span aria-hidden="true" className="meter"><i style={{ width: `${safeValue}%` }} /></span>;
-}
+const metric = (v: number | undefined, suffix = "") => v === undefined ? "—" : `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}${suffix}`;
+function Meter({ value }: { value?: number }) { return <span className="meter"><i style={{ width: `${Math.max(0, Math.min(100, value ?? 0))}%` }} /></span>; }
 
 function App() {
-  const [activeArea, setActiveArea] = useState(navigationItems[0]);
-  const [overview, setOverview] = useState<SystemOverview>();
-  const [startupEnabled, setStartupEnabled] = useState(false);
-  const [error, setError] = useState<string>();
-  const module = moduleCopy[activeArea];
-  const activeIndex = navigationItems.indexOf(activeArea) + 1;
-  const memoryPercent = overview && overview.memoryTotalGb > 0 ? Math.round((overview.memoryUsedGb / overview.memoryTotalGb) * 100) : undefined;
-  const diskPercent = overview && overview.diskTotalGb > 0 ? Math.round((overview.diskUsedGb / overview.diskTotalGb) * 100) : undefined;
-
-  useEffect(() => {
-    invoke<SystemOverview>("get_system_overview").then(setOverview).catch(() => setError("Não foi possível coletar agora. Tente atualizar."));
-    invoke<StartupRegistration>("get_startup_registration").then((registration) => setStartupEnabled(registration.enabled)).catch(() => setError("Não foi possível consultar a inicialização do Pulse."));
-  }, []);
-
-  async function changeStartupRegistration(enabled: boolean) {
-    try {
-      const registration = await invoke<StartupRegistration>("set_startup_registration", { enabled });
-      setStartupEnabled(registration.enabled);
-    } catch {
-      setError("O Windows não permitiu alterar a inicialização do Pulse.");
-    }
-  }
-
-  function goTo(area: string) { setActiveArea(area); }
-
-  function ProcessTable() {
-    return overview?.topProcesses.length ? (
-      <ol className="process-list">
-        {overview.topProcesses.map((process, index) => (
-          <li key={process.id}>
-            <span className="process-rank">0{index + 1}</span>
-            <span className="process-name">{process.name}<small>PID {process.id}</small></span>
-            <span>{metric(process.memoryMb, " MB")}</span>
-          </li>
-        ))}
-      </ol>
-    ) : <p className="muted">Aguardando a leitura dos processos.</p>;
-  }
-
-  function OverviewDashboard() {
-    return <section className="dashboard" aria-labelledby="system-summary-title">
-      <div className="section-heading">
-        <div><p className="eyebrow">LEITURA ATUAL</p><h3 id="system-summary-title">Painel de telemetria local</h3></div>
-        <p className="sample-status">{overview ? "AMOSTRA RECEBIDA AGORA" : "AGUARDANDO PRIMEIRA AMOSTRA"}</p>
-      </div>
-      <div className="metric-grid">
-        <button aria-label="Abrir desempenho — CPU" className="metric-card" onClick={() => goTo("Desempenho")} type="button">
-          <div className="metric-top"><p>CPU agora</p><span>01</span></div><strong>{metric(overview?.cpuPercent, "%")}</strong><Meter value={overview?.cpuPercent} /><small>USO TOTAL DO PROCESSADOR · ABRIR MÓDULO</small>
-        </button>
-        <button aria-label="Abrir desempenho — memória" className="metric-card" onClick={() => goTo("Desempenho")} type="button">
-          <div className="metric-top"><p>Memória RAM</p><span>02</span></div><strong>{overview ? `${metric(overview.memoryUsedGb, " GB")}` : "—"}</strong><Meter value={memoryPercent} /><small>{overview ? `${metric(overview.memoryTotalGb, " GB")} INSTALADOS · ${memoryPercent ?? "—"}% EM USO` : "AGUARDANDO COLETA"}</small>
-        </button>
-        <button aria-label="Abrir armazenamento" className="metric-card metric-alert" onClick={() => goTo("Armazenamento")} type="button">
-          <div className="metric-top"><p>Disco C:</p><span>03</span></div><strong>{overview ? `${metric(overview.diskUsedGb, " GB")}` : "—"}</strong><Meter value={diskPercent} /><small>{overview ? `${metric(overview.diskTotalGb, " GB")} · ${diskPercent ?? "—"}% OCUPADO` : "AGUARDANDO COLETA"}</small>
-        </button>
-        <button aria-label="Abrir inicialização e segurança" className="metric-card" onClick={() => goTo("Inicialização e segurança")} type="button">
-          <div className="metric-top"><p>Inicialização</p><span>04</span></div><strong>{overview?.startupItemCount ?? "—"}</strong><div className="startup-status">{startupEnabled ? "PULSE REGISTRADO" : "PULSE FORA DO BOOT"}</div><small>ITENS NO INVENTÁRIO DO WINDOWS</small>
-        </button>
-      </div>
-      <div className="detail-grid">
-        <section className="panel process-panel" aria-labelledby="processes-title">
-          <div className="panel-title"><div><p className="eyebrow">MAIOR CONSUMO</p><h3 id="processes-title">Processos com mais RAM</h3></div><span className="live-dot">AO VIVO</span></div>
-          <div className="table-head"><span>PROCESSO</span><span>MEMÓRIA PRIVADA</span></div><ProcessTable />
-        </section>
-        <section className="panel controls-panel" aria-labelledby="next-signals-title">
-          <p className="eyebrow">MODO DE OPERAÇÃO</p><h3 id="next-signals-title">Inicialização e cobertura</h3>
-          <label className="startup-toggle"><span><strong>Iniciar com o Windows</strong><small>Registro por usuário no Windows.</small></span><input aria-label="Iniciar com o Windows" checked={startupEnabled} onChange={(event) => void changeStartupRegistration(event.target.checked)} type="checkbox" /></label>
-          <ul className="signal-list"><li><span>GPU e temperatura</span><small>DRIVER</small></li><li><span>Arquivos recentes</span><small>MIGRAÇÃO</small></li><li><span>Riscos explicáveis</span><small>PRÓXIMO</small></li></ul>
-        </section>
-      </div>
-    </section>;
-  }
-
-  function ModuleDashboard() {
-    const title = activeArea === "Atividade" ? "Processos com mais RAM" : activeArea === "Desempenho" ? "CPU e memória" : activeArea === "Armazenamento" ? "Volume C:" : "Inicialização do Windows";
-    return <section className="module-dashboard" aria-labelledby="module-data-title">
-      <div className="section-heading"><div><p className="eyebrow">LEITURA FOCADA</p><h3 id="module-data-title">{title}</h3></div><button className="back-button" onClick={() => goTo("Visão geral")} type="button">← VISÃO GERAL</button></div>
-      {activeArea === "Atividade" && <section className="panel tall-panel"><div className="table-head"><span>PROCESSO</span><span>MEMÓRIA PRIVADA</span></div><ProcessTable /></section>}
-      {activeArea === "Desempenho" && <div className="focused-grid"><section className="panel focused-card"><p>CPU AGORA</p><strong>{metric(overview?.cpuPercent, "%")}</strong><Meter value={overview?.cpuPercent} /></section><section className="panel focused-card"><p>MEMÓRIA RAM</p><strong>{overview ? `${metric(overview.memoryUsedGb, " GB")} / ${metric(overview.memoryTotalGb, " GB")}` : "—"}</strong><Meter value={memoryPercent} /></section></div>}
-      {activeArea === "Armazenamento" && <section className="panel focused-card storage-card"><p>CAPACIDADE UTILIZADA</p><strong>{overview ? `${metric(overview.diskUsedGb, " GB")} / ${metric(overview.diskTotalGb, " GB")}` : "—"}</strong><Meter value={diskPercent} /><small>MAPA POR DIRETÓRIOS AINDA NÃO DISPONÍVEL</small></section>}
-      {activeArea === "Inicialização e segurança" && <section className="panel focused-card startup-card"><p>ITENS DETECTADOS</p><strong>{overview?.startupItemCount ?? "—"}</strong><label className="startup-toggle"><span><strong>Iniciar com o Windows</strong><small>Registro por usuário no Windows.</small></span><input aria-label="Iniciar com o Windows" checked={startupEnabled} onChange={(event) => void changeStartupRegistration(event.target.checked)} type="checkbox" /></label></section>}
-    </section>;
-  }
-
-  return <main className="app-shell">
-    <aside className="sidebar">
-      <div className="brand"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span><div><h1>Pulse</h1><p>Windows observability</p></div></div>
-      <nav aria-label="Navegação principal"><p className="nav-label">MÓDULOS</p><ul>{navigationItems.map((item, index) => <li key={item}><button aria-current={activeArea === item ? "page" : undefined} className={activeArea === item ? "nav-item active" : "nav-item"} onClick={() => goTo(item)} type="button"><span className="nav-index">0{index + 1}</span><span className="nav-title">{item}</span></button></li>)}</ul></nav>
-      <div className="sidebar-foot"><span className="connection-state">LOCAL</span><p>Sem nuvem<br />Sem conta</p></div>
-    </aside>
-    <section className="content" aria-labelledby="overview-title">
-      <header className="command-bar"><div><span>HOST</span><b>ESTAÇÃO LOCAL</b></div><div><span>COLETA</span><b className={overview ? "state-good" : "state-pending"}>{overview ? "ATIVA" : "INICIANDO"}</b></div><button className="refresh-button" onClick={() => window.location.reload()} type="button">RELER DADOS <span>↻</span></button></header>
-      <div className="overview-heading"><div><p className="eyebrow">{module.eyebrow} / 0{activeIndex}</p><h2 id="overview-title">{module.title}</h2></div><p className="intro">{module.intro}</p></div>
-      <div className="workspace" key={activeArea}>{activeArea === "Visão geral" ? <OverviewDashboard /> : <ModuleDashboard />}{error && <p className="collection-error" role="status">{error}</p>}{overview && <footer className="source-note"><span>FONTE / {overview.source}</span><span>ESCOPO / DISPOSITIVO ATUAL</span></footer>}</div>
-    </section>
-  </main>;
+  const [activeArea, setActiveArea] = useState("Visão geral");
+  const [overview, setOverview] = useState<SystemOverview>(); const [performance, setPerformance] = useState<Performance>();
+  const [files, setFiles] = useState<RecentFile[]>([]); const [startupItems, setStartupItems] = useState<StartupItem[]>([]);
+  const [startupEnabled, setStartupEnabled] = useState(false); const [fileQuery, setFileQuery] = useState(""); const [fileCategory, setFileCategory] = useState("");
+  const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [debugEnabled, setDebugEnabled] = useState(false); const [debugLog, setDebugLog] = useState<DebugEntry[]>([]);
+  const memoryPercent = overview && overview.memoryTotalGb ? Math.round(overview.memoryUsedGb / overview.memoryTotalGb * 100) : undefined;
+  const diskPercent = overview && overview.diskTotalGb ? Math.round(overview.diskUsedGb / overview.diskTotalGb * 100) : undefined;
+  const loadFiles = async () => { try { setFiles(await invoke<RecentFile[]>("list_recent_files", { limit: 40 })); } catch { setError("Arquivos recentes indisponíveis no momento."); } };
+  useEffect(() => { let collecting = false; const collect = async () => { if (collecting) return; collecting = true; try { setOverview(await invoke<SystemOverview>("get_system_overview")); } catch { setError("Telemetria indisponível."); } finally { collecting = false; } }; void collect(); void invoke<StartupRegistration>("get_startup_registration").then(x => setStartupEnabled(x.enabled)); void invoke<Performance>("get_performance_details").then(setPerformance); void invoke<StartupItem[]>("list_startup_items").then(setStartupItems); const timer = window.setInterval(() => void collect(), 5000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => { if (activeArea === "Debug") { invoke<boolean>("get_debug_mode").then(setDebugEnabled).catch(() => undefined); invoke<DebugEntry[]>("get_debug_log").then(setDebugLog).catch(() => setDebugLog([])); } }, [activeArea]);
+  useEffect(() => { invoke<boolean>("get_debug_mode").then(setDebugEnabled).catch(() => undefined); }, []);
+  useEffect(() => { if (activeArea === "Armazenamento" || activeArea === "Visão geral") void loadFiles(); }, [activeArea]);
+  const refresh = async () => { setBusy(true); setError(""); try { setFiles(await invoke<RecentFile[]>("refresh_recent_files")); } catch { setError("Não foi possível atualizar os arquivos recentes."); } finally { setBusy(false); } };
+  const togglePulse = async (enabled: boolean) => { setStartupEnabled(enabled); try { const result = await invoke<StartupRegistration>("set_startup_registration", { enabled }); setStartupEnabled(result.enabled); } catch { setStartupEnabled(!enabled); setError("O Windows não permitiu alterar a inicialização do Pulse."); } };
+  const filtered = useMemo(() => { const query = fileQuery.trim().toLocaleLowerCase("pt-BR"); return files.filter(file => (!fileCategory || file.category === fileCategory) && (!query || `${file.name} ${file.path}`.toLocaleLowerCase("pt-BR").includes(query))); }, [files, fileCategory, fileQuery]);
+  const open = (file: RecentFile, location = false) => void invoke(location ? "open_recent_file_location" : "open_recent_file", { path: file.path }).catch(() => setError("Não foi possível abrir esse item."));
+  const processes = overview?.topProcesses ?? [];
+  const FileList = () => <section className="panel recent-panel" aria-labelledby="recent-title"><div className="panel-title"><div><p className="eyebrow">ESCOPO LIMITADO</p><h3 id="recent-title">Arquivos recentes</h3></div><button className="text-button" onClick={() => void refresh()} disabled={busy}>{busy ? "ATUALIZANDO…" : "RELER"}</button></div><div className="file-tools"><input aria-label="Buscar arquivos" placeholder="Buscar por nome ou caminho" value={fileQuery} onChange={e => setFileQuery(e.target.value)} /><select aria-label="Filtrar categoria" value={fileCategory} onChange={e => setFileCategory(e.target.value)}><option value="">Todas as categorias</option><option value="document">Documentos</option><option value="image">Imagens</option><option value="archive">Arquivos compactados</option></select></div><div className="recent-list">{filtered.length ? filtered.map(file => <div className="file-row" key={file.path}><span className="file-name">{file.name}<small>{file.category} · {metric(file.sizeBytes / 1024, " KB")}</small></span><button onClick={() => open(file)}>Abrir</button><button onClick={() => open(file, true)}>Localização</button></div>) : <p className="muted">{busy ? "Carregando arquivos…" : "Nenhum arquivo encontrado."}</p>}</div></section>;
+  const ProcessList = () => <ol className="process-list">{processes.slice(0, 15).map((p, i) => <li key={p.id}><span className="process-rank">{String(i + 1).padStart(2, "0")}</span><span className="process-name">{p.name}<small>PID {p.id}</small></span><span>{metric(p.memoryMb, " MB")}</span></li>)}</ol>;
+  const Toggle = () => <label className="startup-toggle"><span><strong>Iniciar com o Windows</strong><small>Registro por usuário no Windows.</small></span><input aria-label="Iniciar com o Windows" type="checkbox" checked={startupEnabled} onChange={e => void togglePulse(e.target.checked)} /></label>;
+  const DebugToggle = () => <label className="startup-toggle"><span><strong>Modo Debug</strong><small>Registra latência e falhas localmente.</small></span><input aria-label="Modo Debug" type="checkbox" checked={debugEnabled} onChange={e => { const enabled = e.target.checked; setDebugEnabled(enabled); void invoke<boolean>("set_debug_mode", { enabled }).catch(() => { setDebugEnabled(!enabled); setError("Não foi possível alterar o modo Debug."); }); }} /></label>;
+  const module = copy[activeArea];
+  return <main className="app-shell"><aside className="sidebar"><div className="brand"><span className="brand-mark"><i/><i/><i/></span><div><h1>Pulse</h1><p>Windows observability</p></div></div><nav aria-label="Navegação principal"><p className="nav-label">MÓDULOS</p><ul>{navigationItems.map((item, i) => <li key={item}><button aria-current={activeArea === item ? "page" : undefined} className={`nav-item ${activeArea === item ? "active" : ""}`} onClick={() => setActiveArea(item)}><span className="nav-index">0{i + 1}</span><span className="nav-title">{item}</span></button></li>)}</ul></nav><div className="sidebar-foot"><span className="connection-state">LOCAL</span><p>Sem nuvem<br/>Sem conta</p></div></aside><section className="content"><header className="command-bar"><div><span>HOST</span><b>ESTAÇÃO LOCAL</b></div><div><span>COLETA</span><b className={overview ? "state-good" : "state-pending"}>{overview ? "ATIVA" : "INICIANDO"}</b></div><button className="refresh-button" onClick={() => void refresh()}>RELER DADOS <span>↻</span></button></header><div className="overview-heading"><div><p className="eyebrow">{module.eyebrow} / 0{navigationItems.indexOf(activeArea) + 1}</p><h2>{module.title}</h2></div><p className="intro">{module.intro}</p></div><div className="workspace">{activeArea === "Visão geral" && <section className="dashboard"><h3 className="sr-only">Painel de telemetria local</h3><div className="metric-grid"><span className="sr-only">Inicialização e cobertura</span><button aria-label="Abrir desempenho — CPU" className="metric-card" onClick={() => setActiveArea("Desempenho")}><p>CPU agora</p><strong>{metric(overview?.cpuPercent, "%")}</strong><Meter value={overview?.cpuPercent}/></button><button className="metric-card" onClick={() => setActiveArea("Desempenho")}><p>Memória RAM</p><strong>{metric(overview?.memoryUsedGb, " GB")}</strong><Meter value={memoryPercent}/></button><button className="metric-card" onClick={() => setActiveArea("Armazenamento")}><p>Disco C:</p><strong>{metric(overview?.diskUsedGb, " GB")}</strong><Meter value={diskPercent}/></button><div className="metric-card"><p>Inicialização</p><strong>{overview?.startupItemCount ?? "—"}</strong><Toggle/><DebugToggle/></div></div><div className="detail-grid"><section className="panel process-panel"><div className="panel-title"><h3>Processos com mais RAM</h3><span className="live-dot">AO VIVO</span></div><ProcessList/></section><FileList/></div></section>}{activeArea === "Atividade" && <section className="module-dashboard"><section className="panel tall-panel"><h3>Até 15 processos</h3><ProcessList/></section></section>}{activeArea === "Desempenho" && <section className="module-dashboard"><div className="focused-grid"><section className="panel focused-card"><p>CPU AGORA</p><strong>{metric(overview?.cpuPercent, "%")}</strong><Meter value={overview?.cpuPercent}/></section><section className="panel focused-card"><p>MEMÓRIA RAM</p><strong>{metric(overview?.memoryUsedGb, " GB")} / {metric(overview?.memoryTotalGb, " GB")}</strong><Meter value={memoryPercent}/></section><section className="panel focused-card"><p>GPU</p><strong>{performance?.gpu?.value ?? "Indisponível"}</strong><small>{performance?.gpu?.unavailableReason ?? "Nome informado pelo driver"}</small></section><section className="panel focused-card"><p>VRAM / TEMPERATURA</p><strong>{performance?.vramBytes?.value === undefined ? "Indisponível" : metric(performance.vramBytes.value / (1024 * 1024), " MB")}</strong><small>{performance?.temperatureCelsius?.value === undefined ? performance?.temperatureCelsius?.unavailableReason ?? "Driver não expôs temperatura" : `${metric(performance.temperatureCelsius.value)} °C`}</small></section></div></section>}{activeArea === "Armazenamento" && <section className="module-dashboard"><FileList/></section>}{activeArea === "Inicialização e segurança" && <section className="module-dashboard"><section className="panel startup-card"><h3>Itens do Windows</h3><div className="startup-list">{startupItems.map(item => <div className="startup-item" key={`${item.origin}-${item.name}`}><span><strong>{item.name}</strong><small>{item.origin} · {item.command}</small></span>{item.canChange ? <input aria-label={`Desativar ${item.name}`} type="checkbox" checked={item.enabled} disabled={!item.enabled} onChange={e => void invoke("set_startup_item_enabled", { name: item.name, enabled: e.target.checked }).then(() => setStartupItems(xs => xs.map(x => x === item ? {...x, enabled: e.target.checked} : x))).catch(() => setError("Não foi possível alterar este item de inicialização."))} /> : <small>{item.unavailableReason ?? "Somente leitura"}</small>}</div>)}</div></section></section>}{activeArea === "Debug" && <section className="module-dashboard"><section className="panel debug-panel"><label className="startup-toggle"><span><strong>Modo Debug</strong><small>Registra diagnóstico local quando suportado.</small></span><input type="checkbox" checked={debugEnabled} onChange={e => { setDebugEnabled(e.target.checked); void invoke("set_debug_mode", { enabled: e.target.checked }).catch(() => setDebugEnabled(!e.target.checked)); }} /></label><pre className="debug-log">{debugLog.length ? debugLog.map(entry => `[${new Date(entry.timestampUnixMs).toLocaleTimeString("pt-BR")}] ${entry.outcome.toUpperCase()} ${entry.operation} · ${entry.durationMs} ms · ${entry.message}`).join("\n") : "Ative o modo Debug para registrar as próximas coletas."}</pre></section></section>}{error && <p className="collection-error" role="status">{error}</p>}</div></section></main>;
 }
-
 export default App;
