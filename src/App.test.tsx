@@ -1,8 +1,13 @@
 import { render, screen } from "@testing-library/react";
+import { vi } from "vitest";
 import App from "./App";
 
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(() => new Promise(() => undefined)),
+}));
+
 describe("Pulse application shell", () => {
-  it("renders the product identity and the five primary areas", () => {
+  it("renders the product identity, primary areas and unified dashboard", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "Pulse" })).toBeInTheDocument();
@@ -21,5 +26,12 @@ describe("Pulse application shell", () => {
     expect(screen.getByRole("navigation", { name: "Navegação principal" })).toHaveTextContent(
       "Inicialização e segurança",
     );
+
+    expect(screen.getByRole("heading", { name: "Resumo do sistema" })).toBeInTheDocument();
+    expect(screen.getByText("CPU agora")).toBeInTheDocument();
+    expect(screen.getByText("Memória RAM")).toBeInTheDocument();
+    expect(screen.getByText("Disco C:")).toBeInTheDocument();
+    expect(screen.getByText("Itens na inicialização")).toBeInTheDocument();
+    expect(screen.getByText("Próximos sinais")).toBeInTheDocument();
   });
 });
