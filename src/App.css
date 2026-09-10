@@ -1,0 +1,67 @@
+:root {
+  color: #edf5ff;
+  background: #09111f;
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button { font: inherit; }
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 270px 1fr;
+  min-height: 100vh;
+  background: radial-gradient(circle at 70% 0%, #15294a 0, #0b1424 38%, #09111f 76%);
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: 32px 20px 24px;
+  border-right: 1px solid #20314b;
+  background: rgb(8 16 30 / 74%);
+}
+
+.brand { display: flex; align-items: center; gap: 12px; padding: 0 10px; }
+.brand-mark {
+  display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px;
+  color: #06101d; font-weight: 800; background: linear-gradient(135deg, #6de7d1, #6ca8ff);
+}
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: 1.15rem; letter-spacing: -0.03em; }
+.brand p, .local-first { color: #8da0bb; font-size: .78rem; }
+
+nav { margin-top: 52px; }
+ul { display: grid; gap: 6px; padding: 0; margin: 0; list-style: none; }
+.nav-item {
+  width: 100%; padding: 12px 14px; border: 0; border-radius: 9px; text-align: left;
+  color: #b9c8dc; background: transparent; cursor: pointer;
+}
+.nav-item:hover, .nav-item.active { color: #f6fbff; background: #1b3150; }
+.nav-item.active { box-shadow: inset 3px 0 #6de7d1; }
+.local-first { margin-top: auto; padding: 0 10px; }
+
+.content { max-width: 1000px; padding: clamp(42px, 8vw, 104px); }
+.eyebrow { color: #6de7d1; font-size: .73rem; font-weight: 700; letter-spacing: .13em; }
+h2 { margin-top: 12px; font-size: clamp(2.25rem, 5vw, 4.6rem); letter-spacing: -.06em; }
+.intro { max-width: 620px; margin-top: 18px; color: #b3c4da; font-size: 1.08rem; line-height: 1.65; }
+.empty-state {
+  max-width: 560px; margin-top: 64px; padding: 32px; border: 1px solid #2b4263;
+  border-radius: 16px; background: rgb(18 34 56 / 64%);
+}
+.empty-state > span { color: #6de7d1; font-size: 2rem; }
+h3 { margin-top: 18px; font-size: 1.05rem; }
+.empty-state p { margin-top: 8px; color: #a7b8cd; line-height: 1.55; }
+
+@media (max-width: 720px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .sidebar { gap: 22px; padding: 20px; border-right: 0; border-bottom: 1px solid #20314b; }
+  nav { margin-top: 0; overflow-x: auto; }
+  ul { display: flex; width: max-content; }
+  .nav-item { white-space: nowrap; }
+  .local-first { display: none; }
+  .content { padding: 44px 24px; }
+}

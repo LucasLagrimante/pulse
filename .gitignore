@@ -1,5 +1,14 @@
+# Python legacy
 venv/
 __pycache__/
 .pytest_cache/
 *.pyc
 _test_scratch/
+
+# Tauri / React
+node_modules/
+dist/
+src-tauri/target/
+
+# Local agent planning
+.hermes/
