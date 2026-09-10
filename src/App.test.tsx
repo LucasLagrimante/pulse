@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import App from "./App";
 
@@ -34,5 +34,14 @@ describe("Pulse application shell", () => {
     expect(screen.getByText("Inicialização")).toBeInTheDocument();
     expect(screen.getByText("Inicialização e cobertura")).toBeInTheDocument();
     expect(screen.getByText("Iniciar com o Windows")).toBeInTheDocument();
+  });
+
+  it("opens the corresponding module from a telemetry card", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Abrir desempenho" })[0]);
+
+    expect(screen.getByRole("button", { name: /Desempenho/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("heading", { name: "Desempenho — recursos em uso" })).toBeInTheDocument();
   });
 });
