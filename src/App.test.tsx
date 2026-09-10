@@ -34,6 +34,7 @@ describe("Pulse application shell", () => {
     expect(screen.getByText("Disco C:")).toBeInTheDocument();
     expect(screen.getByText("Inicialização")).toBeInTheDocument();
     expect(screen.getByText("Inicialização e cobertura")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Debug" })).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Iniciar com o Windows" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Modo Debug" })).toBeInTheDocument();
   });
