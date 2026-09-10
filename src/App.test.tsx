@@ -63,4 +63,14 @@ describe("Pulse application shell", () => {
     expect(screen.getByText("Nenhum item de inicialização disponível.")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+
+  it("renders every primary module with valid native payloads", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => Promise.resolve(command === "get_system_overview" ? { cpuPercent: 2, memoryUsedGb: 1, memoryTotalGb: 2, diskUsedGb: 3, diskTotalGb: 4, startupItemCount: 0, topProcesses: [] } : command === "list_recent_files" || command === "list_startup_items" ? [] : { enabled: false }) as never);
+    render(<App />);
+    for (const [buttonName, heading] of [[/Atividade/, "Até 15 processos"], [/Desempenho/, "GPU"], [/Armazenamento/, "Arquivos recentes"], [/Inicialização e segurança/, "Itens do Windows"]] as const) {
+      fireEvent.click(screen.getByRole("button", { name: buttonName }));
+      await waitFor(() => expect(screen.getByText(heading)).toBeInTheDocument());
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    }
+  });
 });
