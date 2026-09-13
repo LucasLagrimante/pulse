@@ -1,0 +1,42 @@
+[
+  {
+    "Path": "C:\\Users\\lucas\\Projects\\pulse\\src\\App.tsx",
+    "Hash": "AECBC9DFAA8A7F73208AE12F0886C7301C9A862D3B7DA2B75BE4AD56AEEDE316"
+  },
+  {
+    "Path": "C:\\Users\\lucas\\Projects\\pulse\\src\\Charts.tsx",
+    "Hash": "948BF58B7C6D78C79F80A317C6FAA4F9B8F207B9B0909C7CB3932F4A38FF198E"
+  },
+  {
+    "Path": "C:\\Users\\lucas\\Projects\\pulse\\src\\App.css",
+    "Hash": "328272858DC2250678D66D9CB941A49311C4491858D7E33C915BAA608383823F"
+  },
+  {
+    "Path": "C:\\Users\\lucas\\Projects\\pulse\\src\\identity.css",
+    "Hash": "EC9B0068147CA6712EC952AEBC15816484FA2D6C144EFAC8E26C759C9380162D"
+  },
+  {
+    "Path": "C:\\Users\\lucas\\Projects\\pulse\\src-tauri\\src\\system_overview.rs",
+    "Hash": "488A7715507FAA7EED359559528636EF99B38543D0BB41399A59D0F945E5D1D9"
+  },
+  {
+    "Path": "C:\\Users\\lucas\\Projects\\pulse\\src-tauri\\src\\performance.rs",
+    "Hash": "55C102AEFC440086EA61A1489C0B0A2BFC0393ED7F847BB59CA7D2F3BAEDA5F1"
+  },
+  {
+    "Path": "C:\\Users\\lucas\\Projects\\pulse\\src-tauri\\src\\disk_analyzer.rs",
+    "Hash": "7620AEC65B700B0F52FD6D376DB94DDCC13E8163C174A1466D935F721F67B803"
+  },
+  {
+    "Path": "C:\\Users\\lucas\\Projects\\pulse\\src-tauri\\src\\startup_inventory.rs",
+    "Hash": "DD6F8AE6BF32E55071A49CF99C261859866B0DBA35B14289D4FCD458A7C12B89"
+  },
+  {
+    "Path": "C:\\Users\\lucas\\Projects\\pulse\\src-tauri\\src\\startup.rs",
+    "Hash": "BE13E2A501F9330CBDD32477BAC67A1104719D22B32C822591805D8324B59142"
+  },
+  {
+    "Path": "C:\\Users\\lucas\\Projects\\pulse\\src-tauri\\src\\recent_files.rs",
+    "Hash": "D78BC1144F931C421745BDDF350F761AF20DAFBD333B6203F756261F3586C269"
+  }
+]

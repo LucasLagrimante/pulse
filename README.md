@@ -1,40 +1,105 @@
 # Pulse
 
-Aplicativo Windows-first para explicar atividade de arquivos, desempenho, espaço em disco, inicialização e sinais de segurança — sem conta e com dados locais por padrão.
+Central nativa para Windows 11 que reúne observabilidade, diagnóstico e controle local do sistema em uma interface única. O Pulse explica atividade de processos, desempenho, armazenamento, inicialização e sinais de segurança sem conta, telemetria ou envio de dados para a nuvem.
 
-## Estado atual
+> [!IMPORTANT]
+> Compile e execute o Pulse em um terminal **Windows** (PowerShell, Prompt de Comando ou Windows Terminal com perfil PowerShell). O build nativo não funciona a partir do WSL sem instalar e configurar um toolchain Rust para Linux com cross-compilation para MSVC.
 
-A base Tauri 2 + React está pronta. O módulo visual inicial já organiza as áreas do produto; os coletores nativos serão adicionados em etapas, com testes antes de cada comportamento novo.
+## Recursos
 
-A implementação Python original foi preservada em [`legacy-python/`](legacy-python/) e no commit `50ac7f4`.
+- Visão geral de CPU, memória, disco e processos.
+- Telemetria e gráficos de desempenho com tratamento explícito de sensores indisponíveis.
+- Análise de armazenamento em árvore e arquivos recentes.
+- Inventário de inicialização e evidências de impacto no boot.
+- Diagnóstico local e painel compacto na bandeja do sistema.
+- Dados 100% locais e ações operacionais não destrutivas.
 
 ## Requisitos
 
-- Windows 11
-- Node.js 22+
-- Rust stable com target MSVC
-- Microsoft C++ Build Tools (necessário para compilar Tauri)
+- Windows 11 x64.
+- [Node.js 22 ou superior](https://nodejs.org/).
+- [Rust stable com toolchain MSVC](https://www.rust-lang.org/tools/install).
+- Microsoft C++ Build Tools com a carga de trabalho **Desenvolvimento para desktop com C++** e um Windows SDK.
+- WebView2 Runtime, já incluído nas versões atuais do Windows 11.
 
-## Desenvolvimento
+Confirme os itens principais no **PowerShell**:
 
-```bash
+```powershell
+node --version
+npm --version
+rustc --version
+cargo --version
+```
+
+Se `cargo` não for reconhecido depois de instalar o Rust, feche e abra o terminal para atualizar o `PATH`.
+
+## Instalação e desenvolvimento
+
+Abra o PowerShell na raiz do repositório:
+
+```powershell
+cd C:\Users\lucas\Projects\pulse
 npm install
 npm run tauri dev
 ```
 
-## Qualidade
+O primeiro build demora mais porque o Cargo precisa baixar e compilar as dependências Rust. Os próximos builds reutilizam o cache em `src-tauri\target`.
 
-```bash
-npm test
-npm run build
+## Gerar o instalador
+
+No PowerShell, execute:
+
+```powershell
+cd C:\Users\lucas\Projects\pulse
+npm install
+npm run verify
 npm run tauri build -- --bundles nsis
 ```
 
-O instalador NSIS é gerado em `src-tauri/target/release/bundle/nsis/`.
+O instalador é criado em:
 
-## Princípios
+```text
+src-tauri\target\release\bundle\nsis\
+```
 
-- Dados armazenados localmente.
-- Métricas sem suporte explícito aparecem como indisponíveis; nunca como zero fictício.
-- Sinais de risco trazem as evidências e não fazem alegação de malware.
-- Ações potencialmente destrutivas não entram no beta.
+Para gerar todos os formatos configurados no Tauri, também é possível usar `npm run tauri build`.
+
+## Atenção ao WSL
+
+Estar em `/mnt/c/Users/lucas/Projects/pulse` **não transforma o terminal WSL em um terminal Windows**. Neste caso, o comando pode falhar assim:
+
+```text
+failed to run 'cargo metadata': No such file or directory (os error 2)
+```
+
+Esse erro significa que o Tauri tentou encontrar o `cargo` dentro do Linux. Saia do WSL e rode o build no PowerShell. Se estiver em um prompt WSL e quiser iniciar o comando no Windows sem trocar de janela, use:
+
+```bash
+powershell.exe -NoProfile -Command "Set-Location 'C:\Users\lucas\Projects\pulse'; npm run tauri build -- --bundles nsis"
+```
+
+## Verificação
+
+```powershell
+npm run typecheck  # tipos TypeScript
+npm test           # testes Vitest
+npm run build      # bundle web de produção
+npm run verify     # executa os três passos acima
+```
+
+## Estrutura
+
+```text
+src/          Interface React 19 + TypeScript
+src-tauri/    Backend nativo Rust + Tauri 2
+memory/       Decisões e lições arquiteturais do projeto
+```
+
+## Princípios do projeto
+
+- Métricas sem suporte aparecem como **Indisponível**, nunca como zero fictício.
+- Sinais de risco apresentam evidências técnicas sem rotular executáveis arbitrariamente como malware.
+- Varreduras de arquivos são limitadas para preservar a responsividade do Windows.
+- Operações potencialmente destrutivas não fazem parte do produto.
+
+A implementação Python original permanece preservada em [`legacy-python/`](legacy-python/) e no commit `50ac7f4`.
