@@ -1,6 +1,7 @@
 use serde::Serialize;
 use std::os::windows::process::CommandExt;
 use std::process::Command;
+use std::time::Instant;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -19,9 +20,19 @@ pub struct PerformanceDetails {
     pub temperature_celsius: Capability<f64>,
 }
 
-#[tauri::command]
-pub fn get_performance_details() -> PerformanceDetails {
-    let script = r#"$c=Get-CimInstance Win32_VideoController; $c | Select-Object -First 1 Name,AdapterRAM,CurrentTemperature | ConvertTo-Json -Compress"#;
+pub fn get_performance_details_sync() -> PerformanceDetails {
+    let script = r#"
+$gpus = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '*Basic Display*' -and $_.Name -notlike '*RDP*' })
+if ($gpus.Count -eq 0) { $gpus = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue) }
+$best = $gpus | Sort-Object { [int64]$_.AdapterRAM } -Descending | Select-Object -First 1
+if ($best) {
+  @{
+    Name = [string]$best.Name
+  } | ConvertTo-Json -Compress
+} else {
+  '{}'
+}
+"#;
     let result = Command::new("powershell.exe")
         .creation_flags(CREATE_NO_WINDOW)
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
@@ -51,26 +62,36 @@ pub fn get_performance_details() -> PerformanceDetails {
             value: None,
             unavailable_reason: Some("Nome da GPU não exposto pelo driver".into()),
         });
-    let vram_bytes = value
-        .get("AdapterRAM")
-        .and_then(|v| v.as_u64())
-        .map(|v| Capability {
-            value: Some(v),
-            unavailable_reason: None,
-        })
-        .unwrap_or_else(|| Capability {
-            value: None,
-            unavailable_reason: Some("VRAM não exposta pelo driver".into()),
-        });
+    // Win32_VideoController.AdapterRAM é um campo WMI legado de 32 bits e pode
+    // truncar GPUs modernas. Sem um provedor DXGI dedicado, é mais honesto não
+    // exibir uma capacidade incorreta. Temperatura também não pertence a esta
+    // classe WMI; ela exige um sensor exposto pelo driver.
+    let vram_bytes = Capability {
+        value: None,
+        unavailable_reason: Some(
+            "VRAM requer leitura DXGI; o valor WMI pode ser impreciso neste hardware".into(),
+        ),
+    };
     let temperature_celsius = Capability {
         value: None,
-        unavailable_reason: Some("Temperatura não exposta pelo driver WMI".into()),
+        unavailable_reason: Some("O driver não expôs um sensor de temperatura compatível".into()),
     };
+
     PerformanceDetails {
         gpu,
         vram_bytes,
         temperature_celsius,
     }
+}
+
+#[tauri::command]
+pub async fn get_performance_details() -> PerformanceDetails {
+    let started = Instant::now();
+    let details = tauri::async_runtime::spawn_blocking(get_performance_details_sync)
+        .await
+        .unwrap_or_else(|_| unavailable("Falha na execução em segundo plano"));
+    crate::debug::record("performance_details", started.elapsed().as_millis(), Ok(()));
+    details
 }
 
 fn unavailable(reason: &str) -> PerformanceDetails {
