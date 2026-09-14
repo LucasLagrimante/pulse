@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::PathBuf};
 use tauri::{
-    menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, WebviewWindow,
 };
@@ -40,32 +39,16 @@ pub fn should_minimize_on_close() -> bool {
 }
 
 pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let show_i = MenuItem::with_id(app, "show", "Abrir Pulse", true, None::<&str>)?;
-    let quick_i = MenuItem::with_id(app, "quick", "Painel Rápido", true, None::<&str>)?;
-    let quit_i = MenuItem::with_id(app, "quit", "Sair do Pulse", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show_i, &quick_i, &quit_i])?;
-
     let mut builder = TrayIconBuilder::new()
         .tooltip("Pulse — Windows Observability")
-        .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "show" => {
-                let _ = show_main_internal(app);
-            }
-            "quick" => {
-                let _ = toggle_flyout_internal(app);
-            }
-            "quit" => {
-                app.exit(0);
-            }
-            _ => {}
-        })
         .on_tray_icon_event(|tray, event| {
             match event {
-                // Clique simples com botão esquerdo: abre ou alterna o painel flutuante
+                // Os dois botões abrem o mesmo painel consolidado, como no
+                // fluxo rápido do EarTrumpet. O menu nativo separado não é
+                // usado para não dividir controles entre duas superfícies.
                 TrayIconEvent::Click {
-                    button: MouseButton::Left,
+                    button: MouseButton::Left | MouseButton::Right,
                     button_state: MouseButtonState::Up,
                     ..
                 } => {
@@ -117,7 +100,7 @@ fn toggle_flyout_internal(app: &AppHandle) -> Result<(), String> {
                 let size = monitor.size();
                 let scale = monitor.scale_factor();
                 let flyout_w = 380.0;
-                let flyout_h = 490.0;
+                let flyout_h = 680.0;
                 let margin_right = 16.0;
                 let margin_bottom = 56.0; // Espaço para a barra de tarefas do Windows
 
