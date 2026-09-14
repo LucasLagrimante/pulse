@@ -50,9 +50,39 @@ struct RawSystemOverview {
 
 const OVERVIEW_SCRIPT: &str = r#"
 $all = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.WorkingSet64 -ge 0 })
-$processes = @($all | Group-Object { $_.ProcessName.ToLowerInvariant() } | ForEach-Object {
-  $group = @($_.Group | Sort-Object WorkingSet64 -Descending)
-  $representative = $group[0]
+$processById = @{}
+$all | ForEach-Object { $processById[[int]$_.Id] = $_ }
+$parentById = @{}
+Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object {
+  $parentById[[int]$_.ProcessId] = [int]$_.ParentProcessId
+}
+
+# WebView2 é um runtime compartilhado: o nome do executável identifica o
+# runtime, não o aplicativo que o está usando. Suba pela cadeia de pais até
+# encontrar o primeiro processo que não seja outro WebView2 e use-o como dono.
+$records = @($all | ForEach-Object {
+  $groupKey = $_.ProcessName.ToLowerInvariant()
+  if ($groupKey -eq "msedgewebview2") {
+    $ownerId = $parentById[[int]$_.Id]
+    while ($ownerId -and $processById.ContainsKey($ownerId) -and
+      $processById[$ownerId].ProcessName.ToLowerInvariant() -eq "msedgewebview2") {
+      $ownerId = $parentById[$ownerId]
+    }
+    if ($ownerId -and $processById.ContainsKey($ownerId)) {
+      $groupKey = $processById[$ownerId].ProcessName.ToLowerInvariant()
+    }
+  }
+  [pscustomobject]@{
+    groupKey = $groupKey
+    process = $_
+  }
+})
+$processes = @($records | Group-Object groupKey | ForEach-Object {
+  $group = @($_.Group | ForEach-Object { $_.process } | Sort-Object WorkingSet64 -Descending)
+  $representative = @($group | Where-Object {
+    $_.ProcessName.ToLowerInvariant() -ne "msedgewebview2"
+  })[0]
+  if (-not $representative) { $representative = $group[0] }
   [pscustomobject]@{
     name = $representative.ProcessName
     id = $representative.Id
@@ -313,10 +343,7 @@ pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
     let result = (|| {
         #[cfg(windows)]
         {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            let output = std::process::Command::new("powershell.exe")
-                .creation_flags(CREATE_NO_WINDOW)
+            let output = crate::process::hidden_command("powershell.exe")
                 .args(["-NoProfile", "-NonInteractive", "-Command", OVERVIEW_SCRIPT])
                 .output()
                 .map_err(|e| format!("Não foi possível iniciar a coleta do Windows: {e}"))?;
@@ -422,13 +449,10 @@ fn terminate_process_sync(id: u32) -> Result<(), String> {
 
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
         let display_name = process.display_name.as_deref().unwrap_or(&process.name);
 
         if is_wsl_host_process(&process.name) {
-            let output = std::process::Command::new("wsl.exe")
-                .creation_flags(CREATE_NO_WINDOW)
+            let output = crate::process::hidden_command("wsl.exe")
                 .arg("--shutdown")
                 .output()
                 .map_err(|error| {
@@ -449,8 +473,7 @@ fn terminate_process_sync(id: u32) -> Result<(), String> {
                 }
                 graceful_args.push(process_id.to_string());
             }
-            let graceful = std::process::Command::new("taskkill.exe")
-                .creation_flags(CREATE_NO_WINDOW)
+            let graceful = crate::process::hidden_command("taskkill.exe")
                 .args(&graceful_args)
                 .output()
                 .map_err(|error| format!("Não foi possível solicitar o encerramento: {error}"))?;
@@ -465,8 +488,7 @@ fn terminate_process_sync(id: u32) -> Result<(), String> {
 
                 let mut forced_args = vec!["/F".to_owned()];
                 forced_args.extend(graceful_args.iter().cloned());
-                let forced = std::process::Command::new("taskkill.exe")
-                    .creation_flags(CREATE_NO_WINDOW)
+                let forced = crate::process::hidden_command("taskkill.exe")
                     .args(&forced_args)
                     .output()
                     .map_err(|error| format!("Não foi possível forçar o encerramento: {error}"))?;
@@ -521,6 +543,7 @@ fn command_failure_detail(output: &std::process::Output, fallback: &str) -> Stri
 mod tests {
     use super::{
         is_wsl_host_process, parse_overview, requires_forced_termination, terminate_process_sync,
+        OVERVIEW_SCRIPT,
     };
 
     #[test]
@@ -577,5 +600,14 @@ mod tests {
         let process = &parse_overview(payload, 123).unwrap().top_processes[0];
         assert_eq!(process.process_ids, vec![42, 43, 44]);
         assert_eq!(process.process_count, 3);
+    }
+
+    #[test]
+    fn overview_attributes_webview2_to_its_owner_process() {
+        assert!(OVERVIEW_SCRIPT.contains("$parentById"));
+        assert!(OVERVIEW_SCRIPT.contains("msedgewebview2"));
+        assert!(OVERVIEW_SCRIPT.contains("$groupKey = $processById[$ownerId].ProcessName"));
+        assert!(OVERVIEW_SCRIPT.contains("$_.ProcessName.ToLowerInvariant() -ne \"msedgewebview2\""));
+        assert!(!OVERVIEW_SCRIPT.contains("Group-Object { $_.ProcessName.ToLowerInvariant() }"));
     }
 }
