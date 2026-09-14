@@ -1,13 +1,6 @@
 use serde::Serialize;
 use std::env;
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-// Impede que janelas de console apareçam ao executar subprocessos no Windows
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const APPROVED_KEY: &str =
@@ -48,9 +41,8 @@ fn startup_approved_hex(enabled: bool) -> String {
 }
 
 fn is_startup_approved_enabled() -> bool {
-    let output = Command::new("reg.exe")
+    let output = crate::process::hidden_command("reg.exe")
         .args(["query", APPROVED_KEY, "/v", VALUE_NAME])
-        .creation_flags(CREATE_NO_WINDOW)
         .output();
     let Ok(result) = output else { return true };
     if !result.status.success() {
@@ -70,7 +62,7 @@ fn is_startup_approved_enabled() -> bool {
 
 fn write_startup_approved(enabled: bool) -> Result<(), String> {
     let hex = startup_approved_hex(enabled);
-    let result = Command::new("reg.exe")
+    let result = crate::process::hidden_command("reg.exe")
         .args([
             "add",
             APPROVED_KEY,
@@ -82,7 +74,6 @@ fn write_startup_approved(enabled: bool) -> Result<(), String> {
             &hex,
             "/f",
         ])
-        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|error| format!("Não foi possível atualizar StartupApproved: {error}"))?;
     if result.status.success() {
@@ -101,9 +92,8 @@ pub fn should_start_minimized(args: &[String]) -> bool {
 
 #[tauri::command]
 pub fn get_startup_registration() -> StartupRegistration {
-    let output = Command::new("reg.exe")
+    let output = crate::process::hidden_command("reg.exe")
         .args(["query", RUN_KEY, "/v", VALUE_NAME])
-        .creation_flags(CREATE_NO_WINDOW)
         .output();
 
     match output {
@@ -125,7 +115,7 @@ pub fn set_startup_registration(enabled: bool) -> Result<StartupRegistration, St
             format!("Não foi possível localizar o executável do Pulse: {error}")
         })?;
         let executable = executable.to_string_lossy().into_owned();
-        let result = Command::new("reg.exe")
+        let result = crate::process::hidden_command("reg.exe")
             .args([
                 "add",
                 RUN_KEY,
@@ -137,7 +127,6 @@ pub fn set_startup_registration(enabled: bool) -> Result<StartupRegistration, St
                 &command_value(&executable),
                 "/f",
             ])
-            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map_err(|error| format!("Não foi possível registrar a inicialização: {error}"))?;
 

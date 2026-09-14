@@ -1,14 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-// Impede que janelas de console apareçam ao executar subprocessos no Windows
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 const HKCU_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const HKLM_RUN_KEY: &str = r"HKLM\Software\Microsoft\Windows\CurrentVersion\Run";
@@ -200,7 +194,7 @@ pub fn parse_diagnostics_events(xml: &str, map: &mut HashMap<String, u64>) {
 
 fn get_diagnostics_boot_durations() -> HashMap<String, u64> {
     let mut map = HashMap::new();
-    let out = Command::new("wevtutil.exe")
+    let out = crate::process::hidden_command("wevtutil.exe")
         .args([
             "qe",
             "Microsoft-Windows-Diagnostics-Performance/Operational",
@@ -209,7 +203,6 @@ fn get_diagnostics_boot_durations() -> HashMap<String, u64> {
             "/rd:true",
             "/f:RenderedXml",
         ])
-        .creation_flags(CREATE_NO_WINDOW)
         .output();
 
     if let Ok(result) = out {
@@ -226,9 +219,8 @@ fn get_approved_maps() -> (HashMap<String, bool>, HashMap<String, bool>) {
     let mut hklm = HashMap::new();
 
     // 1. HKLM StartupApproved\Run
-    if let Ok(out) = Command::new("reg.exe")
+    if let Ok(out) = crate::process::hidden_command("reg.exe")
         .args(["query", HKLM_APPROVED_KEY])
-        .creation_flags(CREATE_NO_WINDOW)
         .output()
     {
         if out.status.success() {
@@ -237,9 +229,8 @@ fn get_approved_maps() -> (HashMap<String, bool>, HashMap<String, bool>) {
     }
 
     // 2. HKCU StartupApproved\Run (prioridade sobre HKLM para o usuário atual)
-    if let Ok(out) = Command::new("reg.exe")
+    if let Ok(out) = crate::process::hidden_command("reg.exe")
         .args(["query", HKCU_APPROVED_KEY])
-        .creation_flags(CREATE_NO_WINDOW)
         .output()
     {
         if out.status.success() {
@@ -266,9 +257,8 @@ pub fn list_startup_items() -> Result<Vec<StartupItem>, String> {
     let mut items = Vec::new();
 
     // 1. HKCU\Run
-    if let Ok(out) = Command::new("reg.exe")
+    if let Ok(out) = crate::process::hidden_command("reg.exe")
         .args(["query", HKCU_RUN_KEY])
-        .creation_flags(CREATE_NO_WINDOW)
         .output()
     {
         if out.status.success() {
@@ -283,9 +273,8 @@ pub fn list_startup_items() -> Result<Vec<StartupItem>, String> {
     }
 
     // 2. HKLM\Run
-    if let Ok(out) = Command::new("reg.exe")
+    if let Ok(out) = crate::process::hidden_command("reg.exe")
         .args(["query", HKLM_RUN_KEY])
-        .creation_flags(CREATE_NO_WINDOW)
         .output()
     {
         if out.status.success() {
@@ -333,7 +322,7 @@ pub fn set_startup_item_enabled(
     // e 03 no primeiro byte para Desativado em HKCU\...\StartupApproved\Run
     let hex_val = startup_approved_hex(enabled)?;
 
-    let out = Command::new("reg.exe")
+    let out = crate::process::hidden_command("reg.exe")
         .args([
             "add",
             approved_key,
@@ -345,7 +334,6 @@ pub fn set_startup_item_enabled(
             hex_val.as_str(),
             "/f",
         ])
-        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("Não foi possível alterar a inicialização: {e}"))?;
 

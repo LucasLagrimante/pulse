@@ -1,9 +1,5 @@
 use serde::Serialize;
-use std::os::windows::process::CommandExt;
-use std::process::Command;
 use std::time::Instant;
-
-const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -33,8 +29,7 @@ if ($best) {
   '{}'
 }
 "#;
-    let result = Command::new("powershell.exe")
-        .creation_flags(CREATE_NO_WINDOW)
+    let result = crate::process::hidden_command("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .output();
     let Ok(output) = result else {
