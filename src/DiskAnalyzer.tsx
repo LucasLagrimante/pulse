@@ -239,6 +239,8 @@ export function DiskAnalyzer({
   const [progress, setProgress] = useState<DiskScanProgress | null>(null);
   const [scanResult, setScanResult] = useState<DiskItemNode | null>(null);
   const [cachedScan, setCachedScan] = useState<CachedDiskScan | null>(null);
+  const [isRestoringScan, setIsRestoringScan] = useState(true);
+  const [areDrivesLoading, setAreDrivesLoading] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -345,7 +347,10 @@ export function DiskAnalyzer({
           applyScanResult(cache.result);
         }
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        if (!unmounted) setIsRestoringScan(false);
+      });
     return () => { unmounted = true; };
   }, []);
 
@@ -374,6 +379,9 @@ export function DiskAnalyzer({
           setDrives([{ path: "C:\\", label: "Disco Local (C:)" }]);
           setSelectedPath("C:\\");
         }
+      })
+      .finally(() => {
+        if (!unmounted) setAreDrivesLoading(false);
       });
 
     return () => {
@@ -1110,7 +1118,16 @@ export function DiskAnalyzer({
             </div>
 
             <div className="disk-tree-body">
-              {scanResult ? (
+              {(isRestoringScan || areDrivesLoading) && !scanResult ? (
+                <div className="disk-panel-loading" role="status" aria-live="polite">
+                  <span className="disk-panel-loading-mark" aria-hidden="true"><ModuleIcon index={3} /></span>
+                  <div>
+                    <strong>CARREGANDO ANÁLISE LOCAL</strong>
+                    <span>Restaurando a árvore da última varredura…</span>
+                  </div>
+                  <i className="disk-panel-loading-line" aria-hidden="true" />
+                </div>
+              ) : scanResult ? (
                 typeFilter === "files" ? (
                   renderTopFilesTable()
                 ) : (
@@ -1176,6 +1193,16 @@ export function DiskAnalyzer({
               className="treemap-canvas"
               onMouseLeave={() => setHoveredNode(null)}
             >
+              {(isRestoringScan || areDrivesLoading) && !scanResult && (
+                <div className="disk-panel-loading" role="status" aria-live="polite">
+                  <span className="disk-panel-loading-mark" aria-hidden="true"><ModuleIcon index={3} /></span>
+                  <div>
+                    <strong>PREPARANDO MAPA DE BLOCOS</strong>
+                    <span>Organizando os dados da análise em cache…</span>
+                  </div>
+                  <i className="disk-panel-loading-line" aria-hidden="true" />
+                </div>
+              )}
               {treemapBoxes.map((box, idx) => {
                 const isDir = box.node.isDir;
                 const isAggregate = isAggregateNode(box.node);

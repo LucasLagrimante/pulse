@@ -207,8 +207,6 @@ pub fn parse_drives_json(json_str: &str) -> Vec<DriveInfo> {
 pub fn get_system_drives() -> Vec<DriveInfo> {
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
         let script = r#"
             Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 -or $_.DriveType -eq 2 } | ForEach-Object {
                 @{
@@ -219,8 +217,7 @@ pub fn get_system_drives() -> Vec<DriveInfo> {
                 }
             } | ConvertTo-Json -Compress
         "#;
-        if let Ok(output) = std::process::Command::new("powershell.exe")
-            .creation_flags(CREATE_NO_WINDOW)
+        if let Ok(output) = crate::process::hidden_command("powershell.exe")
             .args(["-NoProfile", "-NonInteractive", "-Command", script])
             .output()
         {
@@ -460,6 +457,7 @@ fn partial_children(
     kept
 }
 
+#[allow(clippy::too_many_arguments)]
 fn directory_snapshot(
     id: &str,
     name: &str,
@@ -930,7 +928,7 @@ pub fn open_disk_item(path: String, reveal: bool) -> Result<(), String> {
 
     #[cfg(windows)]
     {
-        let mut command = std::process::Command::new("explorer.exe");
+        let mut command = crate::process::hidden_command("explorer.exe");
         if reveal {
             command.arg(format!("/select,{}", p.display()));
         } else {

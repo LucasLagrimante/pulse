@@ -71,8 +71,7 @@ pub fn load_custom_folders() -> Vec<String> {
             return folders;
         }
     }
-    // Semente padrão solicitada: D:\Images\Screenshots
-    vec!["D:\\Images\\Screenshots".to_string()]
+    Vec::new()
 }
 
 pub fn save_custom_folders(folders: &[String]) -> Result<(), String> {
@@ -129,14 +128,36 @@ fn ignored(path: &Path) -> bool {
         .any(|c| IGNORED.iter().any(|x| c.as_os_str() == *x))
 }
 
+fn default_roots() -> Vec<PathBuf> {
+    let user_profile = env::var_os("USERPROFILE").map(PathBuf::from);
+    let known_folders: [fn() -> Option<PathBuf>; 6] = [
+        dirs::download_dir,
+        dirs::desktop_dir,
+        dirs::document_dir,
+        dirs::picture_dir,
+        dirs::video_dir,
+        dirs::audio_dir,
+    ];
+
+    known_folders
+        .into_iter()
+        .zip(FOLDERS)
+        .filter_map(|(known_folder, fallback_name)| {
+            known_folder().or_else(|| {
+                user_profile
+                    .as_ref()
+                    .map(|profile| profile.join(fallback_name))
+            })
+        })
+        .collect()
+}
+
 fn roots() -> Vec<PathBuf> {
-    let mut all: Vec<PathBuf> = env::var_os("USERPROFILE")
-        .map(|h| FOLDERS.iter().map(|n| PathBuf::from(&h).join(n)).collect())
-        .unwrap_or_default();
+    let mut all = default_roots();
 
     for custom in load_custom_folders() {
         let p = PathBuf::from(&custom);
-        if !all.contains(&p) {
+        if !all.iter().any(|root| root == &p) {
             all.push(p);
         }
     }
@@ -348,12 +369,22 @@ fn validated(path: &str) -> Result<PathBuf, String> {
     Ok(p)
 }
 
+#[cfg(windows)]
+fn explorer_select_argument(path: &Path) -> String {
+    format!(r#"/select,"{}""#, path.display())
+}
+
 fn launch(path: &Path, reveal: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
-        let mut command = std::process::Command::new("explorer.exe");
+        use std::os::windows::process::CommandExt;
+
+        let mut command = crate::process::hidden_command("explorer.exe");
         if reveal {
-            command.arg(format!("/select,{}", path.display()));
+            // Explorer parses this switch from the raw command line and expects
+            // the selected path immediately after the comma. Supplying two argv
+            // entries makes it ignore the path and open the default folder.
+            command.raw_arg(explorer_select_argument(path));
         } else {
             command.arg(path);
         }
@@ -458,5 +489,22 @@ mod tests {
         assert!(folders
             .iter()
             .any(|f| f.eq_ignore_ascii_case("d:\\images\\screenshots")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn default_roots_use_the_configured_windows_known_folders() {
+        let pictures = dirs::picture_dir().expect("Windows Pictures folder should resolve");
+        assert!(default_roots().contains(&pictures));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn explorer_select_quotes_the_exact_path_after_the_comma() {
+        let path = Path::new(r"D:\Images\Screenshots\Captura de tela 2026-09-14 164716.png");
+        assert_eq!(
+            explorer_select_argument(path),
+            r#"/select,"D:\Images\Screenshots\Captura de tela 2026-09-14 164716.png""#
+        );
     }
 }

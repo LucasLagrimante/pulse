@@ -230,7 +230,7 @@ fn measured_size(path: &Path, depth: usize, budget: &mut ScanBudget) -> u64 {
     }
     if metadata.is_file() {
         budget.files += 1;
-        if budget.files % 15 == 0 {
+        if budget.files.is_multiple_of(15) {
             std::thread::yield_now();
         }
         return metadata.len();
@@ -313,7 +313,7 @@ fn analyze_definition(definition: CleanupDefinition) -> CleanupCategory {
         }
         partial |= budget.partial;
     }
-    largest_items.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    largest_items.sort_by_key(|item| std::cmp::Reverse(item.size_bytes));
     largest_items.truncate(MAX_LARGEST_ITEMS);
 
     CleanupCategory {
@@ -378,7 +378,7 @@ fn remove_entry(path: &Path, result: &mut CleanupResult, visited: &mut usize) {
         }
     }
     *visited += 1;
-    if *visited % 15 == 0 {
+    if (*visited).is_multiple_of(15) {
         std::thread::yield_now();
     }
 }
