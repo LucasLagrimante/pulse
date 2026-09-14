@@ -224,9 +224,80 @@ describe("Formatters and Components", () => {
       clearIntervalSpy.mockRestore();
       vi.clearAllMocks();
     });
+
+    it("shows Windows input/output devices and applies a selected default", async () => {
+      vi.clearAllMocks();
+      const inventory = {
+        input: [{ id: "mic-1", name: "Microfone USB", isDefault: true }],
+        output: [{ id: "speaker-1", name: "Alto-falantes USB", isDefault: true }, { id: "speaker-2", name: "Headset", isDefault: false }],
+        inputDefaultId: "mic-1",
+        outputDefaultId: "speaker-1",
+      };
+      vi.mocked(invoke).mockImplementation((command: string, args?: unknown) => {
+        if (command === "get_audio_devices") return Promise.resolve(inventory) as never;
+        if (command === "set_default_audio_device") {
+          expect(args).toEqual({ direction: "output", deviceId: "speaker-2" });
+          return Promise.resolve({ ...inventory, outputDefaultId: "speaker-2" }) as never;
+        }
+        if (command === "get_system_overview") {
+          return Promise.resolve({
+            cpuPercent: 12,
+            memoryUsedGb: 4,
+            memoryTotalGb: 16,
+            diskUsedGb: 100,
+            diskTotalGb: 500,
+            topProcesses: [],
+          }) as never;
+        }
+        return Promise.resolve() as never;
+      });
+
+      render(<TrayFlyout onOpenMain={vi.fn()} />);
+      const output = await screen.findByRole("combobox", { name: "Dispositivo de saída padrão" });
+      expect(screen.getByRole("combobox", { name: "Dispositivo de entrada padrão" })).toHaveValue("mic-1");
+      expect(output).toHaveValue("speaker-1");
+      expect(screen.getByRole("option", { name: "Headset" })).toBeInTheDocument();
+
+      fireEvent.change(output, { target: { value: "speaker-2" } });
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith("set_default_audio_device", {
+          direction: "output",
+          deviceId: "speaker-2",
+        });
+        expect(output).toHaveValue("speaker-2");
+      });
+    });
   });
 
   describe("DiskAnalyzer scan reconciliation", () => {
+    it("shows loading feedback inside both disk panels while restoring cached data", async () => {
+      let resolveDrives!: (drives: unknown) => void;
+      vi.mocked(invoke).mockImplementation((command: string) => {
+        if (command === "get_system_drives") {
+          return new Promise(resolve => { resolveDrives = resolve; }) as never;
+        }
+        if (command === "get_disk_scan_state") {
+          return Promise.resolve({ isScanning: false, progress: null, result: null, error: null }) as never;
+        }
+        return Promise.resolve(null) as never;
+      });
+
+      render(<DiskAnalyzer />);
+
+      expect(screen.getByText("CARREGANDO ANÁLISE LOCAL")).toBeInTheDocument();
+      expect(screen.getByText("PREPARANDO MAPA DE BLOCOS")).toBeInTheDocument();
+
+      await waitFor(() => {
+        expect(screen.getByText("CARREGANDO ANÁLISE LOCAL")).toBeInTheDocument();
+      });
+
+      resolveDrives([{ path: "C:\\", label: "Disco Local (C:)" }]);
+      await waitFor(() => {
+        expect(screen.queryByText("CARREGANDO ANÁLISE LOCAL")).not.toBeInTheDocument();
+        expect(screen.getByText("Nenhuma varredura realizada")).toBeInTheDocument();
+      });
+    });
+
     it("identifies a restored disk analysis as cache with its completion time", async () => {
       const completedAtUnixMs = Date.now() - 2 * 24 * 60 * 60 * 1000;
       vi.mocked(invoke).mockImplementation((command: string) => {

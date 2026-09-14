@@ -91,6 +91,25 @@ button:disabled { opacity: .5; cursor: wait; }
 .tray-flyout-container { background: #191c20; border-color: #485461; overflow-y: auto; padding: 16px; }
 .flyout-metrics { gap: 6px; padding: 8px 0; }
 .flyout-metric-card { gap: 4px; padding: 8px 12px; }
+.flyout-quotas { flex-shrink: 0; padding: 9px 0 10px; border-top: 1px solid #272d29; }
+.flyout-quota-list { display: flex; flex-direction: column; gap: 7px; }
+.flyout-quota-card { display: flex; flex-direction: column; gap: 7px; padding: 9px 10px; border: 1px solid #30353b; border-radius: 9px; background: #202328; }
+.flyout-quota-card.is-unavailable { opacity: .78; }
+.flyout-quota-card header { display: flex; align-items: center; gap: 7px; }
+.flyout-quota-card header strong { color: #e0e4df; font-size: .7rem; }
+.flyout-quota-card header small { margin-left: auto; color: #879097; font: .54rem "Cascadia Mono", Consolas, monospace; text-transform: uppercase; }
+.flyout-quota-mark { display: grid; width: 19px; height: 19px; place-items: center; border: 1px solid #5c879d; border-radius: 50%; color: #9fc6d8; font: 700 .65rem "Cascadia Mono", Consolas, monospace; }
+.flyout-training-credit { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 3px 6px; border: 1px solid #3c6552; border-radius: 999px; color: #b9e3c8; background: #1c2b23; font: 600 .58rem "Cascadia Mono", Consolas, monospace; }
+.flyout-training-credit > span { color: #69c995; font-size: .5rem; }
+.flyout-quota-window { display: flex; flex-direction: column; gap: 3px; }
+.flyout-quota-window > div:first-child { display: flex; justify-content: space-between; gap: 8px; color: #c8ceca; font-size: .61rem; }
+.flyout-quota-window > div:first-child small { color: #aeb6bd; font: .58rem "Cascadia Mono", Consolas, monospace; }
+.flyout-quota-track { height: 4px; overflow: hidden; border-radius: 99px; background: #35393e; }
+.flyout-quota-track i { display: block; height: 100%; border-radius: inherit; background: #55b7ef; }
+.flyout-quota-window em { color: #848d95; font: normal .52rem "Cascadia Mono", Consolas, monospace; text-align: right; }
+.flyout-openrouter-credit { display: flex; align-items: baseline; justify-content: space-between; padding-top: 2px; color: #8bc6a7; font: .58rem "Cascadia Mono", Consolas, monospace; }
+.flyout-openrouter-credit strong { color: #bde4cc; font-size: .72rem; }
+.flyout-quota-card.is-unavailable p, .flyout-quota-empty { margin: 0; color: #9099a2; font-size: .61rem; line-height: 1.35; }
 .flyout-processes { flex: 1 0 3rem; padding: 8px 0; }
 .pulse-loading { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 24px; color: #f0ede6; }
 .pulse-loading .pulse-mark { width: 96px; height: 96px; }

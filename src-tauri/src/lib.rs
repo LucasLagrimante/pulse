@@ -1,13 +1,16 @@
 pub mod debug;
+pub mod audio;
 pub mod disk_analyzer;
 pub mod disk_cleanup;
 pub mod domain;
 pub mod performance;
+pub mod process;
 pub mod recent_files;
 pub mod single_instance;
 pub mod startup;
 pub mod startup_inventory;
 pub mod storage;
+pub mod subscription_usage;
 pub mod system_overview;
 pub mod tray;
 
@@ -72,6 +75,8 @@ pub fn run() {
             debug::get_debug_audit_info,
             debug::clear_debug_log,
             debug::record_client_error,
+            audio::get_audio_devices,
+            audio::set_default_audio_device,
             startup::get_startup_registration,
             startup::set_startup_registration,
             system_overview::get_system_overview,
@@ -103,7 +108,11 @@ pub fn run() {
             disk_analyzer::get_cached_disk_scan,
             disk_analyzer::open_disk_item,
             disk_cleanup::analyze_disk_cleanup,
-            disk_cleanup::clean_disk_categories
+            disk_cleanup::clean_disk_categories,
+            subscription_usage::get_subscription_usage,
+            subscription_usage::get_subscription_settings,
+            subscription_usage::set_openrouter_api_key,
+            subscription_usage::clear_openrouter_api_key
         ])
         .run(tauri::generate_context!())
         .expect("error while running Pulse");

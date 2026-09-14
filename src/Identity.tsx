@@ -12,6 +12,7 @@ const paths = [
   "M2 13h5l3-8 4 14 3-6h5",
   "M4 4h16v16H4z M4 14h16 M15 17h2",
   "M12 3l8 4v6c0 4-8 8-8 8s-8-4-8-8V7z M8 12l3 3 5-6",
+  "M4 17V9 M10 17V5 M16 17v-4 M3 21h18 M19 3v6 M16 6h6",
   "M8 6l-5 6 5 6 M16 6l5 6-5 6",
 ];
 export function ModuleIcon({ index }: { index: number }) {

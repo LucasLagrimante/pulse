@@ -13,6 +13,7 @@ import {
 } from "./Charts";
 import { DiskAnalyzer } from "./DiskAnalyzer";
 import { DiskCleanup } from "./DiskCleanup";
+import { formatReset, safePercent, SubscriptionUsage, type ProviderUsage } from "./SubscriptionUsage";
 
 const navigationItems = [
   "Visão geral",
@@ -20,6 +21,7 @@ const navigationItems = [
   "Desempenho",
   "Armazenamento",
   "Inicialização e segurança",
+  "Cotas de IA",
   "Debug",
 ];
 const INITIAL_BOOT_MINIMUM_MS = 2200;
@@ -90,6 +92,18 @@ export type SystemOverview = {
   topProcesses: TopProcess[];
   sampledAtUnixMs: number;
   source: string;
+};
+export type AudioDevice = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+};
+export type AudioDeviceInventory = {
+  input: AudioDevice[];
+  output: AudioDevice[];
+  inputDefaultId?: string | null;
+  outputDefaultId?: string | null;
+  unavailableReason?: string | null;
 };
 export type RecentFile = {
   path: string;
@@ -162,6 +176,11 @@ const copy: Record<string, { eyebrow: string; title: string; intro: string }> = 
     eyebrow: "INICIALIZAÇÃO E SEGURANÇA",
     title: "Inicialização — controle local",
     intro: "Inventário do boot do Windows e alterações somente onde suportadas.",
+  },
+  "Cotas de IA": {
+    eyebrow: "COTAS DE IA",
+    title: "Assinatura — limites disponíveis",
+    intro: "Cotas registradas localmente pelas ferramentas de IA, sem expor credenciais.",
   },
   Debug: {
     eyebrow: "DEBUG / AUDITORIA",
@@ -639,6 +658,11 @@ export function TrayFlyout({
   const [processError, setProcessError] = useState("");
   const [cpuHistory, setCpuHistory] = useState<number[]>([]);
   const [ramHistory, setRamHistory] = useState<number[]>([]);
+  const [subscriptionProviders, setSubscriptionProviders] = useState<ProviderUsage[]>([]);
+  const [subscriptionScanStatus, setSubscriptionScanStatus] = useState("idle");
+  const [audioDevices, setAudioDevices] = useState<AudioDeviceInventory | null>(null);
+  const [audioBusy, setAudioBusy] = useState<"input" | "output" | null>(null);
+  const [audioError, setAudioError] = useState("");
 
   const loadData = async () => {
     try {
@@ -676,6 +700,71 @@ export function TrayFlyout({
     return () => window.clearInterval(timer);
   }, [isForeground]);
 
+  useEffect(() => {
+    if (isForeground !== true) return;
+    let disposed = false;
+    void invoke<AudioDeviceInventory>("get_audio_devices")
+      .then(result => {
+        if (disposed) return;
+        setAudioDevices(result && Array.isArray(result.input) && Array.isArray(result.output)
+          ? result
+          : {
+              input: [],
+              output: [],
+              unavailableReason: "O Windows não retornou a lista de dispositivos de áudio.",
+            });
+      })
+      .catch(error => {
+        if (!disposed) {
+          setAudioDevices({
+            input: [],
+            output: [],
+            unavailableReason: typeof error === "string" ? error : "Não foi possível consultar o Core Audio.",
+          });
+        }
+      });
+    return () => { disposed = true; };
+  }, [isForeground]);
+
+  const changeAudioDevice = async (direction: "input" | "output", deviceId: string) => {
+    if (!deviceId || audioBusy) return;
+    setAudioBusy(direction);
+    setAudioError("");
+    try {
+      const result = await invoke<AudioDeviceInventory>("set_default_audio_device", {
+        direction,
+        deviceId,
+      });
+      if (result && Array.isArray(result.input) && Array.isArray(result.output)) {
+        setAudioDevices(result);
+      } else {
+        setAudioError("O Windows não confirmou a alteração do dispositivo.");
+      }
+    } catch (error) {
+      setAudioError(typeof error === "string" ? error : "O Windows não permitiu alterar o dispositivo padrão.");
+    } finally {
+      setAudioBusy(null);
+    }
+  };
+
+  useEffect(() => {
+    if (isForeground !== true) return;
+    let disposed = false;
+    const readQuotas = async () => {
+      for (let attempt = 0; attempt < 12 && !disposed; attempt += 1) {
+        try {
+          const result = await invoke<{ providers?: ProviderUsage[]; scanStatus?: string }>("get_subscription_usage", { forceRefresh: false });
+          if (Array.isArray(result?.providers)) setSubscriptionProviders(result.providers);
+          setSubscriptionScanStatus(result?.scanStatus || "ready");
+          if (result?.scanStatus !== "running") break;
+          await new Promise(resolve => window.setTimeout(resolve, 700));
+        } catch { break; }
+      }
+    };
+    void readQuotas();
+    return () => { disposed = true; };
+  }, [isForeground]);
+
   const memoryPercent =
     overview && typeof overview.memoryTotalGb === "number" && overview.memoryTotalGb > 0 && typeof overview.memoryUsedGb === "number"
       ? Math.round((overview.memoryUsedGb / overview.memoryTotalGb) * 100)
@@ -686,6 +775,8 @@ export function TrayFlyout({
       ? Math.round((overview.diskUsedGb / overview.diskTotalGb) * 100)
       : undefined;
   const diskHealth = getDiskCapacityHealth(diskPercent);
+  const openrouterCredits = subscriptionProviders.find(provider => provider.id === "openrouter")?.creditsRemaining;
+  const hasQuotaResult = subscriptionProviders.some(provider => provider.status === "available" && (provider.windows?.length > 0 || provider.creditsRemaining != null));
 
   const handleClose = async () => {
     try {
@@ -731,6 +822,11 @@ export function TrayFlyout({
             <h2>Pulse</h2>
             <p>PAINEL RÁPIDO</p>
           </div>
+          {typeof openrouterCredits === "number" && Number.isFinite(openrouterCredits) && (
+            <span className="flyout-training-credit" title="Créditos OpenRouter disponíveis" aria-label="Créditos OpenRouter disponíveis">
+              <span aria-hidden="true">◉</span>{openrouterCredits.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}
+            </span>
+          )}
         </div>
         <button
           aria-label="Fechar painel rápido"
@@ -789,6 +885,84 @@ export function TrayFlyout({
             ariaLabel="Gráfico de alocação de disco no tray"
           />
         </div>
+      </section>
+
+      <section className="flyout-audio" aria-labelledby="flyout-audio-title">
+        <div className="flyout-section-title">
+          <span id="flyout-audio-title">ÁUDIO DO WINDOWS</span>
+          <small>PADRÕES</small>
+        </div>
+        {audioDevices?.unavailableReason ? (
+          <p className="flyout-audio-unavailable" role="status">{audioDevices.unavailableReason}</p>
+        ) : (
+          <div className="flyout-audio-grid">
+            <label className="flyout-audio-field">
+              <span>SAÍDA PADRÃO</span>
+              <select
+                aria-label="Dispositivo de saída padrão"
+                value={audioDevices?.outputDefaultId || ""}
+                disabled={!audioDevices || audioDevices.output.length === 0 || audioBusy != null}
+                onChange={event => void changeAudioDevice("output", event.target.value)}
+              >
+                {!audioDevices && <option value="">Consultando dispositivos…</option>}
+                {audioDevices?.output.length === 0 && <option value="">Nenhuma saída disponível</option>}
+                {audioDevices?.output.map(device => <option value={device.id} key={device.id}>{device.name}</option>)}
+              </select>
+            </label>
+            <label className="flyout-audio-field">
+              <span>ENTRADA PADRÃO</span>
+              <select
+                aria-label="Dispositivo de entrada padrão"
+                value={audioDevices?.inputDefaultId || ""}
+                disabled={!audioDevices || audioDevices.input.length === 0 || audioBusy != null}
+                onChange={event => void changeAudioDevice("input", event.target.value)}
+              >
+                {!audioDevices && <option value="">Consultando dispositivos…</option>}
+                {audioDevices?.input.length === 0 && <option value="">Nenhuma entrada disponível</option>}
+                {audioDevices?.input.map(device => <option value={device.id} key={device.id}>{device.name}</option>)}
+              </select>
+            </label>
+          </div>
+        )}
+        {audioBusy && <p className="flyout-audio-status" role="status">Aplicando dispositivo de {audioBusy === "input" ? "entrada" : "saída"}…</p>}
+        {audioError && <p className="flyout-audio-error" role="alert">{audioError}</p>}
+      </section>
+
+      <section className="flyout-quotas" aria-label="Cotas de assinaturas de IA">
+        <div className="flyout-section-title">
+          <span>COTAS DE IA</span>
+          <small>{subscriptionProviders.filter(provider => provider.status === "available").length || "—"} DISPONÍVEIS</small>
+        </div>
+        {subscriptionScanStatus === "running" && !hasQuotaResult ? <p className="flyout-quota-empty">Consultando fontes locais…</p> : subscriptionProviders.length > 0 ? (
+          <div className="flyout-quota-list">
+            {subscriptionProviders.filter(provider => subscriptionScanStatus !== "running" || provider.status === "available" && (provider.windows?.length > 0 || provider.creditsRemaining != null)).map(provider => {
+              const available = provider.status === "available";
+              return (
+                <article className={`flyout-quota-card${available ? "" : " is-unavailable"}`} key={provider.id}>
+                  <header>
+                    <span className="flyout-quota-mark">{provider.id === "codex" ? "◎" : provider.provider.charAt(0)}</span>
+                    <strong>{provider.provider}</strong>
+                    <small>{available ? (provider.plan || "ATUAL") : "INDISPONÍVEL"}</small>
+                  </header>
+                  {available && provider.windows.slice(0, 2).map(window => {
+                    const remaining = safePercent(window.remainingPercent);
+                    return (
+                      <div className="flyout-quota-window" key={window.id}>
+                        <div><span>{window.label}</span><small>{remaining == null ? "Indisponível" : `${Math.round(remaining)}% restante`}</small></div>
+                        {remaining != null && <div className="flyout-quota-track"><i style={{ width: `${remaining}%` }} /></div>}
+                        <em>{window.resetDescription || formatReset(window.resetsAtUnixSeconds)}</em>
+                      </div>
+                    );
+                  })}
+                  {available && provider.id === "openrouter" && provider.creditsRemaining != null && (
+                    <div className="flyout-openrouter-credit"><span>CRÉDITOS</span><strong>{provider.creditsRemaining.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</strong></div>
+                  )}
+                  {!available && <p>{provider.unavailableReason || "A fonte oficial não expôs a cota."}</p>}
+                </article>
+              );
+            })}
+          </div>
+        ) : <p className="flyout-quota-empty">Consultando os provedores locais…</p>}
       </section>
 
       <section className="flyout-processes">
@@ -877,10 +1051,7 @@ function App() {
   const [booting, setBooting] = useState(true);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [filesLoading, setFilesLoading] = useState(true);
-  const [toast, setToast] = useState<ToastStatus | null>({
-    type: "loading",
-    message: "Inicializando telemetria e arquivos recentes…",
-  });
+  const [toast, setToast] = useState<ToastStatus | null>(null);
   const [error, setError] = useState("");
 
   const showToast = (
@@ -1060,9 +1231,7 @@ function App() {
     try {
       const result = await invoke<RecentFile[]>("list_recent_files", { limit: 50 });
       setFiles(Array.isArray(result) ? result : []);
-      if (isInitial) {
-        showToast("success", "Sistema e arquivos carregados com sucesso", 2500);
-      } else {
+      if (!isInitial) {
         showToast("success", "Arquivos recentes atualizados", 2000);
       }
     } catch {
@@ -1292,7 +1461,7 @@ function App() {
 
   useEffect(() => {
     if (activeArea === "Armazenamento") {
-      void loadFiles();
+      void loadFiles(true);
       void loadCustomFolders();
     }
     if (activeArea === "Desempenho") {
@@ -2071,6 +2240,8 @@ function App() {
                 </section>
               </section>
             )}
+
+            {activeArea === "Cotas de IA" && <SubscriptionUsage />}
 
             {activeArea === "Debug" && (
               <section className="module-dashboard debug-dashboard">
