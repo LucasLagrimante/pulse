@@ -69,6 +69,8 @@ fn category_for(operation: &str) -> &'static str {
         "system_action"
     } else if operation.contains("file") || operation.contains("disk") {
         "storage"
+    } else if operation.contains("subscription") || operation.contains("quota") {
+        "telemetry"
     } else if operation.contains("interface") {
         "interface"
     } else if operation.contains("performance") || operation.contains("overview") {
@@ -139,6 +141,14 @@ pub fn record(operation: &str, duration_ms: u128, result: Result<(), &str>) {
         Ok(()) => ("ok", "Concluído"),
         Err(message) => ("error", message),
     };
+    record_message(operation, duration_ms, outcome, message);
+}
+
+pub fn record_message(operation: &str, duration_ms: u128, outcome: &str, message: &str) {
+    if !get_debug_mode() {
+        return;
+    }
+    let outcome = if outcome == "error" { "error" } else { "ok" };
     push_entry(operation, duration_ms, outcome, message, "rust-backend");
 }
 
@@ -215,5 +225,6 @@ mod tests {
         assert_eq!(category_for("system_overview"), "telemetry");
         assert_eq!(category_for("recent_files"), "storage");
         assert_eq!(category_for("terminate_process"), "system_action");
+        assert_eq!(category_for("subscription_usage_claude"), "telemetry");
     }
 }

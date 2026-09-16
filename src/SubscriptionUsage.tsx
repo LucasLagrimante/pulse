@@ -1,5 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ModuleIcon } from "./Identity";
+import { ProviderIcon } from "./ProviderIcon";
 
 export type QuotaWindow = {
   id: string;
@@ -42,8 +45,6 @@ type SubscriptionSettings = {
   openrouterMasked?: string | null;
 };
 
-const PROVIDER_MARKS: Record<string, string> = { claude: "C", codex: "◎", antigravity: "A" };
-
 export function safePercent(value: number | null | undefined): number | null {
   if (typeof value !== "number" || !Number.isFinite(value)) return null;
   return Math.max(0, Math.min(100, value));
@@ -69,6 +70,19 @@ function planLabel(plan: string | null | undefined) {
 
 function measuredNumber(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+export function hasMeasuredQuota(provider: ProviderUsage): boolean {
+  const windows = Array.isArray(provider.windows) ? provider.windows : [];
+  const hasWindow = windows.some(window => safePercent(window.remainingPercent) != null && !window.unavailableReason);
+  return provider.status === "available" && (hasWindow || measuredNumber(provider.creditsRemaining) != null);
+}
+
+export function formatUsd(value: number | null | undefined): string {
+  const measured = measuredNumber(value);
+  return measured == null
+    ? "Indisponível"
+    : `$ ${measured.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
 }
 
 function QuotaMeter({ quota, providerId }: { quota: QuotaWindow; providerId: string }) {
@@ -104,19 +118,21 @@ function QuotaMeter({ quota, providerId }: { quota: QuotaWindow; providerId: str
   );
 }
 
-function ProviderCard({ provider }: { provider: ProviderUsage }) {
+function ProviderCard({ provider, onConfigureKey }: { provider: ProviderUsage; onConfigureKey?: () => void }) {
   const windows = Array.isArray(provider.windows) ? provider.windows : [];
   const plan = planLabel(provider.plan);
   const credits = measuredNumber(provider.creditsRemaining);
   const creditsTotal = measuredNumber(provider.creditsTotal);
   const creditsUsed = measuredNumber(provider.creditsUsed);
-  const available = provider.status === "available" && (windows.length > 0 || credits != null);
+  const available = hasMeasuredQuota(provider);
   const resetCredits = measuredNumber(provider.resetCreditsAvailable);
   const sampledAt = measuredNumber(provider.sampledAtUnixMs);
   return (
     <article className={`quota-provider-card provider-${provider.id}${available ? "" : " is-unavailable"}`}>
       <header className="quota-provider-heading">
-        <span className="quota-provider-mark" aria-hidden="true">{PROVIDER_MARKS[provider.id] || provider.provider?.charAt(0) || "?"}</span>
+        <span className="quota-provider-mark" aria-hidden="true">
+          <ProviderIcon providerId={provider.id} size={20} />
+        </span>
         <div>
           <div className="quota-provider-title">
             <strong>{provider.provider || "Provedor desconhecido"}</strong>
@@ -124,27 +140,63 @@ function ProviderCard({ provider }: { provider: ProviderUsage }) {
           </div>
           <small>{provider.subtitle || "Assinatura de IA"}</small>
         </div>
-        <span className={`quota-status ${available ? "is-online" : ""}`}>{available ? "ATUAL" : "INDISPONÍVEL"}</span>
+        <div className="quota-header-end">
+          {provider.id === "openrouter" && onConfigureKey && (
+            <button
+              type="button"
+              className="quota-mini-action"
+              onClick={onConfigureKey}
+              title="Configurar chave de API do OpenRouter"
+              aria-label="Configurar chave OpenRouter"
+            >
+              Chave
+            </button>
+          )}
+          <span className={`quota-status ${available ? "is-online" : ""}`}>{available ? "ATUAL" : "INDISPONÍVEL"}</span>
+        </div>
       </header>
 
       {available ? (
         <div className="quota-window-list">
           {windows.length > 0 ? windows.map((quota, index) => <QuotaMeter key={quota.id || `${provider.id}-${index}`} quota={quota} providerId={provider.provider} />) : (
-            <div className="quota-credit-summary"><strong>Créditos disponíveis</strong><b>{credits?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</b></div>
+            <div className="quota-credit-summary">
+              <strong>{provider.id === "openrouter" ? "Saldo disponível" : "Créditos disponíveis"}</strong>
+              <b>{credits != null ? (provider.id === "openrouter" ? formatUsd(credits) : credits.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })) : "Indisponível"}</b>
+            </div>
           )}
         </div>
       ) : (
         <div className="quota-provider-empty" role="status">
           <strong>Cota não confirmada</strong>
           <p>{provider.unavailableReason || "A fonte oficial não retornou percentuais."}</p>
+          {provider.id === "openrouter" && onConfigureKey && (
+            <button type="button" className="quota-card-setup-btn" onClick={onConfigureKey}>
+              CONFIGURAR CHAVE OPENROUTER
+            </button>
+          )}
         </div>
       )}
 
       {(credits != null || creditsTotal != null || creditsUsed != null || resetCredits != null) && (
         <div className="quota-value-row">
-          {credits != null && <span><small>{provider.id === "openrouter" ? "CRÉDITOS DISPONÍVEIS" : "USO EXTRA"}</small><strong>{credits.toLocaleString("pt-BR", { maximumFractionDigits: 4 })} créditos</strong></span>}
-          {creditsTotal != null && <span><small>LIMITE TOTAL</small><strong>{creditsTotal.toLocaleString("pt-BR", { maximumFractionDigits: 4 })} créditos</strong></span>}
-          {creditsUsed != null && <span><small>USO ACUMULADO</small><strong>{creditsUsed.toLocaleString("pt-BR", { maximumFractionDigits: 4 })} créditos</strong></span>}
+          {credits != null && (
+            <span>
+              <small>{provider.id === "openrouter" ? "SALDO DISPONÍVEL (USD)" : "USO EXTRA"}</small>
+              <strong>{provider.id === "openrouter" ? formatUsd(credits) : `${credits.toLocaleString("pt-BR", { maximumFractionDigits: 4 })} créditos`}</strong>
+            </span>
+          )}
+          {creditsTotal != null && (
+            <span>
+              <small>{provider.id === "openrouter" ? "LIMITE TOTAL (USD)" : "LIMITE TOTAL"}</small>
+              <strong>{provider.id === "openrouter" ? formatUsd(creditsTotal) : `${creditsTotal.toLocaleString("pt-BR", { maximumFractionDigits: 4 })} créditos`}</strong>
+            </span>
+          )}
+          {creditsUsed != null && (
+            <span>
+              <small>{provider.id === "openrouter" ? "USO ACUMULADO (USD)" : "USO ACUMULADO"}</small>
+              <strong>{provider.id === "openrouter" ? formatUsd(creditsUsed) : `${creditsUsed.toLocaleString("pt-BR", { maximumFractionDigits: 4 })} créditos`}</strong>
+            </span>
+          )}
           {resetCredits != null && <span><small>RESETS DE LIMITE</small><strong>{resetCredits.toLocaleString("pt-BR")} disponíveis</strong></span>}
         </div>
       )}
@@ -158,28 +210,39 @@ function ProviderCard({ provider }: { provider: ProviderUsage }) {
   );
 }
 
-function LoadingCards() {
+function QuotaLoading() {
   return (
-    <div className="quota-provider-list quota-skeleton-list" role="status" aria-label="Consultando fontes locais">
-      {["Fonte local 01", "Fonte local 02", "Fonte local 03", "Fonte local 04"].map(provider => (
-        <article className="quota-provider-card quota-skeleton" key={provider}>
-          <header><i /><div><strong>{provider}</strong><span /></div></header>
-          <div className="quota-skeleton-meter"><span /><i /></div>
-          <div className="quota-skeleton-meter"><span /><i /></div>
-        </article>
-      ))}
+    <div className="quota-loading-region">
+      <div className="disk-panel-loading" role="status" aria-live="polite" aria-label="Consultando cotas locais">
+        <span className="disk-panel-loading-mark"><ModuleIcon index={5} /></span>
+        <div>
+          <strong>CARREGANDO COTAS LOCAIS</strong>
+          <span>Consultando fontes oficiais e credenciais locais…</span>
+        </div>
+        <i className="disk-panel-loading-line" />
+      </div>
     </div>
   );
 }
 
 export function SubscriptionUsage() {
-  const [report, setReport] = useState<SubscriptionUsageReport | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [report, setReport] = useState<SubscriptionUsageReport | null>(() => {
+    try {
+      const cached = localStorage.getItem("pulse-subscription-report");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && Array.isArray(parsed.providers)) return parsed;
+      }
+    } catch {}
+    return null;
+  });
+  const [loading, setLoading] = useState(() => !report);
   const [failure, setFailure] = useState<string | null>(null);
   const [settings, setSettings] = useState<SubscriptionSettings | null>(null);
   const [openrouterKey, setOpenrouterKey] = useState("");
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [keyModalOpen, setKeyModalOpen] = useState(false);
 
   const load = useCallback(async (forceRefresh: boolean) => {
     setLoading(true);
@@ -191,6 +254,9 @@ export function SubscriptionUsage() {
         if (!next || !Array.isArray(next.providers)) throw new Error("Resposta local inválida");
         result = next;
         setReport(next);
+        try {
+          localStorage.setItem("pulse-subscription-report", JSON.stringify(next));
+        } catch {}
         if (next.scanStatus !== "running") break;
         await new Promise(resolve => window.setTimeout(resolve, 700));
       }
@@ -205,6 +271,44 @@ export function SubscriptionUsage() {
   useEffect(() => { void load(false); }, [load]);
 
   useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<SubscriptionUsageReport>("pulse://subscription-usage-updated", event => {
+      const payload = event.payload;
+      if (payload && Array.isArray(payload.providers)) {
+        setReport(payload);
+        try {
+          localStorage.setItem("pulse-subscription-report", JSON.stringify(payload));
+        } catch {}
+        if (payload.scanStatus !== "running") {
+          setLoading(false);
+        }
+      }
+    })
+      .then(cleanup => {
+        unlisten = cleanup;
+      })
+      .catch(() => undefined);
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "pulse-subscription-report" && event.newValue) {
+        try {
+          const parsed = JSON.parse(event.newValue);
+          if (parsed && Array.isArray(parsed.providers)) {
+            setReport(parsed);
+            setLoading(false);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      if (unlisten) unlisten();
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  useEffect(() => {
     let disposed = false;
     void invoke<SubscriptionSettings>("get_subscription_settings").then(result => {
       if (!disposed && result && typeof result.openrouterConfigured === "boolean") setSettings(result);
@@ -217,7 +321,7 @@ export function SubscriptionUsage() {
     setSettingsBusy(true); setSettingsError(null);
     try {
       const next = await invoke<SubscriptionSettings>("set_openrouter_api_key", { apiKey: openrouterKey });
-      setSettings(next); setOpenrouterKey(""); void load(true);
+      setSettings(next); setOpenrouterKey(""); setKeyModalOpen(false); void load(true);
     } catch (error) {
       setSettingsError(typeof error === "string" ? error : "Não foi possível guardar a chave com segurança.");
     } finally { setSettingsBusy(false); }
@@ -233,10 +337,21 @@ export function SubscriptionUsage() {
 
   const summary = useMemo(() => {
     const providers = report?.providers ?? [];
-    const available = providers.filter(provider => provider.status === "available" && (provider.windows?.length > 0 || measuredNumber(provider.creditsRemaining) != null)).length;
+    const available = providers.filter(hasMeasuredQuota).length;
     return { available, total: providers.length || 4 };
   }, [report]);
-  const hasMeasuredProvider = report?.providers.some(provider => provider.status === "available" && (provider.windows?.length > 0 || measuredNumber(provider.creditsRemaining) != null)) ?? false;
+  const measuredProviders = useMemo(
+    () => report?.providers.filter(hasMeasuredQuota) ?? [],
+    [report],
+  );
+  const hasMeasuredProvider = measuredProviders.length > 0;
+  const unavailableReasons = useMemo(
+    () => report?.providers
+      .filter(provider => !hasMeasuredQuota(provider) && provider.unavailableReason?.trim())
+      .map(provider => `${provider.provider}: ${provider.unavailableReason}`)
+      .join(" · "),
+    [report],
+  );
 
   return (
     <section className="module-dashboard quota-dashboard" aria-label="Cotas de assinatura de IA">
@@ -244,11 +359,19 @@ export function SubscriptionUsage() {
         <div className="quota-toolbar">
           <div>
             <p className="eyebrow">ASSINATURAS DE IA</p>
-            <h3>Limites locais</h3>
-            <p>Uma leitura única das fontes locais, sem abrir terminais nem expor credenciais.</p>
+            <h3>Limites e Cotas</h3>
+            <p>Leitura local e oficial de cotas, tokens e créditos sem abrir terminais nem expor credenciais.</p>
           </div>
           <div className="quota-toolbar-actions">
             {!loading && report && <span><b>{summary.available}</b> de {summary.total} disponíveis</span>}
+            <button
+              type="button"
+              className="quota-config-btn"
+              onClick={() => { setSettingsError(null); setKeyModalOpen(true); }}
+              title="Configurar chaves de API locais (OpenRouter)"
+            >
+              {settings?.openrouterConfigured ? "CHAVE OPENROUTER ✓" : "CONFIGURAR OPENROUTER"}
+            </button>
             <button type="button" onClick={() => void load(true)} disabled={loading}>
               {loading ? "CONSULTANDO…" : "ATUALIZAR COTAS"}
             </button>
@@ -261,43 +384,108 @@ export function SubscriptionUsage() {
             <p>{failure}</p>
             <button type="button" onClick={() => void load(true)}>TENTAR NOVAMENTE</button>
           </div>
-        ) : loading && (!report || (report.scanStatus === "running" && !hasMeasuredProvider)) ? <LoadingCards /> : report ? (
+        ) : loading && !hasMeasuredProvider ? <QuotaLoading /> : report ? (
           <>
-            {loading && <div className="quota-refreshing" role="status"><i />Atualizando fontes locais em segundo plano…</div>}
-            <div className="quota-provider-list">
-              {report.providers
-                .filter(provider => report.scanStatus !== "running" || provider.status === "available" && (provider.windows?.length > 0 || measuredNumber(provider.creditsRemaining) != null))
-                .map(provider => <ProviderCard key={provider.id} provider={provider} />)}
-            </div>
+            {loading && <div className="quota-refreshing" role="status"><i />Atualizando fontes oficiais em segundo plano…</div>}
+            {measuredProviders.length > 0 ? (
+              <div className="quota-data-region">
+                <div className="quota-provider-list">
+                  {measuredProviders.map(provider => (
+                  <ProviderCard
+                    key={provider.id}
+                    provider={provider}
+                    onConfigureKey={provider.id === "openrouter" ? () => { setSettingsError(null); setKeyModalOpen(true); } : undefined}
+                  />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="quota-page-empty" role="status">
+                <strong>NENHUMA COTA CONFIRMADA</strong>
+                <p>As fontes locais não retornaram dados utilizáveis nesta consulta.</p>
+                {unavailableReasons && <small>{unavailableReasons}</small>}
+              </div>
+            )}
           </>
         ) : null}
+
+        <aside className="quota-privacy-note">
+          <strong>Leitura privada e segura.</strong>
+          <span>{report?.privacyNote || "O Pulse consulta as fontes locais e oficiais diretamente; tokens nunca são trafegados no DOM."}</span>
+          {report && <small>{report.scanStatus === "running" ? "Leitura em andamento…" : `Consulta concluída em ${(report.durationMs / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}s.`}</small>}
+        </aside>
       </section>
 
-      <section className="panel quota-key-panel" aria-labelledby="openrouter-key-title">
-        <div>
-          <p className="eyebrow">CRÉDITOS DE API</p>
-          <h3 id="openrouter-key-title">OpenRouter</h3>
-          <p>A chave fica somente no Credential Manager do Windows. O Pulse recebe apenas o saldo e uma identificação mascarada.</p>
-        </div>
-        <div className="quota-key-form">
-          <label>
-            <span>CHAVE OPENROUTER</span>
-            <input type="password" autoComplete="off" spellCheck={false} value={openrouterKey} onChange={event => setOpenrouterKey(event.target.value)} placeholder={settings?.openrouterMasked || "sk-or-…"} aria-label="Chave OpenRouter" />
-          </label>
-          <div className="quota-key-actions">
-            <button type="button" onClick={() => void saveOpenrouterKey()} disabled={settingsBusy || !openrouterKey.trim()}>{settingsBusy ? "GUARDANDO…" : "SALVAR CHAVE"}</button>
-            {settings?.openrouterConfigured && <button type="button" onClick={() => void clearOpenrouterKey()} disabled={settingsBusy}>REMOVER</button>}
+      {/* Modal / Dialog para configuração de chaves externas sem quebrar o layout da tela */}
+      {keyModalOpen && (
+        <div className="quota-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-openrouter-title">
+          <div className="quota-modal-card">
+            <header className="quota-modal-header">
+              <div>
+                <p className="eyebrow">SALDO EM DÓLARES (USD)</p>
+                <h3 id="modal-openrouter-title">Configurar OpenRouter</h3>
+              </div>
+              <button
+                type="button"
+                className="quota-modal-close"
+                onClick={() => setKeyModalOpen(false)}
+                aria-label="Fechar modal"
+              >
+                ✕
+              </button>
+            </header>
+            <div className="quota-modal-body">
+              <p>A chave fica armazenada com criptografia no <strong>Credential Manager do Windows</strong>. O Pulse consulta apenas o saldo em dólares e o uso acumulado sem persistir o texto da chave na interface.</p>
+
+              <div className="quota-key-form">
+                <label>
+                  <span>CHAVE OPENROUTER (SK-OR-…)</span>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={openrouterKey}
+                    onChange={event => setOpenrouterKey(event.target.value)}
+                    placeholder={settings?.openrouterMasked || "sk-or-…"}
+                    aria-label="Chave OpenRouter"
+                  />
+                </label>
+                {settings?.openrouterConfigured && (
+                  <small className="quota-key-state">Chave atual salva: {settings.openrouterMasked}</small>
+                )}
+                {settingsError && <small className="quota-key-error" role="alert">{settingsError}</small>}
+
+                <div className="quota-key-actions">
+                  <button
+                    type="button"
+                    onClick={() => void saveOpenrouterKey()}
+                    disabled={settingsBusy || !openrouterKey.trim()}
+                  >
+                    {settingsBusy ? "GUARDANDO…" : "SALVAR NO WINDOWS"}
+                  </button>
+                  {settings?.openrouterConfigured && (
+                    <button
+                      type="button"
+                      className="is-danger"
+                      onClick={() => void clearOpenrouterKey()}
+                      disabled={settingsBusy}
+                    >
+                      REMOVER CHAVE
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="is-secondary"
+                    onClick={() => setKeyModalOpen(false)}
+                  >
+                    CANCELAR
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-          {settings?.openrouterConfigured && <small className="quota-key-state">Configurada: {settings.openrouterMasked}</small>}
-          {settingsError && <small className="quota-key-error" role="alert">{settingsError}</small>}
         </div>
-      </section>
-
-      <aside className="quota-privacy-note">
-        <strong>Leitura privada.</strong>
-        <span>{report?.privacyNote || "O Pulse abre os painéis oficiais localmente e nunca entrega credenciais à interface."}</span>
-        {report && <small>{report.scanStatus === "running" ? "Leitura em andamento…" : `Consulta concluída em ${(report.durationMs / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}s.`}</small>}
-      </aside>
+      )}
     </section>
   );
 }

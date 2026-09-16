@@ -41,6 +41,7 @@ pub fn run() {
                     }
                 }
             }
+            subscription_usage::init(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -99,6 +100,7 @@ pub fn run() {
             tray::show_main_window,
             tray::toggle_tray_flyout,
             tray::hide_tray_flyout,
+            tray::set_tray_icon_theme,
             tray::exit_app,
             disk_analyzer::get_system_drives,
             disk_analyzer::start_disk_scan,

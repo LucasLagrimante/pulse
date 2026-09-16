@@ -8,7 +8,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::DateTime;
 use regex::Regex;
 use reqwest::{blocking::Client, StatusCode};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     cmp::Reverse,
@@ -27,6 +27,7 @@ use std::{
 
 const CACHE_TTL: Duration = Duration::from_secs(60);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(4);
+const WSL_CLI_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_DEPTH: usize = 3;
 const MAX_FILES_TOTAL: usize = 2500;
 const MAX_SCAN_DURATION: Duration = Duration::from_millis(1500);
@@ -34,7 +35,7 @@ const FILES_TO_INSPECT: usize = 24;
 const OPENROUTER_SERVICE: &str = "Pulse";
 const OPENROUTER_ACCOUNT: &str = "openrouter-api-key";
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct QuotaWindow {
     pub id: String,
@@ -47,7 +48,7 @@ pub struct QuotaWindow {
     pub unavailable_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderUsage {
     pub id: String,
@@ -66,7 +67,7 @@ pub struct ProviderUsage {
     pub unavailable_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionUsageReport {
     pub providers: Vec<ProviderUsage>,
@@ -93,6 +94,14 @@ struct CachedReport {
 struct Candidate {
     path: PathBuf,
     modified: SystemTime,
+}
+
+#[derive(Debug, Clone)]
+struct OAuthCredential {
+    access_token: String,
+    refresh_token: Option<String>,
+    plan: Option<String>,
+    expires_at_unix_ms: Option<i64>,
 }
 
 static CACHE: OnceLock<Mutex<Option<CachedReport>>> = OnceLock::new();
@@ -161,6 +170,25 @@ fn parse_reset(value: Option<&Value>) -> Option<i64> {
     })
 }
 
+fn parse_expiry_ms(value: Option<&Value>) -> Option<i64> {
+    let value = value?;
+    if let Some(raw) = number(Some(value)) {
+        return Some(if raw.abs() > 10_000_000_000.0 {
+            raw as i64
+        } else {
+            (raw * 1000.0) as i64
+        });
+    }
+    value
+        .as_str()
+        .and_then(|text| DateTime::parse_from_rfc3339(text.trim()).ok())
+        .map(|date| date.timestamp_millis())
+}
+
+fn credential_expired(expires_at_unix_ms: Option<i64>) -> bool {
+    expires_at_unix_ms.is_some_and(|expires_at| expires_at <= now_unix_ms() + 30_000)
+}
+
 fn quota_from_used(id: &str, label: &str, value: Option<&Value>) -> Option<QuotaWindow> {
     let value = value?.as_object()?;
     let used_percent = percent(
@@ -214,7 +242,10 @@ fn credits(value: Option<&Value>) -> Option<f64> {
 }
 
 fn command_path(name: &str) -> Option<PathBuf> {
-    let output = crate::process::hidden_command("where.exe").arg(name).output().ok()?;
+    let output = crate::process::hidden_command("where.exe")
+        .arg(name)
+        .output()
+        .ok()?;
     if !output.status.success() {
         return None;
     }
@@ -224,6 +255,120 @@ fn command_path(name: &str) -> Option<PathBuf> {
         .filter(|line| !line.is_empty())
         .map(PathBuf::from)
         .find(|path| path.is_file())
+}
+
+fn decode_command_output(bytes: &[u8]) -> String {
+    let looks_like_utf16le = bytes.len() >= 2
+        && bytes.len().is_multiple_of(2)
+        && bytes.chunks_exact(2).filter(|pair| pair[1] == 0).count() >= bytes.len() / 4;
+    if looks_like_utf16le {
+        let units = bytes
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]));
+        return String::from_utf16_lossy(&units.collect::<Vec<_>>());
+    }
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+fn wsl_output(args: &[&str]) -> Option<String> {
+    let output = crate::process::hidden_command("wsl.exe")
+        .args(args)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(decode_command_output(&output.stdout))
+}
+
+fn wsl_distros() -> Vec<String> {
+    let mut distros = wsl_output(&["-l", "-q"])
+        .unwrap_or_default()
+        .lines()
+        .map(|line| {
+            line.trim_matches(|character| character == '\u{feff}' || character == '\0')
+                .trim()
+                .to_owned()
+        })
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    distros.sort_unstable();
+    distros.dedup();
+    distros
+}
+
+fn wsl_home(distro: &str) -> Option<String> {
+    let output = crate::process::hidden_command("wsl.exe")
+        .args(["-d", distro, "--", "sh", "-lc", "printf %s \"$HOME\""])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let home = decode_command_output(&output.stdout).trim().to_owned();
+    home.starts_with('/').then_some(home)
+}
+
+fn wsl_cli_output(command: &str) -> Option<(String, String)> {
+    for distro in wsl_distros() {
+        let mut child = crate::process::hidden_command("wsl.exe")
+            .args(["-d", &distro, "--", "sh", "-lc", command])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok();
+        let Some(mut child) = child.take() else {
+            continue;
+        };
+        let deadline = Instant::now() + WSL_CLI_TIMEOUT;
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    if !status.success() {
+                        break;
+                    }
+                    let output = child.wait_with_output().ok()?;
+                    return Some((distro, decode_command_output(&output.stdout)));
+                }
+                Ok(None) if Instant::now() < deadline => {
+                    thread::sleep(Duration::from_millis(50));
+                }
+                Ok(None) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+    }
+    None
+}
+
+fn wsl_file_candidates(relative_path: &str) -> Vec<PathBuf> {
+    let relative_path = relative_path.trim_start_matches(['/', '\\']);
+    let mut candidates = Vec::new();
+    for distro in wsl_distros() {
+        let Some(home) = wsl_home(&distro) else {
+            continue;
+        };
+        let home = home.replace('/', "\\");
+        let home = home.trim_start_matches(['/', '\\']);
+        let relative_path = relative_path.replace('/', "\\");
+        for prefix in [r"\\wsl.localhost", r"\\wsl$"] {
+            let path = PathBuf::from(format!(r"{}\{}\{}\{}", prefix, distro, home, relative_path));
+            if !candidates.contains(&path) {
+                candidates.push(path);
+            }
+        }
+    }
+    candidates
+}
+
+fn wsl_has_file(relative_path: &str) -> bool {
+    wsl_file_candidates(relative_path)
+        .iter()
+        .any(|path| path.is_file())
 }
 
 fn codex_executable() -> Option<PathBuf> {
@@ -471,10 +616,65 @@ fn codex_from_local_logs() -> Option<ProviderUsage> {
     None
 }
 
+fn codex_auth_credentials() -> Option<(String, Option<String>)> {
+    let home = codex_home()?;
+    let path = home.join("auth.json");
+    let bytes = fs::read(path).ok()?;
+    let value = serde_json::from_slice::<Value>(&bytes).ok()?;
+    let tokens = value.get("tokens").unwrap_or(&value);
+    let token = tokens
+        .get("access_token")
+        .or_else(|| tokens.get("accessToken"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty())?;
+    let account_id = tokens
+        .get("account_id")
+        .or_else(|| tokens.get("accountId"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_owned);
+    Some((token.to_owned(), account_id))
+}
+
+fn query_codex_official_api() -> Result<Value, String> {
+    let (token, account_id) =
+        codex_auth_credentials().ok_or_else(|| "auth.json não encontrada".to_string())?;
+    let client = http_client().map_err(|e| format!("HTTP indisponível: {e}"))?;
+    let mut request = client
+        .get("https://chatgpt.com/backend-api/wham/usage")
+        .bearer_auth(&token)
+        .header("User-Agent", "codex")
+        .header("Accept", "application/json");
+    if let Some(ref acc_id) = account_id {
+        request = request.header("ChatGPT-Account-Id", acc_id);
+    }
+    let response = request
+        .send()
+        .map_err(|e| format!("Erro de requisição: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status().as_u16()));
+    }
+    response
+        .json::<Value>()
+        .map_err(|e| format!("JSON inválido: {e}"))
+}
+
 fn query_codex() -> ProviderUsage {
+    // 1. Tentar primeiro o endpoint oficial ChatGPT wham/usage se houver auth.json válido (dados mais recentes)
+    if let Ok(data) = query_codex_official_api() {
+        if let Some(usage) =
+            codex_from_rate_limits(&data, "ChatGPT oficial · /backend-api/wham/usage")
+        {
+            return usage;
+        }
+    }
+    // 2. Tentar logs locais de sessões se houverem leituras ativas
     if let Some(local) = codex_from_local_logs() {
         return local;
     }
+    // 3. Tentar codex app-server local
     match query_codex_app_server() {
         Ok(data) => codex_from_rate_limits(&data, "Codex app-server · account/rateLimits/read")
             .unwrap_or_else(|| {
@@ -496,7 +696,58 @@ fn query_codex() -> ProviderUsage {
     }
 }
 
-fn claude_credentials() -> Option<(String, Option<String>)> {
+fn parse_claude_credential(value: &Value) -> Option<OAuthCredential> {
+    let oauth = value
+        .get("claudeAiOauth")
+        .or_else(|| value.get("claude_ai_oauth"))
+        .unwrap_or(value);
+    let access_token = oauth
+        .get("accessToken")
+        .or_else(|| oauth.get("access_token"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_owned();
+    let plan = oauth
+        .get("subscriptionType")
+        .or_else(|| oauth.get("subscription_type"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    Some(OAuthCredential {
+        access_token,
+        refresh_token: oauth
+            .get("refreshToken")
+            .or_else(|| oauth.get("refresh_token"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
+        plan,
+        expires_at_unix_ms: parse_expiry_ms(
+            oauth.get("expiresAt").or_else(|| oauth.get("expires_at")),
+        ),
+    })
+}
+
+fn load_json_file(path: &Path) -> Option<Value> {
+    let bytes = fs::read(path).ok()?;
+    serde_json::from_slice::<Value>(&bytes).ok()
+}
+
+fn choose_oauth_credential(mut credentials: Vec<OAuthCredential>) -> Option<OAuthCredential> {
+    if let Some(credential) = credentials
+        .iter()
+        .find(|credential| !credential_expired(credential.expires_at_unix_ms))
+    {
+        return Some(credential.clone());
+    }
+    credentials.sort_by_key(|credential| credential.expires_at_unix_ms.unwrap_or(0));
+    credentials.pop()
+}
+
+fn claude_credentials() -> Option<OAuthCredential> {
     let mut paths = Vec::new();
     if let Some(home) = env::var_os("USERPROFILE") {
         paths.push(
@@ -512,37 +763,189 @@ fn claude_credentials() -> Option<(String, Option<String>)> {
                 .join(".credentials.json"),
         );
     }
+    paths.extend(wsl_file_candidates(".claude/.credentials.json"));
     if let Some(token) = env::var("CLAUDE_CODE_OAUTH_TOKEN")
         .ok()
         .filter(|v| !v.trim().is_empty())
     {
-        return Some((token, None));
+        return Some(OAuthCredential {
+            access_token: token,
+            refresh_token: None,
+            plan: None,
+            expires_at_unix_ms: None,
+        });
     }
-    for path in paths {
-        let Ok(bytes) = fs::read(path) else {
+    let credentials = paths
+        .iter()
+        .filter_map(|path| load_json_file(path).and_then(|value| parse_claude_credential(&value)))
+        .collect::<Vec<_>>();
+    choose_oauth_credential(credentials)
+}
+
+fn claude_unavailable_reason(credential: &OAuthCredential, status: StatusCode) -> String {
+    if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
+        || credential_expired(credential.expires_at_unix_ms)
+    {
+        if credential.refresh_token.is_some() {
+            return "O access token local expirou; abra o Claude Code para renovar a sessão e atualize as cotas.".into();
+        }
+        return "A credencial local expirou; autentique novamente no Claude Code.".into();
+    }
+    format!(
+        "A fonte oficial recusou a consulta (HTTP {}).",
+        status.as_u16()
+    )
+}
+
+fn cli_percent(line: &str) -> Option<f64> {
+    let captures = Regex::new(r"(?i)(\d+(?:[.,]\d+)?)\s*%")
+        .ok()?
+        .captures(line)?;
+    captures
+        .get(1)
+        .and_then(|value| value.as_str().replace(',', ".").parse::<f64>().ok())
+        .filter(|value| value.is_finite())
+        .map(|value| value.clamp(0.0, 100.0))
+}
+
+fn cli_reset_description(line: &str) -> Option<String> {
+    line.split_once('·')
+        .map(|(_, reset)| reset.trim().to_owned())
+        .filter(|reset| !reset.is_empty())
+}
+
+fn parse_claude_cli_usage(raw: &str) -> Vec<QuotaWindow> {
+    let mut windows = Vec::new();
+    for line in strip_terminal(raw).lines() {
+        let normalized = line.to_ascii_lowercase();
+        let (id, label, minutes) = if normalized.contains("current session:") {
+            ("session", "Sessão", 300)
+        } else if normalized.contains("current week") {
+            ("weekly", "Semanal", 10080)
+        } else {
             continue;
         };
-        let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+        let Some(used) = cli_percent(line) else {
             continue;
         };
-        let oauth = value
-            .get("claudeAiOauth")
-            .or_else(|| value.get("claude_ai_oauth"))
-            .unwrap_or(&value);
-        let token = oauth
-            .get("accessToken")
-            .or_else(|| oauth.get("access_token"))
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|v| !v.is_empty())?;
-        let plan = oauth
-            .get("subscriptionType")
-            .or_else(|| oauth.get("subscription_type"))
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        return Some((token.to_owned(), plan));
+        if windows.iter().any(|window: &QuotaWindow| window.id == id) {
+            continue;
+        }
+        windows.push(QuotaWindow {
+            id: id.into(),
+            label: label.into(),
+            used_percent: Some(used),
+            remaining_percent: Some((100.0 - used).clamp(0.0, 100.0)),
+            window_minutes: Some(minutes),
+            resets_at_unix_seconds: None,
+            reset_description: cli_reset_description(line),
+            unavailable_reason: None,
+        });
     }
-    None
+    windows
+}
+
+fn parse_antigravity_cli_usage(raw: &str) -> Vec<QuotaWindow> {
+    let mut windows = Vec::new();
+    for line in strip_terminal(raw).lines() {
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        let Some(remaining_index) = fields
+            .iter()
+            .position(|field| field.eq_ignore_ascii_case("remaining"))
+        else {
+            continue;
+        };
+        let (model_end, label, minutes) =
+            if remaining_index >= 2 && fields[remaining_index - 2].eq_ignore_ascii_case("weekly") {
+                (remaining_index - 2, "Semanal", 10080)
+            } else if remaining_index >= 3
+                && fields[remaining_index - 3].eq_ignore_ascii_case("five")
+                && fields[remaining_index - 2].eq_ignore_ascii_case("hour")
+            {
+                (remaining_index - 3, "5 horas", 300)
+            } else {
+                continue;
+            };
+        let model = fields[..model_end].join(" ");
+        let Some(remaining) = fields
+            .get(remaining_index + 1)
+            .and_then(|value| value.strip_suffix('%'))
+            .and_then(|value| value.replace(',', ".").parse::<f64>().ok())
+            .filter(|value| value.is_finite())
+            .map(|value| value.clamp(0.0, 100.0))
+        else {
+            continue;
+        };
+        let reset = fields
+            .get(remaining_index + 2)
+            .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+            .map(|date| date.timestamp());
+        windows.push(QuotaWindow {
+            id: format!("agy-{}", windows.len()),
+            label: format!("{model} · {label}"),
+            used_percent: Some(100.0 - remaining),
+            remaining_percent: Some(remaining),
+            window_minutes: Some(minutes),
+            resets_at_unix_seconds: reset,
+            reset_description: None,
+            unavailable_reason: None,
+        });
+    }
+    windows
+}
+
+fn query_claude_from_wsl_cli() -> Option<ProviderUsage> {
+    if !wsl_has_file(".claude/.credentials.json") {
+        return None;
+    }
+    let (distro, output) = wsl_cli_output("claude -p '/usage' --output-format text")?;
+    let windows = parse_claude_cli_usage(&output);
+    if windows.is_empty() {
+        return None;
+    }
+    Some(ProviderUsage {
+        id: "claude".into(),
+        provider: "Claude Code".into(),
+        subtitle: "Assinatura Anthropic".into(),
+        plan: claude_credentials().and_then(|credential| credential.plan),
+        environment: Some(format!("WSL {distro} · Claude Code local")),
+        status: "available".into(),
+        windows,
+        credits_remaining: None,
+        credits_total: None,
+        credits_used: None,
+        reset_credits_available: None,
+        sampled_at_unix_ms: Some(now_unix_ms()),
+        source: "Claude Code CLI · /usage".into(),
+        unavailable_reason: None,
+    })
+}
+
+fn query_antigravity_from_wsl_cli() -> Option<ProviderUsage> {
+    if !wsl_has_file(".gemini/antigravity-cli/antigravity-oauth-token") {
+        return None;
+    }
+    let (distro, output) = wsl_cli_output("agy -p '/usage' --output-format text")?;
+    let windows = parse_antigravity_cli_usage(&output);
+    if windows.is_empty() {
+        return None;
+    }
+    Some(ProviderUsage {
+        id: "antigravity".into(),
+        provider: "Antigravity".into(),
+        subtitle: "Google AI Pro".into(),
+        plan: None,
+        environment: Some(format!("WSL {distro} · agy local")),
+        status: "available".into(),
+        windows,
+        credits_remaining: None,
+        credits_total: None,
+        credits_used: None,
+        reset_credits_available: None,
+        sampled_at_unix_ms: Some(now_unix_ms()),
+        source: "Antigravity CLI · /usage".into(),
+        unavailable_reason: None,
+    })
 }
 
 fn http_client() -> Result<Client, String> {
@@ -554,14 +957,17 @@ fn http_client() -> Result<Client, String> {
 }
 
 fn query_claude() -> ProviderUsage {
+    if let Some(usage) = query_claude_from_wsl_cli() {
+        return usage;
+    }
     let source = "Anthropic OAuth · /api/oauth/usage";
-    let Some((token, plan)) = claude_credentials() else {
+    let Some(credentials) = claude_credentials() else {
         return unavailable_provider(
             "claude",
             "Claude Code",
             "Assinatura Anthropic",
             source,
-            "Credencial local não encontrada.",
+            "Credencial local não encontrada no Windows nem nas distros WSL.",
         );
     };
     let Ok(client) = http_client() else {
@@ -575,7 +981,7 @@ fn query_claude() -> ProviderUsage {
     };
     let response = client
         .get("https://console.anthropic.com/api/oauth/usage")
-        .bearer_auth(token)
+        .bearer_auth(&credentials.access_token)
         .header("anthropic-beta", "oauth-2025-04-20")
         .header("Accept", "application/json")
         .send();
@@ -588,16 +994,14 @@ fn query_claude() -> ProviderUsage {
             "A fonte oficial não respondeu dentro do limite de 4s.",
         );
     };
-    if matches!(
-        response.status(),
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
-    ) {
+    if !response.status().is_success() {
+        let status = response.status();
         return unavailable_provider(
             "claude",
             "Claude Code",
             "Assinatura Anthropic",
             source,
-            "A credencial local expirou; autentique novamente no Claude Code.",
+            claude_unavailable_reason(&credentials, status),
         );
     }
     let Ok(body) = response.json::<Value>() else {
@@ -639,17 +1043,37 @@ fn query_claude() -> ProviderUsage {
             "A resposta não expôs janelas de assinatura.",
         );
     }
+    let extra_usage = body.get("extra_usage").and_then(Value::as_object);
+    let credits_used = extra_usage.and_then(|usage| {
+        number(
+            usage
+                .get("used_credits")
+                .or_else(|| usage.get("usedCredits")),
+        )
+    });
+    let credits_total = extra_usage.and_then(|usage| {
+        number(
+            usage
+                .get("total_credits")
+                .or_else(|| usage.get("totalCredits")),
+        )
+    });
+    let credits_remaining = match (credits_total, credits_used) {
+        (Some(total), Some(used)) if total >= used => Some(total - used),
+        (Some(total), None) => Some(total),
+        _ => None,
+    };
     ProviderUsage {
         id: "claude".into(),
         provider: "Claude Code".into(),
         subtitle: "Assinatura Anthropic".into(),
-        plan,
-        environment: Some("Windows · OAuth local".into()),
+        plan: credentials.plan,
+        environment: Some("Windows/WSL · OAuth local".into()),
         status: "available".into(),
         windows,
-        credits_remaining: None,
-        credits_total: None,
-        credits_used: None,
+        credits_remaining,
+        credits_total,
+        credits_used,
         reset_credits_available: None,
         sampled_at_unix_ms: Some(now_unix_ms()),
         source: source.into(),
@@ -683,6 +1107,87 @@ fn nested_string(value: &Value, keys: &[&str]) -> Option<String> {
     None
 }
 
+fn nested_value<'a>(value: &'a Value, keys: &[&str]) -> Option<&'a Value> {
+    if let Some(object) = value.as_object() {
+        for key in keys {
+            if let Some(found) = object.get(*key) {
+                return Some(found);
+            }
+        }
+        for child in object.values() {
+            if let Some(found) = nested_value(child, keys) {
+                return Some(found);
+            }
+        }
+    } else if let Some(items) = value.as_array() {
+        for child in items {
+            if let Some(found) = nested_value(child, keys) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+fn parse_antigravity_credential(value: &Value) -> Option<OAuthCredential> {
+    let access_token = value
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            nested_string(
+                value,
+                &["access_token", "accessToken", "token", "bearerToken"],
+            )
+        })
+        .or_else(|| nested_string(value, &["id_token", "idToken"]))?;
+    Some(OAuthCredential {
+        access_token,
+        refresh_token: nested_string(value, &["refresh_token", "refreshToken"]),
+        plan: None,
+        expires_at_unix_ms: nested_value(
+            value,
+            &["expiry", "expiry_date", "expiresAt", "expires_at"],
+        )
+        .and_then(|value| parse_expiry_ms(Some(value))),
+    })
+}
+
+fn antigravity_credentials() -> Option<OAuthCredential> {
+    let mut values = Vec::new();
+    if let Some(value) = keyring_secret("gemini", "antigravity") {
+        values.push(value);
+    }
+    let mut paths = Vec::new();
+    if let Some(home) = env::var_os("USERPROFILE") {
+        paths.push(
+            PathBuf::from(home)
+                .join(".gemini")
+                .join("antigravity-cli")
+                .join("antigravity-oauth-token"),
+        );
+    }
+    if let Some(home) = env::var_os("HOME") {
+        paths.push(
+            PathBuf::from(home)
+                .join(".gemini")
+                .join("antigravity-cli")
+                .join("antigravity-oauth-token"),
+        );
+    }
+    paths.extend(wsl_file_candidates(
+        ".gemini/antigravity-cli/antigravity-oauth-token",
+    ));
+    values.extend(paths.iter().filter_map(|path| load_json_file(path)));
+    choose_oauth_credential(
+        values
+            .iter()
+            .filter_map(parse_antigravity_credential)
+            .collect(),
+    )
+}
+
 fn collect_antigravity_windows(value: &Value, output: &mut Vec<QuotaWindow>, path: &str) {
     if let Some(object) = value.as_object() {
         if let Some(fraction) = number(object.get("remainingFraction")) {
@@ -711,33 +1216,17 @@ fn collect_antigravity_windows(value: &Value, output: &mut Vec<QuotaWindow>, pat
 
 #[allow(clippy::possible_missing_else)]
 fn query_antigravity() -> ProviderUsage {
+    if let Some(usage) = query_antigravity_from_wsl_cli() {
+        return usage;
+    }
     let source = "Google Cloud Code · retrieveUserQuotaSummary";
-    let credentials = keyring_secret("gemini", "antigravity");
-    let token = credentials.as_ref().and_then(|raw| {
-        raw.as_str().map(str::to_owned).or_else(|| {
-            nested_string(
-                raw,
-                &[
-                    "access_token",
-                    "accessToken",
-                    "id_token",
-                    "idToken",
-                    "token",
-                    "bearerToken",
-                ],
-            )
-        })
-    });
-    let refresh_token = credentials
-        .as_ref()
-        .and_then(|raw| nested_string(raw, &["refresh_token", "refreshToken"]));
-    let Some(token) = token else {
+    let Some(credentials) = antigravity_credentials() else {
         return unavailable_provider(
             "antigravity",
             "Antigravity",
             "Google AI Pro",
             source,
-            "Credencial segura do Antigravity não encontrada.",
+            "Credencial local não encontrada no Credential Manager nem nas distros WSL.",
         );
     };
     let Ok(client) = http_client() else {
@@ -749,7 +1238,7 @@ fn query_antigravity() -> ProviderUsage {
             "Cliente HTTP indisponível.",
         );
     };
-    let mut token = token;
+    let mut token = credentials.access_token.clone();
     let mut refreshed = false;
     let mut body = None;
     'bases: for base in [
@@ -770,7 +1259,8 @@ fn query_antigravity() -> ProviderUsage {
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
         ) {
             if !refreshed {
-                if let Some(refresh) = refresh_token
+                if let Some(refresh) = credentials
+                    .refresh_token
                     .as_deref()
                     .and_then(|value| refresh_google_token(&client, value))
                 {
@@ -784,7 +1274,11 @@ fn query_antigravity() -> ProviderUsage {
                 "Antigravity",
                 "Google AI Pro",
                 source,
-                "A credencial segura expirou; abra o Antigravity para autenticar novamente.",
+                if credentials.refresh_token.is_some() && !google_refresh_configured() {
+                    "O login local foi encontrado, mas o access token expirou; abra o Antigravity/agy no WSL para renovar a sessão e atualize as cotas."
+                } else {
+                    "A credencial local expirou; abra o Antigravity/agy para autenticar novamente."
+                },
             );
         }
         if response.status().is_success() {
@@ -826,7 +1320,7 @@ fn query_antigravity() -> ProviderUsage {
         provider: "Antigravity".into(),
         subtitle: "Google AI Pro".into(),
         plan: nested_string(&body, &["name", "displayName"]),
-        environment: Some("HTTP oficial · sem terminal".into()),
+        environment: Some("Windows/WSL · OAuth local".into()),
         status: "available".into(),
         windows,
         credits_remaining: None,
@@ -841,9 +1335,7 @@ fn query_antigravity() -> ProviderUsage {
 
 fn refresh_google_token(client: &Client, refresh_token: &str) -> Option<String> {
     let client_secret = env::var("GOOGLE_CLIENT_SECRET").ok()?;
-    let client_id = env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| {
-        "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com".to_string()
-    });
+    let client_id = env::var("GOOGLE_CLIENT_ID").ok()?;
     let response = client
         .post("https://oauth2.googleapis.com/token")
         .form(&[
@@ -865,6 +1357,15 @@ fn refresh_google_token(client: &Client, refresh_token: &str) -> Option<String> 
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
+}
+
+fn google_refresh_configured() -> bool {
+    env::var("GOOGLE_CLIENT_ID")
+        .ok()
+        .is_some_and(|value| !value.trim().is_empty())
+        && env::var("GOOGLE_CLIENT_SECRET")
+            .ok()
+            .is_some_and(|value| !value.trim().is_empty())
 }
 
 fn keyring_secret(service: &str, account: &str) -> Option<Value> {
@@ -897,16 +1398,16 @@ fn query_openrouter() -> ProviderUsage {
         return unavailable_provider(
             "openrouter",
             "OpenRouter",
-            "Créditos de API",
+            "Saldo em Dólares (USD)",
             source,
-            "Chave não configurada. Informe uma chave nas configurações de Cotas de IA.",
+            "Chave não configurada. Informe uma chave nas configurações de Cotas de IA para consultar o saldo em dólares.",
         );
     };
     let Ok(client) = http_client() else {
         return unavailable_provider(
             "openrouter",
             "OpenRouter",
-            "Créditos de API",
+            "Saldo em Dólares (USD)",
             source,
             "Cliente HTTP indisponível.",
         );
@@ -920,7 +1421,7 @@ fn query_openrouter() -> ProviderUsage {
         return unavailable_provider(
             "openrouter",
             "OpenRouter",
-            "Créditos de API",
+            "Saldo em Dólares (USD)",
             source,
             "A fonte oficial não respondeu dentro do limite de 4s.",
         );
@@ -932,7 +1433,7 @@ fn query_openrouter() -> ProviderUsage {
         return unavailable_provider(
             "openrouter",
             "OpenRouter",
-            "Créditos de API",
+            "Saldo em Dólares (USD)",
             source,
             "A chave OpenRouter foi recusada.",
         );
@@ -941,7 +1442,7 @@ fn query_openrouter() -> ProviderUsage {
         return unavailable_provider(
             "openrouter",
             "OpenRouter",
-            "Créditos de API",
+            "Saldo em Dólares (USD)",
             source,
             "Resposta oficial inválida.",
         );
@@ -958,15 +1459,15 @@ fn query_openrouter() -> ProviderUsage {
         return unavailable_provider(
             "openrouter",
             "OpenRouter",
-            "Créditos de API",
+            "Saldo em Dólares (USD)",
             source,
-            "A resposta não expôs o saldo de créditos.",
+            "A resposta não expôs o saldo em dólares.",
         );
     };
     ProviderUsage {
         id: "openrouter".into(),
         provider: "OpenRouter".into(),
-        subtitle: "Créditos de API".into(),
+        subtitle: "Saldo em Dólares (USD)".into(),
         plan: None,
         environment: Some("HTTP oficial · chave no Credential Manager".into()),
         status: "available".into(),
@@ -1008,7 +1509,7 @@ fn placeholder_report(status: &str) -> SubscriptionUsageReport {
             unavailable_provider(
                 "openrouter",
                 "OpenRouter",
-                "Créditos de API",
+                "Saldo em Dólares (USD)",
                 "Leitura local",
                 "Aguardando leitura oficial.",
             ),
@@ -1021,6 +1522,42 @@ fn placeholder_report(status: &str) -> SubscriptionUsageReport {
     }
 }
 
+static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+pub fn init(handle: tauri::AppHandle) {
+    let _ = APP_HANDLE.set(handle);
+}
+
+fn cache_file() -> PathBuf {
+    env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(env::temp_dir)
+        .join("Pulse")
+        .join("subscription-cache.json")
+}
+
+fn load_persisted_cache() -> Option<SubscriptionUsageReport> {
+    let content = fs::read_to_string(cache_file()).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+fn save_persisted_cache(report: &SubscriptionUsageReport) {
+    let file = cache_file();
+    if let Some(dir) = file.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    if let Ok(content) = serde_json::to_string_pretty(report) {
+        let _ = fs::write(file, content);
+    }
+}
+
+fn notify_subscription_updated(report: &SubscriptionUsageReport) {
+    if let Some(app) = APP_HANDLE.get() {
+        use tauri::Emitter;
+        let _ = app.emit("pulse://subscription-usage-updated", report);
+    }
+}
+
 fn start_background_scan() {
     if SCAN_RUNNING
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
@@ -1030,7 +1567,26 @@ fn start_background_scan() {
     }
     thread::spawn(|| {
         let started = Instant::now();
-        let mut providers = placeholder_report("running").providers;
+        // Preserva o cache anterior da memória ou do disco para não zerar os dados da interface
+        let cached_providers = {
+            let cache = CACHE.get_or_init(|| Mutex::new(None));
+            if let Ok(guard) = cache.lock() {
+                guard.as_ref().map(|c| c.report.providers.clone())
+            } else {
+                None
+            }
+        }
+        .or_else(|| load_persisted_cache().map(|r| r.providers));
+
+        let mut providers = cached_providers.unwrap_or_else(|| placeholder_report("running").providers);
+
+        // Garante a presença de todos os provedores canônicos
+        for required_id in ["claude", "codex", "antigravity", "openrouter"] {
+            if !providers.iter().any(|p| p.id == required_id) {
+                providers.push(unavailable_for_id(required_id));
+            }
+        }
+
         let (sender, receiver) = mpsc::channel();
         for (id, query) in [
             ("claude", query_claude as fn() -> ProviderUsage),
@@ -1042,9 +1598,23 @@ fn start_background_scan() {
             thread::spawn(move || {
                 // Keep recursive log inspection off the runtime executor while still using
                 // Tauri's bounded blocking pool for filesystem work.
+                let provider_started = Instant::now();
                 let provider =
                     tauri::async_runtime::block_on(tauri::async_runtime::spawn_blocking(query))
                         .unwrap_or_else(|_| unavailable_for_id(id));
+                let operation = format!("subscription_usage_{id}");
+                let available = provider.status == "available";
+                let message = provider
+                    .unavailable_reason
+                    .as_deref()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("Cota confirmada · {}", provider.source));
+                crate::debug::record_message(
+                    &operation,
+                    provider_started.elapsed().as_millis(),
+                    if available { "ok" } else { "error" },
+                    &message,
+                );
                 let _ = sender.send((id, provider));
             });
         }
@@ -1052,6 +1622,8 @@ fn start_background_scan() {
         for (id, provider) in receiver {
             if let Some(slot) = providers.iter_mut().find(|candidate| candidate.id == id) {
                 *slot = provider;
+            } else {
+                providers.push(provider);
             }
             let report = SubscriptionUsageReport {
                 providers: providers.clone(),
@@ -1065,9 +1637,10 @@ fn start_background_scan() {
             if let Ok(mut guard) = CACHE.get_or_init(|| Mutex::new(None)).lock() {
                 *guard = Some(CachedReport {
                     stored_at: Instant::now(),
-                    report,
+                    report: report.clone(),
                 });
             }
+            notify_subscription_updated(&report);
         }
         let report = SubscriptionUsageReport {
             providers,
@@ -1080,10 +1653,12 @@ fn start_background_scan() {
         if let Ok(mut guard) = CACHE.get_or_init(|| Mutex::new(None)).lock() {
             *guard = Some(CachedReport {
                 stored_at: Instant::now(),
-                report,
+                report: report.clone(),
             });
         }
+        save_persisted_cache(&report);
         SCAN_RUNNING.store(false, Ordering::Release);
+        notify_subscription_updated(&report);
     });
 }
 
@@ -1113,14 +1688,21 @@ fn unavailable_for_id(id: &str) -> ProviderUsage {
         _ => unavailable_provider(
             "openrouter",
             "OpenRouter",
-            "Créditos de API",
+            "Saldo em Dólares (USD)",
             "Leitura oficial",
             "Consulta falhou.",
         ),
     }
 }
+
 fn get_subscription_usage_sync(force_refresh: bool) -> SubscriptionUsageReport {
-    let cache = CACHE.get_or_init(|| Mutex::new(None));
+    let cache = CACHE.get_or_init(|| {
+        let initial = load_persisted_cache().map(|report| CachedReport {
+            stored_at: Instant::now() - CACHE_TTL,
+            report,
+        });
+        Mutex::new(initial)
+    });
     if !force_refresh {
         if let Ok(guard) = cache.lock() {
             if let Some(cached) = guard
@@ -1215,8 +1797,11 @@ fn set_openrouter_api_key_sync(api_key: &str) -> Result<SubscriptionSettings, St
         .set_password(key)
         .map_err(|_| "Não foi possível guardar a chave no Credential Manager.".to_string())?;
     if let Ok(mut guard) = CACHE.get_or_init(|| Mutex::new(None)).lock() {
-        *guard = None;
+        if let Some(cached) = guard.as_mut() {
+            cached.stored_at = Instant::now() - CACHE_TTL;
+        }
     }
+    start_background_scan();
     Ok(SubscriptionSettings {
         openrouter_configured: true,
         openrouter_masked: Some(mask_key(key)),
@@ -1237,8 +1822,11 @@ fn clear_openrouter_api_key_sync() -> Result<SubscriptionSettings, String> {
         Err(_) => return Err("Não foi possível remover a chave do Credential Manager.".into()),
     }
     if let Ok(mut guard) = CACHE.get_or_init(|| Mutex::new(None)).lock() {
-        *guard = None;
+        if let Some(cached) = guard.as_mut() {
+            cached.stored_at = Instant::now() - CACHE_TTL;
+        }
     }
+    start_background_scan();
     Ok(SubscriptionSettings {
         openrouter_configured: false,
         openrouter_masked: None,
@@ -1258,7 +1846,11 @@ fn strip_terminal(raw: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{codex_from_rate_limits, mask_key, quota_from_used, strip_terminal};
+    use super::{
+        codex_from_rate_limits, mask_key, parse_antigravity_cli_usage,
+        parse_antigravity_credential, parse_claude_cli_usage, parse_claude_credential,
+        quota_from_used, strip_terminal,
+    };
     use serde_json::json;
     #[test]
     fn maps_codex_root_and_model_specific_limits() {
@@ -1281,5 +1873,63 @@ mod tests {
     #[test]
     fn masks_provider_keys_before_they_reach_the_ui() {
         assert_eq!(mask_key("sk-or-v1-abcdefghijkl7890"), "••••••••7890");
+    }
+
+    #[test]
+    fn reads_claude_oauth_shape_with_refresh_metadata() {
+        let credential = parse_claude_credential(&json!({
+            "claudeAiOauth": {
+                "accessToken": "access-token",
+                "refreshToken": "refresh-token",
+                "subscriptionType": "team",
+                "expiresAt": 4_000_000_000_000_i64
+            }
+        }))
+        .unwrap();
+        assert_eq!(credential.access_token, "access-token");
+        assert_eq!(credential.refresh_token.as_deref(), Some("refresh-token"));
+        assert_eq!(credential.plan.as_deref(), Some("team"));
+        assert_eq!(credential.expires_at_unix_ms, Some(4_000_000_000_000));
+    }
+
+    #[test]
+    fn reads_antigravity_nested_wsl_token_shape() {
+        let credential = parse_antigravity_credential(&json!({
+            "token": {
+                "access_token": "access-token",
+                "refresh_token": "refresh-token",
+                "expiry": "2099-01-02T03:04:05Z"
+            },
+            "auth_method": "consumer"
+        }))
+        .unwrap();
+        assert_eq!(credential.access_token, "access-token");
+        assert_eq!(credential.refresh_token.as_deref(), Some("refresh-token"));
+        assert!(credential.expires_at_unix_ms.is_some());
+    }
+
+    #[test]
+    fn parses_claude_usage_from_the_local_cli() {
+        let windows = parse_claude_cli_usage(
+            "Current session: 11% used · resets Sep 15, 4pm (America/Sao_Paulo)\nCurrent week (all models): 87% used · resets Sep 16, 8am (America/Sao_Paulo)",
+        );
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows[0].remaining_percent, Some(89.0));
+        assert_eq!(windows[1].remaining_percent, Some(13.0));
+        assert_eq!(
+            windows[0].reset_description.as_deref(),
+            Some("resets Sep 15, 4pm (America/Sao_Paulo)")
+        );
+    }
+
+    #[test]
+    fn parses_antigravity_usage_from_the_local_cli() {
+        let windows = parse_antigravity_cli_usage(
+            "Gemini Models\tWeekly Limit Remaining\t52%\t2026-09-18T01:08:10Z\nGemini Models\tFive Hour Limit Remaining\t100%\t2026-09-15T20:22:49Z\nClaude and GPT models\tWeekly Limit Remaining\t66%\t2026-09-18T03:29:34Z",
+        );
+        assert_eq!(windows.len(), 3);
+        assert_eq!(windows[0].remaining_percent, Some(52.0));
+        assert_eq!(windows[1].window_minutes, Some(300));
+        assert!(windows[2].resets_at_unix_seconds.is_some());
     }
 }
