@@ -23,8 +23,8 @@
       {
         "label": "tray-flyout",
         "title": "Pulse — Painel Rápido",
-        "width": 380,
-        "height": 680,
+        "width": 390,
+        "height": 740,
         "decorations": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,

@@ -38,24 +38,256 @@ pub fn should_minimize_on_close() -> bool {
     load_preferences().minimize_on_close
 }
 
+fn tray_icon_for_theme(theme: &str) -> tauri::image::Image<'static> {
+    const SIZE: u32 = 32;
+    const SCALE: f32 = 0.6;
+    const OFFSET: f32 = 1.6;
+
+    let rail = if theme == "dark" {
+        [205, 221, 235]
+    } else {
+        [61, 82, 101]
+    };
+    let signal = [239, 143, 18];
+    let mut rgba = vec![0; (SIZE * SIZE * 4) as usize];
+
+    let transform = |(x, y): (f32, f32)| (OFFSET + x * SCALE, OFFSET + y * SCALE);
+    let rail_path = [
+        (8.0, 34.0),
+        (8.0, 14.0),
+        (8.0, 10.7),
+        (10.7, 8.0),
+        (14.0, 8.0),
+        (34.0, 8.0),
+        (37.3, 8.0),
+        (40.0, 10.7),
+        (40.0, 14.0),
+        (40.0, 34.0),
+        (40.0, 37.3),
+        (37.3, 40.0),
+        (34.0, 40.0),
+        (20.0, 40.0),
+    ]
+    .map(transform);
+    let signal_path = [
+        (4.0, 26.0),
+        (14.0, 26.0),
+        (19.0, 14.0),
+        (19.0, 38.0),
+        (26.0, 18.0),
+        (30.0, 26.0),
+        (46.0, 26.0),
+    ]
+    .map(transform);
+
+    draw_polyline(&mut rgba, SIZE, &rail_path, 2.8 * SCALE, rail);
+    draw_polyline(&mut rgba, SIZE, &signal_path, 4.2 * SCALE, signal);
+    tauri::image::Image::new_owned(rgba, SIZE, SIZE)
+}
+
+fn draw_polyline(rgba: &mut [u8], size: u32, points: &[(f32, f32)], width: f32, color: [u8; 3]) {
+    let half_width = width / 2.0;
+    for y in 0..size {
+        for x in 0..size {
+            let px = x as f32 + 0.5;
+            let py = y as f32 + 0.5;
+            let mut distance = f32::MAX;
+
+            for pair in points.windows(2) {
+                let (x1, y1) = pair[0];
+                let (x2, y2) = pair[1];
+                let dx = x2 - x1;
+                let dy = y2 - y1;
+                let length_squared = dx * dx + dy * dy;
+                let projection = if length_squared == 0.0 {
+                    0.0
+                } else {
+                    ((px - x1) * dx + (py - y1) * dy) / length_squared
+                };
+                let t = projection.clamp(0.0, 1.0);
+                let closest_x = x1 + t * dx;
+                let closest_y = y1 + t * dy;
+                distance = distance.min((px - closest_x).hypot(py - closest_y));
+            }
+
+            let coverage = (half_width + 0.8 - distance).clamp(0.0, 1.0);
+            if coverage == 0.0 {
+                continue;
+            }
+
+            let offset = ((y * size + x) * 4) as usize;
+            let existing_alpha = rgba[offset + 3] as f32 / 255.0;
+            let source_alpha = coverage;
+            let output_alpha = source_alpha + existing_alpha * (1.0 - source_alpha);
+            for channel in 0..3 {
+                let existing = rgba[offset + channel] as f32 / 255.0;
+                let source = color[channel] as f32 / 255.0;
+                rgba[offset + channel] = ((source * source_alpha
+                    + existing * existing_alpha * (1.0 - source_alpha))
+                    / output_alpha
+                    * 255.0) as u8;
+            }
+            rgba[offset + 3] = (output_alpha * 255.0) as u8;
+        }
+    }
+}
+
+fn set_tray_icon<R: tauri::Runtime>(app: &AppHandle<R>, theme: &str) -> Result<(), String> {
+    let tray = app
+        .tray_by_id("main-tray")
+        .ok_or_else(|| "O ícone da bandeja ainda não está disponível.".to_owned())?;
+    tray.set_icon(Some(tray_icon_for_theme(theme)))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_tray_icon_theme(app: AppHandle, theme: String) -> Result<(), String> {
+    let normalized = if theme == "dark" { "dark" } else { "light" };
+    set_tray_icon(&app, normalized)
+}
+
+use tauri::menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+
+pub fn build_tray_menu<R: tauri::Runtime>(manager: &AppHandle<R>) -> Result<Menu<R>, tauri::Error> {
+    let audio_inventory = crate::audio::get_audio_devices();
+    let minimize = should_minimize_on_close();
+
+    let open_main_item =
+        MenuItemBuilder::with_id("open_main", "Abrir aplicativo").build(manager)?;
+    let open_flyout_item =
+        MenuItemBuilder::with_id("open_flyout", "Painel rápido").build(manager)?;
+
+    // Submenu de Saída de Áudio
+    let mut out_submenu_builder = SubmenuBuilder::new(manager, "Saída de áudio");
+    if audio_inventory.output.is_empty() {
+        let msg = audio_inventory
+            .unavailable_reason
+            .as_deref()
+            .unwrap_or("Nenhum dispositivo encontrado");
+        out_submenu_builder = out_submenu_builder.item(
+            &MenuItemBuilder::with_id("audio_out_none", msg)
+                .enabled(false)
+                .build(manager)?,
+        );
+    } else {
+        for device in &audio_inventory.output {
+            let item =
+                CheckMenuItemBuilder::with_id(format!("audio_out:{}", device.id), &device.name)
+                    .checked(device.is_default)
+                    .build(manager)?;
+            out_submenu_builder = out_submenu_builder.item(&item);
+        }
+    }
+    let out_submenu = out_submenu_builder.build()?;
+
+    // Submenu de Entrada de Áudio
+    let mut in_submenu_builder = SubmenuBuilder::new(manager, "Entrada de áudio");
+    if audio_inventory.input.is_empty() {
+        let msg = audio_inventory
+            .unavailable_reason
+            .as_deref()
+            .unwrap_or("Nenhum dispositivo encontrado");
+        in_submenu_builder = in_submenu_builder.item(
+            &MenuItemBuilder::with_id("audio_in_none", msg)
+                .enabled(false)
+                .build(manager)?,
+        );
+    } else {
+        for device in &audio_inventory.input {
+            let item =
+                CheckMenuItemBuilder::with_id(format!("audio_in:{}", device.id), &device.name)
+                    .checked(device.is_default)
+                    .build(manager)?;
+            in_submenu_builder = in_submenu_builder.item(&item);
+        }
+    }
+    let in_submenu = in_submenu_builder.build()?;
+
+    let minimize_item = CheckMenuItemBuilder::with_id(
+        "toggle_minimize_on_close",
+        "Minimizar para a bandeja ao fechar",
+    )
+    .checked(minimize)
+    .build(manager)?;
+
+    let exit_item = MenuItemBuilder::with_id("exit", "Sair do Pulse").build(manager)?;
+
+    MenuBuilder::new(manager)
+        .item(&open_main_item)
+        .item(&open_flyout_item)
+        .separator()
+        .item(&out_submenu)
+        .item(&in_submenu)
+        .separator()
+        .item(&minimize_item)
+        .separator()
+        .item(&exit_item)
+        .build()
+}
+
+pub fn update_tray_menu<R: tauri::Runtime>(app: &AppHandle<R>) {
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        if let Ok(menu) = build_tray_menu(app) {
+            let _ = tray.set_menu(Some(menu));
+        }
+    }
+}
+
 pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let mut builder = TrayIconBuilder::new()
+    let handle = app.handle();
+    let menu = build_tray_menu(handle)?;
+
+    let mut builder = TrayIconBuilder::with_id("main-tray")
         .tooltip("Pulse — Windows Observability")
+        .menu(&menu)
         .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| {
+            let id = event.id().as_ref();
+            match id {
+                "open_main" => {
+                    let _ = show_main_internal(app);
+                }
+                "open_flyout" => {
+                    let _ = toggle_flyout_internal(app);
+                }
+                "toggle_minimize_on_close" => {
+                    let mut prefs = load_preferences();
+                    prefs.minimize_on_close = !prefs.minimize_on_close;
+                    let _ = save_preferences(&prefs);
+                    update_tray_menu(app);
+                }
+                "exit" => {
+                    app.exit(0);
+                }
+                _ => {
+                    if let Some(device_id) = id.strip_prefix("audio_out:") {
+                        let _ = crate::audio::set_default_audio_device_sync("output", device_id);
+                        update_tray_menu(app);
+                        if let Some(flyout) = app.get_webview_window("tray-flyout") {
+                            let _ = flyout.emit("pulse://audio-changed", ());
+                        }
+                    } else if let Some(device_id) = id.strip_prefix("audio_in:") {
+                        let _ = crate::audio::set_default_audio_device_sync("input", device_id);
+                        update_tray_menu(app);
+                        if let Some(flyout) = app.get_webview_window("tray-flyout") {
+                            let _ = flyout.emit("pulse://audio-changed", ());
+                        }
+                    }
+                }
+            }
+        })
         .on_tray_icon_event(|tray, event| {
             match event {
-                // Os dois botões abrem o mesmo painel consolidado, como no
-                // fluxo rápido do EarTrumpet. O menu nativo separado não é
-                // usado para não dividir controles entre duas superfícies.
+                // Clique esquerdo simples abre o painel rápido
                 TrayIconEvent::Click {
-                    button: MouseButton::Left | MouseButton::Right,
+                    button: MouseButton::Left,
                     button_state: MouseButtonState::Up,
                     ..
                 } => {
                     let app = tray.app_handle();
                     let _ = toggle_flyout_internal(app);
                 }
-                // Clique duplo com botão esquerdo: abre a janela principal completa
+                // Clique duplo esquerdo abre a janela principal completa
                 TrayIconEvent::DoubleClick {
                     button: MouseButton::Left,
                     ..
@@ -67,9 +299,7 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
             }
         });
 
-    if let Some(icon) = app.default_window_icon() {
-        builder = builder.icon(icon.clone());
-    }
+    builder = builder.icon(tray_icon_for_theme("light"));
 
     builder.build(app)?;
     Ok(())
@@ -99,8 +329,8 @@ fn toggle_flyout_internal(app: &AppHandle) -> Result<(), String> {
             if let Ok(Some(monitor)) = flyout.current_monitor() {
                 let size = monitor.size();
                 let scale = monitor.scale_factor();
-                let flyout_w = 380.0;
-                let flyout_h = 680.0;
+                let flyout_w = 390.0;
+                let flyout_h = 740.0;
                 let margin_right = 16.0;
                 let margin_bottom = 56.0; // Espaço para a barra de tarefas do Windows
 
@@ -172,4 +402,20 @@ pub fn hide_tray_flyout(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn exit_app(app: AppHandle) {
     app.exit(0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tray_icon_for_theme;
+
+    #[test]
+    fn tray_icon_is_transparent_and_theme_aware() {
+        let light = tray_icon_for_theme("light");
+        let dark = tray_icon_for_theme("dark");
+
+        assert_eq!((light.width(), light.height()), (32, 32));
+        assert!(light.rgba().chunks_exact(4).any(|pixel| pixel[3] > 0));
+        assert_ne!(light.rgba(), dark.rgba());
+        assert!(light.rgba().chunks_exact(4).any(|pixel| pixel[3] == 0));
+    }
 }

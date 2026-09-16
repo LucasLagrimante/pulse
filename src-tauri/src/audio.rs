@@ -262,20 +262,30 @@ pub fn get_audio_devices() -> AudioDeviceInventory {
     }
 }
 
-#[tauri::command]
-pub fn set_default_audio_device(
-    direction: String,
-    device_id: String,
+pub fn set_default_audio_device_sync(
+    direction: &str,
+    device_id: &str,
 ) -> Result<AudioDeviceInventory, String> {
     #[cfg(windows)]
     {
-        windows_impl::set_default(&direction, &device_id)
+        windows_impl::set_default(direction, device_id)
     }
     #[cfg(not(windows))]
     {
         let _ = (direction, device_id);
         Err("A troca de dispositivos de áudio exige o Windows Core Audio.".into())
     }
+}
+
+#[tauri::command]
+pub fn set_default_audio_device(
+    app: tauri::AppHandle,
+    direction: String,
+    device_id: String,
+) -> Result<AudioDeviceInventory, String> {
+    let result = set_default_audio_device_sync(&direction, &device_id)?;
+    crate::tray::update_tray_menu(&app);
+    Ok(result)
 }
 
 #[cfg(test)]
