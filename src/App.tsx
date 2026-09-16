@@ -163,6 +163,7 @@ function isWslHostProcess(process: TopProcess) {
 }
 export type SystemOverview = {
   cpuPercent: number | null;
+  gpuPercent: number | null;
   memoryUsedGb: number | null;
   memoryTotalGb: number | null;
   diskUsedGb: number | null;
@@ -196,6 +197,35 @@ export type Performance = {
   gpu?: Capability<string>;
   vramBytes?: Capability<number>;
   temperatureCelsius?: Capability<number>;
+};
+export type NetworkAdapter = {
+  name: string;
+  description: string;
+  status: string;
+  hardwareInterface?: boolean;
+  linkSpeedBps?: Capability<number>;
+  receivedBps?: Capability<number>;
+  sentBps?: Capability<number>;
+};
+export type PhysicalDisk = {
+  index: number;
+  model: string;
+  mediaType: string;
+  busType: string;
+  sizeBytes?: Capability<number>;
+  health?: Capability<string>;
+  temperatureCelsius?: Capability<number>;
+};
+export type VolumeInfo = {
+  path: string;
+  label: string;
+  totalBytes?: number | null;
+  freeBytes?: number | null;
+};
+export type PerformanceDevices = {
+  adapters?: Capability<NetworkAdapter[]>;
+  disks?: Capability<PhysicalDisk[]>;
+  volumes?: VolumeInfo[];
 };
 export type StartupItem = {
   name: string;
@@ -280,6 +310,42 @@ export const metric = (v: number | undefined | null, suffix = ""): string => {
   return `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}${suffix}`;
 };
 
+/** Taxa de transferência legível para o card de rede (B/s, KB/s, MB/s, GB/s). */
+export function formatByteRate(value: number | null | undefined): string {
+  if (value == null || typeof value !== "number" || !Number.isFinite(value)) {
+    return "—";
+  }
+  if (value >= 1024 ** 3) {
+    return `${(value / 1024 ** 3).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} GB/s`;
+  }
+  if (value >= 1024 ** 2) {
+    return `${(value / 1024 ** 2).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB/s`;
+  }
+  if (value >= 1024) {
+    return `${(value / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} KB/s`;
+  }
+  return `${Math.round(value).toLocaleString("pt-BR")} B/s`;
+}
+
+/** Capacidade em TB/GB sem exibir zero fictício para valores ausentes. */
+export function formatCapacity(bytes: number | null | undefined): string {
+  if (bytes == null || typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) {
+    return "—";
+  }
+  const terabytes = bytes / 1024 ** 4;
+  if (terabytes >= 1) {
+    return `${terabytes.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} TB`;
+  }
+  return `${(bytes / 1024 ** 3).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} GB`;
+}
+
+function diskHealthTagClass(label: string | null | undefined): string {
+  if (label === "Saudável") return "healthy";
+  if (label === "Atenção") return "warning";
+  if (label === "Falha reportada") return "critical";
+  return "unknown";
+}
+
 const debugCategoryLabel = (category?: string) => ({
   telemetry: "Telemetria",
   storage: "Armazenamento",
@@ -291,6 +357,7 @@ const debugCategoryLabel = (category?: string) => ({
 const debugOperationLabel = (operation: string) => ({
   system_overview: "Coleta da visão geral",
   performance_details: "Leitura de desempenho",
+  performance_devices: "Leitura de rede e discos",
   recent_files: "Consulta de arquivos recentes",
   refresh_recent_files: "Atualização de arquivos recentes",
   startup_inventory: "Inventário de inicialização",
@@ -1395,6 +1462,10 @@ function App() {
   const [folderActionLoading, setFolderActionLoading] = useState(false);
   const [cpuHistory, setCpuHistory] = useState<number[]>([]);
   const [ramHistory, setRamHistory] = useState<number[]>([]);
+  const [gpuHistory, setGpuHistory] = useState<number[]>([]);
+  const [devices, setDevices] = useState<PerformanceDevices>();
+  const [downloadHistory, setDownloadHistory] = useState<number[]>([]);
+  const [uploadHistory, setUploadHistory] = useState<number[]>([]);
   const [startupSort, setStartupSort] = useState<"recommended" | "slowest" | "name" | "status">("recommended");
   const [startupSearch, setStartupSearch] = useState("");
   const [processToClose, setProcessToClose] = useState<TopProcess | null>(null);
@@ -1534,8 +1605,13 @@ function App() {
       ? Math.round((overview.diskUsedGb / overview.diskTotalGb) * 100)
       : undefined;
   const diskHealth = getDiskCapacityHealth(diskPercent);
+  const gpuPercent =
+    overview && typeof overview.gpuPercent === "number" && Number.isFinite(overview.gpuPercent)
+      ? Math.max(0, Math.min(100, overview.gpuPercent))
+      : undefined;
   const cpuSampleCount = cpuHistory.filter(value => Number.isFinite(value)).length;
   const ramSampleCount = ramHistory.filter(value => Number.isFinite(value)).length;
+  const gpuSampleCount = gpuHistory.filter(value => Number.isFinite(value)).length;
   // Uma única amostra renderiza só o marcador e parece um gráfico zerado.
   // Mantemos o skeleton até haver pontos suficientes para uma tendência legível.
   const cpuChartLoading = overviewLoading || (
@@ -1544,6 +1620,12 @@ function App() {
   const ramChartLoading = overviewLoading || (
     ramSampleCount > 0 && ramSampleCount < MIN_CHART_HISTORY_SAMPLES
   );
+  const gpuChartLoading = overviewLoading || (
+    gpuSampleCount > 0 && gpuSampleCount < MIN_CHART_HISTORY_SAMPLES
+  );
+  // Sem contadores de engine expostos pelo driver não há o que medir: o gráfico
+  // some por completo em vez de exibir uma barra vazia de "utilização não exposta".
+  const showGpuChart = gpuPercent !== undefined || gpuSampleCount > 0;
 
   const loadFiles = async (isInitial = false) => {
     setFilesLoading(true);
@@ -1623,6 +1705,36 @@ function App() {
     }
   };
 
+  const loadDevices = async () => {
+    try {
+      const result = await invoke<PerformanceDevices>("get_performance_devices");
+      if (!result || typeof result !== "object") return;
+      setDevices(result);
+      const adapters = Array.isArray(result.adapters?.value) ? result.adapters.value : [];
+      let download = 0;
+      let upload = 0;
+      let measured = false;
+      for (const adapter of adapters) {
+        const received = adapter?.receivedBps?.value;
+        const sent = adapter?.sentBps?.value;
+        if (typeof received === "number" && Number.isFinite(received)) {
+          download += received;
+          measured = true;
+        }
+        if (typeof sent === "number" && Number.isFinite(sent)) {
+          upload += sent;
+          measured = true;
+        }
+      }
+      if (measured) {
+        setDownloadHistory(previous => [...previous, Math.round(download)].slice(-30));
+        setUploadHistory(previous => [...previous, Math.round(upload)].slice(-30));
+      }
+    } catch {
+      // Continua seguro se falhar
+    }
+  };
+
   const collect = async () => {
     lastOverviewCollectionAt.current = Date.now();
     try {
@@ -1638,11 +1750,18 @@ function App() {
           typeof result.memoryTotalGb === "number" && result.memoryTotalGb > 0 && typeof result.memoryUsedGb === "number"
             ? Math.round((result.memoryUsedGb / result.memoryTotalGb) * 100)
             : Number.NaN;
+        const gpu =
+          typeof result.gpuPercent === "number" && !Number.isNaN(result.gpuPercent)
+            ? Math.max(0, Math.min(100, result.gpuPercent))
+            : Number.NaN;
         setCpuHistory(prev =>
           [...prev, cpu].slice(-30),
         );
         setRamHistory(prev =>
           [...prev, ram].slice(-30),
+        );
+        setGpuHistory(prev =>
+          [...prev, gpu].slice(-30),
         );
       } else {
         setOverview(undefined);
@@ -1697,6 +1816,11 @@ function App() {
       void loadPerformance();
     }, 550);
 
+    // 5. Rede e discos físicos depois do restante para não disputar a largada
+    const t4 = window.setTimeout(() => {
+      void loadDevices();
+    }, 800);
+
     return () => {
       disposed = true;
       if (bootTimer !== undefined) window.clearTimeout(bootTimer);
@@ -1704,6 +1828,7 @@ function App() {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
       window.clearTimeout(t3);
+      window.clearTimeout(t4);
     };
   }, [initialLoadAllowed, windowLabel]);
 
@@ -1714,6 +1839,7 @@ function App() {
     if (Date.now() - lastOverviewCollectionAt.current > 500) {
       void collect();
       void loadPerformance();
+      void loadDevices();
     }
 
     const delayUntilNextSample = Math.max(
@@ -1726,8 +1852,12 @@ function App() {
     let telemetryTimer: number | undefined;
     const startTimer = window.setTimeout(() => {
       void collect();
+      void loadDevices();
       telemetryTimer = window.setInterval(
-        () => void collect(),
+        () => {
+          void collect();
+          void loadDevices();
+        },
         TELEMETRY_POLL_INTERVAL_MS,
       );
     }, delayUntilNextSample);
@@ -1799,6 +1929,7 @@ function App() {
     }
     if (activeArea === "Desempenho") {
       void loadPerformance();
+      void loadDevices();
     }
     if (activeArea === "Inicialização e segurança") {
       void loadStartupItems();
@@ -2038,6 +2169,34 @@ function App() {
       ? rawGpuTemperature
       : undefined;
   const hasOptionalGpuMetrics = vramBytes !== undefined || gpuTemperature !== undefined;
+
+  const networkAdapters = Array.isArray(devices?.adapters?.value)
+    ? devices.adapters.value
+    : [];
+  const activeAdapterCount = networkAdapters.filter(adapter => adapter?.status === "Ativo").length;
+  const physicalDisks = Array.isArray(devices?.disks?.value) ? devices.disks.value : [];
+  const volumes = Array.isArray(devices?.volumes) ? devices.volumes : [];
+  const capacity = volumes.reduce(
+    (totals, volume) => {
+      const total = volume?.totalBytes;
+      const free = volume?.freeBytes;
+      if (
+        typeof total === "number" &&
+        typeof free === "number" &&
+        Number.isFinite(total) &&
+        Number.isFinite(free) &&
+        total > 0 &&
+        free >= 0 &&
+        free <= total
+      ) {
+        totals.total += total;
+        totals.free += free;
+        totals.measured = true;
+      }
+      return totals;
+    },
+    { total: 0, free: 0, measured: false },
+  );
 
   return (
     <CrashBoundary key={activeArea} onRecover={() => setActiveArea("Visão geral")}>
@@ -2292,7 +2451,7 @@ function App() {
 
             {activeArea === "Desempenho" && (
               <section className="module-dashboard">
-                <div className={`focused-grid ${hasOptionalGpuMetrics ? "" : "without-optional-gpu-metrics"}`}>
+                <div className="focused-grid">
                   <section className="panel focused-card">
                     <p>CPU AGORA</p>
                     <strong>{metric(overview?.cpuPercent, "%")}</strong>
@@ -2339,13 +2498,16 @@ function App() {
                     >
                       {performance?.gpu?.value || "Indisponível"}
                     </strong>
-                    <HardwareGaugeBar
-                      label="CONTROLADORA GRÁFICA"
-                      valueText={performance?.gpu?.value ? "Detectada" : "Indisponível"}
-                      percent={null}
-                      statusText="Utilização não exposta por esta fonte"
-                      type="gpu"
-                    />
+                    {showGpuChart && (
+                      <DetailedResourceChart
+                        title="USO DA GPU EM TEMPO REAL"
+                        history={gpuHistory}
+                        currentValue={metric(gpuPercent, "%")}
+                        color="var(--neu-info)"
+                        ariaLabel="Gráfico detalhado de GPU"
+                        loading={gpuChartLoading}
+                      />
+                    )}
                     <small>
                       {performance?.gpu?.unavailableReason || "Controladora gráfica do sistema"}
                     </small>
@@ -2393,6 +2555,175 @@ function App() {
                       </small>
                     </section>
                   )}
+                  <section className="panel focused-card network-card">
+                    <p>REDE</p>
+                    <strong className="network-total">
+                      <span className="network-rate network-rate-down">
+                        ↓ {formatByteRate(downloadHistory[downloadHistory.length - 1])}
+                      </span>
+                      <span className="network-rate network-rate-up">
+                        ↑ {formatByteRate(uploadHistory[uploadHistory.length - 1])}
+                      </span>
+                    </strong>
+                    <div className="network-charts">
+                      <div className="network-chart">
+                        <span className="network-chart-label">DOWNLOAD</span>
+                        <SparklineChart
+                          data={downloadHistory}
+                          color="var(--neu-signal-secondary)"
+                          height={32}
+                          ariaLabel="Histórico de download da rede"
+                        />
+                      </div>
+                      <div className="network-chart">
+                        <span className="network-chart-label">UPLOAD</span>
+                        <SparklineChart
+                          data={uploadHistory}
+                          color="var(--neu-accent)"
+                          height={32}
+                          ariaLabel="Histórico de upload da rede"
+                        />
+                      </div>
+                    </div>
+                    <ul className="network-adapter-list">
+                      {networkAdapters.map((adapter, index) => (
+                        <li key={`${adapter.name}-${index}`}>
+                          <span
+                            className={`network-dot ${adapter.status === "Ativo" ? "is-active" : ""}`}
+                            aria-hidden="true"
+                          />
+                          <span
+                            className="network-adapter-name"
+                            title={adapter.description || adapter.name}
+                          >
+                            {adapter.name}
+                          </span>
+                          <span className="network-adapter-rate">
+                            ↓ {formatByteRate(adapter.receivedBps?.value)} · ↑{" "}
+                            {formatByteRate(adapter.sentBps?.value)}
+                          </span>
+                        </li>
+                      ))}
+                      {networkAdapters.length === 0 && (
+                        <li className="network-adapter-empty">
+                          {devices?.adapters?.unavailableReason ||
+                            "Nenhum adaptador de rede reportado"}
+                        </li>
+                      )}
+                    </ul>
+                    <small>
+                      {networkAdapters.length > 0
+                        ? `${activeAdapterCount} de ${networkAdapters.length} adaptadores ativos`
+                        : "Adaptadores de rede do sistema"}
+                    </small>
+                  </section>
+                  <section
+                    className={`panel focused-card storage-device-card ${hasOptionalGpuMetrics ? "" : "span-2"}`}
+                  >
+                    <p>ARMAZENAMENTO FÍSICO</p>
+                    <strong>
+                      {capacity.measured
+                        ? `${formatCapacity(capacity.total - capacity.free)} / ${formatCapacity(capacity.total)}`
+                        : "Indisponível"}
+                    </strong>
+                    <div className="storage-device-body">
+                      <div className="storage-column">
+                        <span className="storage-column-label">VOLUMES</span>
+                        <ul className="storage-volume-list">
+                          {volumes.map(volume => {
+                            const hasCapacity =
+                              typeof volume.totalBytes === "number" &&
+                              typeof volume.freeBytes === "number" &&
+                              Number.isFinite(volume.totalBytes) &&
+                              Number.isFinite(volume.freeBytes) &&
+                              volume.totalBytes > 0 &&
+                              volume.freeBytes >= 0 &&
+                              volume.freeBytes <= volume.totalBytes;
+                            const usedGb = hasCapacity
+                              ? (volume.totalBytes! - volume.freeBytes!) / 1024 ** 3
+                              : null;
+                            const totalGb = hasCapacity ? volume.totalBytes! / 1024 ** 3 : null;
+                            const percent = hasCapacity
+                              ? Math.round(
+                                  ((volume.totalBytes! - volume.freeBytes!) / volume.totalBytes!) *
+                                    100,
+                                )
+                              : null;
+                            const health = getDiskCapacityHealth(percent);
+                            return (
+                              <li key={volume.path} className="storage-volume">
+                                <div className="storage-volume-head">
+                                  <span className="storage-volume-name">
+                                    {volume.label || volume.path}
+                                  </span>
+                                  <span className="storage-volume-size">
+                                    {hasCapacity
+                                      ? `${formatCapacity(volume.freeBytes)} livres`
+                                      : "Capacidade indisponível"}
+                                  </span>
+                                </div>
+                                <MiniCapacityBar
+                                  usedGb={usedGb}
+                                  totalGb={totalGb}
+                                  percent={percent}
+                                  color={diskCapacityColor(health)}
+                                  ariaLabel={`Ocupação de ${volume.label || volume.path}`}
+                                />
+                              </li>
+                            );
+                          })}
+                          {volumes.length === 0 && (
+                            <li className="storage-empty">Nenhum volume de disco detectado</li>
+                          )}
+                        </ul>
+                      </div>
+                      <div className="storage-column">
+                        <span className="storage-column-label">DISCOS FÍSICOS</span>
+                        <ul className="storage-disk-list">
+                          {physicalDisks.map(disk => (
+                            <li key={disk.index}>
+                              <span className="storage-disk-model" title={disk.model}>
+                                {disk.model}
+                              </span>
+                              <span className="storage-disk-size">
+                                {formatCapacity(disk.sizeBytes?.value)}
+                              </span>
+                              <span className="storage-disk-tags">
+                                {disk.mediaType && disk.mediaType !== "Não especificado" && (
+                                  <span className="storage-tag">{disk.mediaType}</span>
+                                )}
+                                {disk.busType && disk.busType !== "Não especificado" && (
+                                  <span className="storage-tag">{disk.busType}</span>
+                                )}
+                                {typeof disk.temperatureCelsius?.value === "number" &&
+                                  Number.isFinite(disk.temperatureCelsius.value) && (
+                                    <span className="storage-tag">
+                                      {metric(disk.temperatureCelsius.value, " °C")}
+                                    </span>
+                                  )}
+                                <span
+                                  className={`storage-tag storage-tag-${diskHealthTagClass(disk.health?.value)}`}
+                                >
+                                  {disk.health?.value || "Saúde indisponível"}
+                                </span>
+                              </span>
+                            </li>
+                          ))}
+                          {physicalDisks.length === 0 && (
+                            <li className="storage-empty">
+                              {devices?.disks?.unavailableReason ||
+                                "Nenhum disco físico reportado"}
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                    <small>
+                      {physicalDisks.length > 0
+                        ? `${volumes.length} volume(s) · ${physicalDisks.length} disco(s) físico(s)`
+                        : "Volumes e discos físicos do sistema"}
+                    </small>
+                  </section>
                 </div>
               </section>
             )}

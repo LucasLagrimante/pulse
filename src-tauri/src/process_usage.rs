@@ -3,11 +3,13 @@
 //! - CPU: delta de `GetProcessTimes` entre amostras consecutivas, normalizado
 //!   pelo número de processadores lógicos (100% representa a máquina inteira,
 //!   mesma semântica do Gerenciador de Tarefas).
-//! - GPU: contadores PDH `\GPU Engine(*)\Utilization Percentage`, somados por
-//!   PID. Quando o driver não expõe os contadores, a indisponibilidade é
+//! - GPU: contadores PDH `\GPU Engine(*)\Utilization Percentage`. Processos
+//!   compartilham engines, então o uso de cada engine é a soma de quem a
+//!   utiliza, e o uso do processo é a sua engine mais ocupada — nunca a soma
+//!   de engines distintas, que passaria de 100%. Mesma semântica do Gerenciador
+//!   de Tarefas. Quando o driver não expõe os contadores, a indisponibilidade é
 //!   propagada como `None` em vez de fabricar zero.
 
-#[cfg(not(windows))]
 use std::collections::HashMap;
 
 /// Extrai o PID de uma instância PDH de engine gráfico:
@@ -21,13 +23,73 @@ pub fn parse_gpu_instance_pid(instance: &str) -> Option<u32> {
     digits.parse().ok()
 }
 
+/// Identidade da engine física na instância PDH (luid/phys/eng), usada para
+/// somar o uso de processos diferentes que disputam a mesma engine:
+/// `pid_4520_luid_0x0_0xA1B2_phys_0_eng_1_engtype_3D` →
+/// `luid_0x0_0xA1B2_phys_0_eng_1`.
+pub fn parse_gpu_engine_key(instance: &str) -> Option<&str> {
+    let rest = instance.strip_prefix("pid_")?;
+    let (_, after_pid) = rest.split_once('_')?;
+    let key = after_pid.split("_engtype_").next()?;
+    if key.starts_with("luid_") {
+        Some(key)
+    } else {
+        None
+    }
+}
+
+/// Uma instância de engine gráfico lida do PDH, já validada.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GpuEngineSample {
+    pub pid: u32,
+    pub engine_key: String,
+    pub percent: f64,
+}
+
+/// Uso de GPU derivado das instâncias de engine.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GpuUsage {
+    /// Maior engine de cada processo (0% a 100%, como no Gerenciador de Tarefas).
+    pub per_pid: HashMap<u32, f64>,
+    /// Engine mais ocupada do sistema, somando todos os processos que a usam.
+    pub total_percent: f64,
+}
+
+pub fn aggregate_gpu_usage(samples: &[GpuEngineSample]) -> GpuUsage {
+    let mut per_pid: HashMap<u32, f64> = HashMap::new();
+    let mut per_engine: HashMap<&str, f64> = HashMap::new();
+
+    for sample in samples {
+        let percent = sample.percent.max(0.0);
+        let pid_usage = per_pid.entry(sample.pid).or_insert(0.0);
+        if percent > *pid_usage {
+            *pid_usage = percent;
+        }
+        *per_engine.entry(sample.engine_key.as_str()).or_insert(0.0) += percent;
+    }
+
+    let total_percent = per_engine
+        .values()
+        .copied()
+        .fold(0.0_f64, f64::max)
+        .clamp(0.0, 100.0);
+
+    GpuUsage {
+        per_pid: per_pid
+            .into_iter()
+            .map(|(pid, value)| (pid, round_usage(value)))
+            .collect(),
+        total_percent: round_usage(total_percent),
+    }
+}
+
 pub fn round_usage(value: f64) -> f64 {
     (value * 10.0).round() / 10.0
 }
 
 #[cfg(windows)]
 mod windows_impl {
-    use super::{parse_gpu_instance_pid, round_usage};
+    use super::round_usage;
     use std::collections::HashMap;
     use std::sync::Mutex;
     use std::time::Instant;
@@ -138,10 +200,10 @@ mod windows_impl {
         usage
     }
 
-    /// Utilização agregada de GPU por PID. `None` quando o driver não expõe os
-    /// contadores de engine gráfico; mapa vazio significa medição válida sem
-    /// nenhuma engine ativa.
-    pub fn gpu_percent_by_pid() -> Option<HashMap<u32, f64>> {
+    /// Uso de GPU por PID e total do sistema. `None` quando o driver não expõe
+    /// os contadores de engine gráfico; lista vazia significa medição válida
+    /// sem nenhuma engine ativa.
+    pub fn gpu_usage() -> Option<super::GpuUsage> {
         use windows::core::{w, PCWSTR};
         use windows::Win32::System::Performance::{
             PdhAddEnglishCounterW, PdhCloseQuery, PdhOpenQueryW, PDH_HCOUNTER, PDH_HQUERY,
@@ -165,16 +227,20 @@ mod windows_impl {
                 return None;
             }
 
-            let usage = collect_gpu_usage(query, counter);
+            let samples = collect_gpu_samples(query, counter);
             PdhCloseQuery(query);
-            usage
+            let samples = samples?;
+            if samples.is_empty() {
+                return None;
+            }
+            Some(super::aggregate_gpu_usage(&samples))
         }
     }
 
-    unsafe fn collect_gpu_usage(
+    unsafe fn collect_gpu_samples(
         query: windows::Win32::System::Performance::PDH_HQUERY,
         counter: windows::Win32::System::Performance::PDH_HCOUNTER,
-    ) -> Option<HashMap<u32, f64>> {
+    ) -> Option<Vec<super::GpuEngineSample>> {
         use windows::Win32::System::Performance::{
             PdhCollectQueryData, PdhGetFormattedCounterArrayW, PDH_CSTATUS_NEW_DATA,
             PDH_CSTATUS_VALID_DATA, PDH_FMT_COUNTERVALUE_ITEM_W, PDH_FMT_DOUBLE, PDH_MORE_DATA,
@@ -218,8 +284,7 @@ mod windows_impl {
             count as usize,
         );
 
-        let mut usage: HashMap<u32, f64> = HashMap::new();
-        let mut measured_any = false;
+        let mut samples = Vec::with_capacity(count as usize);
         for item in items {
             let c_status = item.FmtValue.CStatus;
             if c_status != PDH_CSTATUS_VALID_DATA && c_status != PDH_CSTATUS_NEW_DATA {
@@ -228,27 +293,33 @@ mod windows_impl {
             let Ok(name) = item.szName.to_string() else {
                 continue;
             };
-            let Some(pid) = parse_gpu_instance_pid(&name) else {
+            let Some(pid) = super::parse_gpu_instance_pid(&name) else {
+                continue;
+            };
+            let Some(engine_key) = super::parse_gpu_engine_key(&name) else {
                 continue;
             };
             let value = item.FmtValue.Anonymous.doubleValue;
             if !value.is_finite() {
                 continue;
             }
-            measured_any = true;
-            *usage.entry(pid).or_insert(0.0) += value.max(0.0);
+            samples.push(super::GpuEngineSample {
+                pid,
+                engine_key: engine_key.to_owned(),
+                percent: value,
+            });
         }
 
-        if measured_any {
-            Some(usage)
-        } else {
+        if samples.is_empty() {
             None
+        } else {
+            Some(samples)
         }
     }
 }
 
 #[cfg(windows)]
-pub use windows_impl::{cpu_percent_by_pid, gpu_percent_by_pid};
+pub use windows_impl::{cpu_percent_by_pid, gpu_usage};
 
 #[cfg(not(windows))]
 pub fn cpu_percent_by_pid(_pids: &[u32]) -> HashMap<u32, f64> {
@@ -256,13 +327,24 @@ pub fn cpu_percent_by_pid(_pids: &[u32]) -> HashMap<u32, f64> {
 }
 
 #[cfg(not(windows))]
-pub fn gpu_percent_by_pid() -> Option<HashMap<u32, f64>> {
+pub fn gpu_usage() -> Option<GpuUsage> {
     None
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_gpu_instance_pid, round_usage};
+    use super::{
+        aggregate_gpu_usage, parse_gpu_engine_key, parse_gpu_instance_pid, round_usage,
+        GpuEngineSample,
+    };
+
+    fn sample(pid: u32, engine_key: &str, percent: f64) -> GpuEngineSample {
+        GpuEngineSample {
+            pid,
+            engine_key: engine_key.to_owned(),
+            percent,
+        }
+    }
 
     #[test]
     fn parses_gpu_engine_instance_pid() {
@@ -282,6 +364,57 @@ mod tests {
         assert_eq!(parse_gpu_instance_pid("engtype_3D"), None);
         assert_eq!(parse_gpu_instance_pid("pid__luid"), None);
         assert_eq!(parse_gpu_instance_pid(""), None);
+    }
+
+    #[test]
+    fn extracts_physical_engine_identity() {
+        assert_eq!(
+            parse_gpu_engine_key("pid_4520_luid_0x00000000_0x0000A1B2_phys_0_eng_0_engtype_3D"),
+            Some("luid_0x00000000_0x0000A1B2_phys_0_eng_0")
+        );
+        // Engines distintas do mesmo processo são amostras separadas.
+        assert_ne!(
+            parse_gpu_engine_key("pid_1_luid_0x0_0xA_phys_0_eng_0_engtype_3D"),
+            parse_gpu_engine_key("pid_1_luid_0x0_0xA_phys_0_eng_1_engtype_3D")
+        );
+        assert_eq!(parse_gpu_engine_key("pid_1_engtype_3D"), None);
+        assert_eq!(parse_gpu_engine_key(""), None);
+    }
+
+    #[test]
+    fn aggregates_busiest_engine_per_process_and_system() {
+        // O processo 7 usa 40% da 3D e 30% da Copy: vale a engine mais ocupada.
+        // A Copy é compartilhada com o processo 9 (20%), somando 50% nessa engine.
+        let samples = vec![
+            sample(7, "luid_A_phys_0_eng_0", 40.0),
+            sample(7, "luid_A_phys_0_eng_1", 30.0),
+            sample(9, "luid_A_phys_0_eng_1", 20.0),
+        ];
+        let usage = aggregate_gpu_usage(&samples);
+        assert_eq!(usage.per_pid.get(&7), Some(&40.0));
+        assert_eq!(usage.per_pid.get(&9), Some(&20.0));
+        assert_eq!(usage.total_percent, 50.0);
+    }
+
+    #[test]
+    fn engine_sum_never_exceeds_one_hundred() {
+        let samples = vec![
+            sample(1, "luid_A_phys_0_eng_0", 90.0),
+            sample(2, "luid_A_phys_0_eng_0", 40.0),
+        ];
+        let usage = aggregate_gpu_usage(&samples);
+        assert_eq!(usage.total_percent, 100.0);
+    }
+
+    #[test]
+    fn distinct_gpus_are_ranked_by_busiest_engine() {
+        let samples = vec![
+            sample(1, "luid_A_phys_0_eng_0", 15.0),
+            sample(1, "luid_B_phys_0_eng_0", 80.0),
+        ];
+        let usage = aggregate_gpu_usage(&samples);
+        assert_eq!(usage.per_pid.get(&1), Some(&80.0));
+        assert_eq!(usage.total_percent, 80.0);
     }
 
     #[test]

@@ -312,7 +312,9 @@ export const DetailedResourceChart = memo(function DetailedResourceChart({
           ) : <SparklineChart
             data={history}
             color={color}
-            height={90}
+            /* O gráfico acompanha a altura disponível do card para que a
+               grade de Desempenho caiba alinhada em janelas mais baixas. */
+            height="100%"
             showGrid
             barWidth={6}
             barGap={3}

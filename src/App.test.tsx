@@ -9,6 +9,8 @@ import App, {
   ScanFoldersBar,
   ToastNotification,
   TrayFlyout,
+  formatByteRate,
+  formatCapacity,
   formatFileDate,
   formatFileSize,
   getDiskCapacityHealth,
@@ -85,6 +87,24 @@ describe("Formatters and Components", () => {
       expect(getDiskCapacityHealth(85)).toBe("warning");
       expect(getDiskCapacityHealth(94)).toBe("warning");
       expect(getDiskCapacityHealth(95)).toBe("critical");
+    });
+  });
+
+  describe("byte rate and capacity formatters", () => {
+    it("converts rates and capacities without inventing zero for absent values", () => {
+      expect(formatByteRate(null)).toBe("—");
+      expect(formatByteRate(undefined)).toBe("—");
+      expect(formatByteRate(Number.NaN)).toBe("—");
+      expect(formatByteRate(512)).toBe("512 B/s");
+      expect(formatByteRate(2048)).toBe("2 KB/s");
+      expect(formatByteRate(1_200_000)).toBe("1,1 MB/s");
+      expect(formatByteRate(2 * 1024 ** 3)).toBe("2 GB/s");
+      expect(formatCapacity(null)).toBe("—");
+      expect(formatCapacity(0)).toBe("—");
+      expect(formatCapacity(Number.NaN)).toBe("—");
+      expect(formatCapacity(500 * 1024 ** 3)).toBe("500 GB");
+      expect(formatCapacity(1024 ** 4)).toBe("1 TB");
+      expect(formatCapacity(2.5 * 1024 ** 4)).toBe("2,5 TB");
     });
   });
 
@@ -681,6 +701,54 @@ describe("Pulse application shell", () => {
             vramBytes: { value: 12 * 1024 * 1024 * 1024 },
             temperatureCelsius: { value: 45.5 },
           }) as never;
+        case "get_performance_devices":
+          return Promise.resolve({
+            adapters: {
+              value: [
+                {
+                  name: "Ethernet",
+                  description: "Realtek PCIe GbE Family Controller",
+                  status: "Ativo",
+                  hardwareInterface: true,
+                  linkSpeedBps: { value: 1_000_000_000 },
+                  receivedBps: { value: 1.2 * 1024 ** 2 },
+                  sentBps: { value: 256 * 1024 },
+                },
+                {
+                  name: "Wi-Fi",
+                  description: "Intel Wi-Fi 6E AX211",
+                  status: "Inativo",
+                  hardwareInterface: true,
+                  linkSpeedBps: { value: 0 },
+                  receivedBps: { value: null, unavailableReason: "Aguardando a primeira janela de medição" },
+                  sentBps: { value: null, unavailableReason: "Aguardando a primeira janela de medição" },
+                },
+              ],
+              unavailableReason: null,
+            },
+            disks: {
+              value: [
+                {
+                  index: 0,
+                  model: "Samsung SSD 990 PRO 1TB",
+                  mediaType: "SSD",
+                  busType: "NVMe",
+                  sizeBytes: { value: 1_000_204_886_016 },
+                  health: { value: "Saudável" },
+                  temperatureCelsius: { value: 38 },
+                },
+              ],
+              unavailableReason: null,
+            },
+            volumes: [
+              {
+                path: "C:\\",
+                label: "Disco Local (C:)",
+                totalBytes: 500 * 1024 ** 3,
+                freeBytes: 150 * 1024 ** 3,
+              },
+            ],
+          }) as never;
         case "list_recent_files":
         case "refresh_recent_files":
           return Promise.resolve([
@@ -976,24 +1044,33 @@ describe("Pulse application shell", () => {
     });
   });
 
-  it("hides unavailable VRAM and temperature metrics instead of rendering empty hardware gauges", async () => {
+  it("hides unavailable hardware metrics instead of rendering empty gauges", async () => {
     vi.mocked(invoke).mockImplementation((command: string) => {
-      if (command === "get_performance_details") {
-        return Promise.resolve({
-          gpu: { value: null, unavailableReason: "Driver genérico do Windows" },
-          vramBytes: { value: null, unavailableReason: "VRAM não exposta pelo driver" },
-          temperatureCelsius: { value: null, unavailableReason: "Temperatura não exposta pelo driver WMI" },
-        }) as never;
+      switch (command) {
+        case "get_current_window_label":
+          return Promise.resolve("main") as never;
+        case "is_current_window_foreground":
+          return Promise.resolve(true) as never;
+        case "get_performance_details":
+          return Promise.resolve({
+            gpu: { value: null, unavailableReason: "Driver genérico do Windows" },
+            vramBytes: { value: null, unavailableReason: "VRAM não exposta pelo driver" },
+            temperatureCelsius: { value: null, unavailableReason: "Temperatura não exposta pelo driver WMI" },
+          }) as never;
+        case "get_system_overview":
+          return Promise.resolve({
+            cpuPercent: 5,
+            gpuPercent: null,
+            memoryUsedGb: 4,
+            memoryTotalGb: 16,
+            diskUsedGb: 100,
+            diskTotalGb: 500,
+            startupItemCount: 1,
+            topProcesses: [],
+          }) as never;
+        default:
+          return Promise.resolve() as never;
       }
-      return Promise.resolve({
-        cpuPercent: 5,
-        memoryUsedGb: 4,
-        memoryTotalGb: 16,
-        diskUsedGb: 100,
-        diskTotalGb: 500,
-        startupItemCount: 1,
-        topProcesses: [],
-      }) as never;
     });
 
     const { container } = render(<App />);
@@ -1003,17 +1080,144 @@ describe("Pulse application shell", () => {
       expect(screen.getByText("CPU AGORA")).toBeInTheDocument();
       expect(screen.getByRole("region", { name: "Gráfico detalhado de CPU" })).toBeInTheDocument();
       expect(screen.getByRole("region", { name: "Gráfico detalhado de Memória RAM" })).toBeInTheDocument();
-      expect(screen.getByText("CONTROLADORA GRÁFICA")).toBeInTheDocument();
-      expect(screen.getAllByText("Driver genérico do Windows")[0]).toBeInTheDocument();
-      expect(screen.queryByText("VRAM / TEMPERATURA")).not.toBeInTheDocument();
-      expect(screen.queryByText("VRAM DEDICADA")).not.toBeInTheDocument();
-      expect(screen.queryByText("TEMPERATURA")).not.toBeInTheDocument();
-      expect(screen.queryByText("VRAM não exposta pelo driver")).not.toBeInTheDocument();
-      expect(screen.queryByText("Temperatura não exposta pelo driver WMI")).not.toBeInTheDocument();
+      expect(screen.getByText("Driver genérico do Windows")).toBeInTheDocument();
     });
+
+    expect(screen.queryByText("CONTROLADORA GRÁFICA")).not.toBeInTheDocument();
+    expect(screen.queryByText("Utilização não exposta por esta fonte")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Gráfico detalhado de GPU" })).not.toBeInTheDocument();
+    expect(screen.queryByText("VRAM / TEMPERATURA")).not.toBeInTheDocument();
+    expect(screen.queryByText("VRAM DEDICADA")).not.toBeInTheDocument();
+    expect(screen.queryByText("TEMPERATURA")).not.toBeInTheDocument();
+    expect(screen.queryByText("VRAM não exposta pelo driver")).not.toBeInTheDocument();
+    expect(screen.queryByText("Temperatura não exposta pelo driver WMI")).not.toBeInTheDocument();
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(container.querySelector(".focused-grid .meter")).not.toBeInTheDocument();
+  });
+
+  it("renders live GPU utilization from engine counters when the driver exposes them", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      switch (command) {
+        case "get_current_window_label":
+          return Promise.resolve("main") as never;
+        case "is_current_window_foreground":
+          return Promise.resolve(true) as never;
+        case "get_performance_details":
+          return Promise.resolve({
+            gpu: { value: "NVIDIA GeForce RTX 4070 SUPER" },
+          }) as never;
+        case "get_system_overview":
+          return Promise.resolve({
+            cpuPercent: 10,
+            gpuPercent: 37.5,
+            memoryUsedGb: 8,
+            memoryTotalGb: 16,
+            diskUsedGb: 100,
+            diskTotalGb: 500,
+            startupItemCount: 1,
+            topProcesses: [],
+          }) as never;
+        default:
+          return Promise.resolve() as never;
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Desempenho/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("USO DA GPU EM TEMPO REAL")).toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "Gráfico detalhado de GPU" })).toBeInTheDocument();
+      expect(screen.getByText("37,5%")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("Utilização não exposta por esta fonte")).not.toBeInTheDocument();
+    expect(screen.queryByText("CONTROLADORA GRÁFICA")).not.toBeInTheDocument();
+  });
+
+  it("renders network throughput and physical storage cards in the performance module", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      switch (command) {
+        case "get_current_window_label":
+          return Promise.resolve("main") as never;
+        case "is_current_window_foreground":
+          return Promise.resolve(true) as never;
+        case "get_system_overview":
+          return Promise.resolve({
+            cpuPercent: 12.5,
+            memoryUsedGb: 8.2,
+            memoryTotalGb: 16.0,
+            diskUsedGb: 120.0,
+            diskTotalGb: 500.0,
+            startupItemCount: 4,
+            topProcesses: [],
+            sampledAtUnixMs: 1725000000,
+            source: "Windows CIM",
+          }) as never;
+        case "get_performance_details":
+          return Promise.resolve({
+            gpu: { value: "NVIDIA GeForce RTX 4070" },
+          }) as never;
+        case "get_performance_devices":
+          return Promise.resolve({
+            adapters: {
+              value: [
+                {
+                  name: "Ethernet",
+                  description: "Realtek PCIe GbE Family Controller",
+                  status: "Ativo",
+                  hardwareInterface: true,
+                  linkSpeedBps: { value: 1_000_000_000 },
+                  receivedBps: { value: 1.2 * 1024 ** 2 },
+                  sentBps: { value: 256 * 1024 },
+                },
+              ],
+              unavailableReason: null,
+            },
+            disks: {
+              value: [
+                {
+                  index: 0,
+                  model: "Samsung SSD 990 PRO 1TB",
+                  mediaType: "SSD",
+                  busType: "NVMe",
+                  sizeBytes: { value: 1_000_204_886_016 },
+                  health: { value: "Saudável" },
+                  temperatureCelsius: { value: 38 },
+                },
+              ],
+              unavailableReason: null,
+            },
+            volumes: [
+              {
+                path: "C:\\",
+                label: "Disco Local (C:)",
+                totalBytes: 500 * 1024 ** 3,
+                freeBytes: 150 * 1024 ** 3,
+              },
+            ],
+          }) as never;
+        default:
+          return Promise.resolve() as never;
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Desempenho/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("REDE")).toBeInTheDocument();
+      expect(screen.getByText("ARMAZENAMENTO FÍSICO")).toBeInTheDocument();
+      expect(screen.getByText("Ethernet")).toBeInTheDocument();
+      expect(screen.getByText("Samsung SSD 990 PRO 1TB")).toBeInTheDocument();
+      expect(screen.getByText("SSD")).toBeInTheDocument();
+      expect(screen.getByText("NVMe")).toBeInTheDocument();
+      expect(screen.getByText("Saudável")).toBeInTheDocument();
+      expect(screen.getByText("150 GB livres")).toBeInTheDocument();
+      expect(screen.getAllByText(/1,2 MB\/s/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/256 KB\/s/).length).toBeGreaterThan(0);
+    });
   });
 
   it("handles the tray icon and close confirmation modal with exact question", async () => {

@@ -31,6 +31,9 @@ fn default_process_count() -> usize {
 #[serde(rename_all = "camelCase")]
 pub struct SystemOverview {
     pub cpu_percent: Option<f64>,
+    /// Engine gráfica mais ocupada do sistema (PDH), na mesma semântica do
+    /// Gerenciador de Tarefas. `None` quando o driver não expõe os contadores.
+    pub gpu_percent: Option<f64>,
     pub memory_used_gb: Option<f64>,
     pub memory_total_gb: Option<f64>,
     pub disk_used_gb: Option<f64>,
@@ -150,23 +153,32 @@ fn now_unix_ms() -> Result<u64, String> {
 
 /// Soma o uso de CPU e GPU medido para todos os processos membros de cada
 /// grupo. Ausência de medição vira `None` (indisponível), nunca zero falso.
-fn attach_usage_metrics(processes: &mut [TopProcess]) {
+/// Retorna o uso total da engine gráfica mais ocupada, se disponível.
+fn attach_usage_metrics(processes: &mut [TopProcess]) -> Option<f64> {
     #[cfg(windows)]
     {
         let pids: Vec<u32> = processes.iter().flat_map(member_ids).collect();
         let cpu = crate::process_usage::cpu_percent_by_pid(&pids);
-        let gpu = crate::process_usage::gpu_percent_by_pid();
+        let gpu = crate::process_usage::gpu_usage();
 
         for process in processes.iter_mut() {
-            let (cpu_percent, gpu_percent) =
-                aggregate_usage(&member_ids(process), &cpu, gpu.as_ref());
+            let (cpu_percent, gpu_percent) = aggregate_usage(
+                &member_ids(process),
+                &cpu,
+                gpu.as_ref().map(|usage| &usage.per_pid),
+            );
             process.cpu_percent = cpu_percent;
             process.gpu_percent = gpu_percent;
         }
+
+        gpu.map(|usage| usage.total_percent)
     }
 
     #[cfg(not(windows))]
-    let _ = processes;
+    {
+        let _ = processes;
+        None
+    }
 }
 
 fn member_ids(process: &TopProcess) -> Vec<u32> {
@@ -211,6 +223,7 @@ pub fn parse_overview(payload: &str, sampled_at_unix_ms: u64) -> Result<SystemOv
         .map_err(|e| format!("Não foi possível interpretar o resumo do Windows: {e}"))?;
     Ok(SystemOverview {
         cpu_percent: raw.cpu_percent,
+        gpu_percent: None,
         memory_used_gb: raw.memory_used_gb,
         memory_total_gb: raw.memory_total_gb,
         disk_used_gb: raw.disk_used_gb,
@@ -396,7 +409,7 @@ pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
                     }
                     // Uso por processo é uma janela de delta: recalcular a cada
                     // entrega mantém CPU/GPU atuais mesmo vindo do cache.
-                    attach_usage_metrics(&mut fresh.top_processes);
+                    fresh.gpu_percent = attach_usage_metrics(&mut fresh.top_processes);
                     return Ok(fresh);
                 }
                 #[cfg(not(windows))]
@@ -443,7 +456,7 @@ pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
                 overview.startup_item_count = items.len() as u32;
             }
 
-            attach_usage_metrics(&mut overview.top_processes);
+            overview.gpu_percent = attach_usage_metrics(&mut overview.top_processes);
 
             Ok(overview)
         }

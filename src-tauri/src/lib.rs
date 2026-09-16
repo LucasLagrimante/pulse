@@ -4,6 +4,7 @@ pub mod disk_analyzer;
 pub mod disk_cleanup;
 pub mod domain;
 pub mod performance;
+pub mod performance_devices;
 pub mod process;
 pub mod process_usage;
 pub mod recent_files;
@@ -84,6 +85,7 @@ pub fn run() {
             system_overview::get_system_overview,
             system_overview::terminate_process,
             performance::get_performance_details,
+            performance_devices::get_performance_devices,
             startup_inventory::list_startup_items,
             startup_inventory::set_startup_item_enabled,
             recent_files::list_recent_files,

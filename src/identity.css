@@ -556,21 +556,21 @@ button:disabled {
 .focused-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px !important;
-  margin-bottom: 20px;
+  gap: 12px !important;
+  margin-bottom: 12px;
 }
 
 .focused-card,
 .metric-card {
   background: var(--neu-surface) !important;
   border-radius: 22px !important;
-  padding: 20px !important;
+  padding: 14px 16px !important;
   box-shadow: var(--neu-shadow-raised) !important;
   border: var(--neu-border) !important;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 10px;
+  gap: 6px;
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   text-align: left;
@@ -597,7 +597,7 @@ button:disabled {
 .metric-card-top p,
 .focused-card small {
   color: var(--neu-text-muted) !important;
-  font-size: 0.72rem;
+  font-size: 0.63rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -630,12 +630,12 @@ button:disabled {
 
 .focused-card > strong,
 .metric-card > strong {
-  font-size: clamp(1.4rem, 2.2vw, 2rem) !important;
+  font-size: clamp(1.15rem, 1.55vw, 1.6rem) !important;
   font-weight: 700;
   letter-spacing: -0.04em;
   color: var(--neu-text-title);
   line-height: 1.1;
-  margin: 4px 0 8px;
+  margin: 2px 0 4px;
 }
 
 /* Nomes de GPUs podem ser longos; preserve o valor completo no card. */
@@ -655,7 +655,7 @@ button:disabled {
 /* Sparkline e canaletas embutidas */
 .sparkline-container {
   border-radius: 12px;
-  padding: 4px 6px;
+  padding: 2px 4px;
   background: var(--neu-surface);
   box-shadow: var(--neu-shadow-inset-xs);
   border: var(--neu-border-subtle);
@@ -666,12 +666,12 @@ button:disabled {
 .mini-capacity-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
 }
 
 .mini-capacity-bar-track,
 .hw-gauge-bar-track {
-  height: 10px !important;
+  height: 7px !important;
   border-radius: 999px !important;
   background: var(--neu-track-bg) !important;
   box-shadow: var(--neu-track-inset) !important;
@@ -691,7 +691,7 @@ button:disabled {
 .mini-capacity-labels {
   display: flex;
   justify-content: space-between;
-  font-size: 0.6rem;
+  font-size: 0.55rem;
   color: var(--neu-text-muted);
   font-family: "Cascadia Mono", Consolas, monospace;
 }
@@ -699,20 +699,20 @@ button:disabled {
 /* Painel de Gráfico Detalhado */
 .detailed-chart-panel {
   background: var(--neu-surface) !important;
-  border-radius: 24px !important;
-  padding: 22px !important;
+  border-radius: 18px !important;
+  padding: 8px 10px !important;
   box-shadow: var(--neu-shadow-raised) !important;
   border: var(--neu-border) !important;
-  margin-bottom: 20px;
+  margin-bottom: 6px;
 }
 
 .detailed-chart-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 6px;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 6px;
 }
 
 .detailed-chart-header h3 {
@@ -1512,20 +1512,17 @@ select:focus {
   z-index: 2;
 }
 
-/* A grade de desempenho usa toda a largura: quatro colunas quando as
-   métricas opcionais existem e três quando a GPU não expõe esses sensores. */
+/* A grade de desempenho usa toda a largura em três colunas: CPU, RAM e GPU na
+   primeira linha; rede e armazenamento físico na segunda. O card de
+   armazenamento ocupa duas colunas quando não há métricas opcionais de GPU. */
 .focused-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr);
-  gap: 18px;
-}
-
-.focused-grid.without-optional-gpu-metrics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: minmax(max-content, 1fr);
+  gap: 12px;
 }
 
-.focused-grid.without-optional-gpu-metrics > .focused-card:last-child {
-  grid-column: auto;
+.focused-grid > .focused-card.span-2 {
+  grid-column: span 2;
 }
 
 /* O painel de filtros deve medir o próprio conteúdo; o flex: 1 global de
@@ -1787,19 +1784,21 @@ body:has(.tray-flyout-container),
 @media (max-width: 1050px) {
   .focused-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: none;
+    grid-auto-rows: max-content;
+    height: auto;
     overflow: visible;
-  }
-
-  .focused-grid.without-optional-gpu-metrics > .focused-card:last-child {
-    grid-column: 1 / -1;
   }
 }
 
 @media (max-width: 760px) {
   .focused-grid {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: none;
+    grid-auto-rows: max-content;
+    height: auto;
+  }
+
+  .focused-grid > .focused-card.span-2 {
+    grid-column: auto;
   }
 }
 
@@ -2180,3 +2179,271 @@ body:has(.tray-flyout-container),
   color: var(--neu-text-muted) !important;
 }
 
+/* ==========================================================================
+   Desempenho: rede e armazenamento físico
+   ========================================================================== */
+
+.focused-card .network-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 16px;
+  white-space: normal;
+  overflow: visible;
+}
+
+.network-rate {
+  font-size: clamp(1rem, 1.4vw, 1.35rem);
+  letter-spacing: -0.03em;
+}
+
+.network-rate-down {
+  color: var(--neu-signal-secondary);
+}
+
+.network-rate-up {
+  color: var(--neu-accent);
+}
+
+.network-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.network-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.network-chart-label {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+  color: var(--neu-text-muted);
+}
+
+.network-adapter-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.network-adapter-list li {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.network-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--neu-text-caption);
+  box-shadow: var(--neu-shadow-inset-xs);
+}
+
+.network-dot.is-active {
+  background: var(--neu-success);
+  box-shadow: 0 0 6px var(--neu-success);
+}
+
+.network-adapter-name {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.66rem;
+  color: var(--neu-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.network-adapter-rate {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.58rem;
+  color: var(--neu-text-muted);
+  white-space: nowrap;
+}
+
+.network-adapter-empty,
+.storage-empty {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.62rem;
+  color: var(--neu-text-muted);
+}
+
+.storage-device-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.storage-column {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 0;
+  min-width: 0;
+}
+
+.storage-column-label {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--neu-text-muted);
+}
+
+.storage-volume-list,
+.storage-disk-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.storage-volume {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.storage-volume-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.storage-volume-name {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.68rem;
+  color: var(--neu-text-title);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.storage-volume-size {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.58rem;
+  color: var(--neu-text-muted);
+  white-space: nowrap;
+}
+
+.storage-disk-list li:not(.storage-empty) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px 8px;
+  min-width: 0;
+}
+
+.storage-disk-model {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.66rem;
+  color: var(--neu-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.storage-disk-size {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.6rem;
+  color: var(--neu-text-muted);
+  white-space: nowrap;
+}
+
+.storage-disk-tags {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.storage-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: var(--neu-border-subtle);
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-raised-xs);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.5rem;
+  letter-spacing: 0.04em;
+  color: var(--neu-text-muted);
+  white-space: nowrap;
+}
+
+.storage-tag-healthy {
+  color: var(--neu-success);
+}
+
+.storage-tag-warning {
+  color: var(--neu-warning);
+}
+
+.storage-tag-critical {
+  color: var(--neu-danger);
+}
+
+/* Em telas estreitas as colunas de volumes e discos empilham. */
+@media (max-width: 760px) {
+  .storage-device-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Em janelas baixas as listas de volumes e discos rolam dentro do card em vez
+   de alongar a grade e criar barra de rolagem na página inteira. */
+@media (max-height: 820px) {
+  .focused-grid {
+    gap: 10px !important;
+    margin-bottom: 8px;
+  }
+
+  .focused-card,
+  .metric-card {
+    padding: 12px 14px !important;
+  }
+
+  .storage-device-body {
+    max-height: 164px;
+  }
+
+  .network-adapter-list {
+    max-height: 96px;
+  }
+}
+
+/* No tema claro o badge ATUAL herdava texto quase branco do skin legado. */
+[data-theme] .stat-badge strong {
+  color: var(--neu-text-title);
+}
+
+[data-theme] .stat-badge {
+  background: var(--neu-surface);
+  border-color: var(--neu-divider);
+  color: var(--neu-text-muted);
+}
