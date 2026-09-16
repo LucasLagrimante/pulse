@@ -35,6 +35,15 @@ describe("ProviderIcon", () => {
     expect(svg?.classList.contains("provider-icon-openrouter")).toBe(true);
   });
 
+  it("renders OpenCode Go provider icon with the official mark and class", () => {
+    const { container } = render(<ProviderIcon providerId="opencode-go" size={15} />);
+    const svg = container.querySelector("svg");
+    expect(svg).not.toBeNull();
+    expect(svg?.getAttribute("width")).toBe("15");
+    expect(svg?.getAttribute("viewBox")).toBe("128 96 256 320");
+    expect(svg?.classList.contains("provider-icon-opencode-go")).toBe(true);
+  });
+
   it("renders fallback text mark for unknown providers", () => {
     const { container } = render(<ProviderIcon providerId="unknown_ai" size={16} />);
     expect(container.textContent).toBe("U");
