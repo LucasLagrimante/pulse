@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { formatReset, formatUsd, hasMeasuredQuota, isProviderDisabled, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, SubscriptionUsage, type SubscriptionUsageReport } from "./SubscriptionUsage";
+import { formatReset, formatUsd, hasMeasuredQuota, isProviderDisabled, reorderIds, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, SubscriptionUsage, type SubscriptionUsageReport } from "./SubscriptionUsage";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({
@@ -223,5 +223,67 @@ describe("SubscriptionUsage", () => {
     await waitFor(() => expect(screen.queryByText("DESATIVADO")).not.toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Desativar Claude Code" })).toBeInTheDocument();
     expect(screen.getByText("92% restante")).toBeInTheDocument();
+  });
+
+  it("reorders ids by drag position and rejects invalid moves", () => {
+    expect(reorderIds(["claude", "codex", "openrouter"], "openrouter", "claude")).toEqual(["openrouter", "claude", "codex"]);
+    expect(reorderIds(["claude", "codex"], "claude", "claude")).toBeNull();
+    expect(reorderIds(["claude"], "desconhecido", "claude")).toBeNull();
+  });
+
+  it("orders active providers by preference and pushes disabled ones to the end", async () => {
+    const providers = [
+      { ...report.providers[0] },
+      { ...report.providers[1] },
+      { id: "openrouter", provider: "OpenRouter", subtitle: "Saldo em Dólares (USD)", status: "available", source: "OpenRouter API", creditsRemaining: 4.6856, windows: [] },
+      { id: "opencode-go", provider: "OpenCode Go", subtitle: "Assinatura de modelos Open (USD)", status: "available", source: "OpenCode Go API", creditsRemaining: 1, windows: [], disabled: true },
+    ];
+    const settings = {
+      openrouterConfigured: true,
+      opencodeGoConfigured: true,
+      disabledProviders: ["opencode-go"],
+      providerOrder: ["openrouter", "codex", "claude", "opencode-go"],
+    };
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_subscription_settings") return Promise.resolve(settings) as never;
+      return Promise.resolve({ ...report, providers }) as never;
+    });
+
+    const { container } = render(<SubscriptionUsage />);
+    await screen.findByText("OpenRouter");
+    await waitFor(() => expect(container.querySelectorAll(".quota-provider-card")).toHaveLength(4));
+
+    const order = [...container.querySelectorAll(".quota-provider-card")].map(card =>
+      [...card.classList].find(className => className.startsWith("provider-"))?.replace("provider-", ""),
+    );
+    expect(order).toEqual(["openrouter", "codex", "claude", "opencode-go"]);
+  });
+
+  it("persists a new order when a card is dropped on another", async () => {
+    const providers = [
+      { ...report.providers[0] },
+      { ...report.providers[1] },
+      { id: "openrouter", provider: "OpenRouter", subtitle: "Saldo em Dólares (USD)", status: "available", source: "OpenRouter API", creditsRemaining: 4.6856, windows: [] },
+    ];
+    const settings = { openrouterConfigured: true, opencodeGoConfigured: true, providerOrder: ["claude", "codex", "openrouter"] };
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_subscription_settings") return Promise.resolve(settings) as never;
+      if (command === "set_provider_order") {
+        return Promise.resolve({ ...settings, providerOrder: ["codex", "claude", "openrouter"] }) as never;
+      }
+      return Promise.resolve({ ...report, providers }) as never;
+    });
+
+    const { container } = render(<SubscriptionUsage />);
+    await screen.findByText("OpenRouter");
+    await waitFor(() => expect(container.querySelectorAll(".quota-provider-card")).toHaveLength(3));
+
+    const cards = container.querySelectorAll(".quota-provider-card");
+    const dataTransfer = { dropEffect: "", effectAllowed: "", setData: vi.fn(), getData: vi.fn() };
+    fireEvent.dragStart(cards[0], { dataTransfer });
+    fireEvent.dragOver(cards[1], { dataTransfer });
+    fireEvent.drop(cards[1], { dataTransfer });
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_provider_order", { order: ["codex", "claude", "openrouter"] }));
   });
 });

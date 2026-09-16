@@ -96,6 +96,7 @@ pub struct SubscriptionSettings {
     pub opencode_go_configured: bool,
     pub opencode_go_masked: Option<String>,
     pub disabled_providers: Vec<String>,
+    pub provider_order: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -103,6 +104,8 @@ pub struct SubscriptionSettings {
 struct SubscriptionPreferences {
     #[serde(default)]
     disabled_providers: Vec<String>,
+    #[serde(default)]
+    provider_order: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1810,9 +1813,31 @@ fn apply_disabled_flags(providers: &mut [ProviderUsage], disabled: &[String]) {
     }
 }
 
-// Atualiza imediatamente o cache em memória e o disco para que o tray reflita o
-// estado sem esperar a próxima varredura completa.
-fn refresh_disabled_flag(provider_id: &str, disabled: bool) {
+fn provider_order() -> Vec<String> {
+    let mut seen = Vec::new();
+    for id in load_preferences().provider_order {
+        if PROVIDER_IDS.contains(&id.as_str()) && !seen.contains(&id) {
+            seen.push(id);
+        }
+    }
+    seen
+}
+
+// Ordena pela preferência do usuário (dois sorts estáveis) e empurra os
+// desativados para o final, tanto na tela de cotas quanto no tray.
+fn apply_provider_order(providers: &mut [ProviderUsage], order: &[String]) {
+    providers.sort_by_key(|provider| {
+        order
+            .iter()
+            .position(|id| id == &provider.id)
+            .unwrap_or(usize::MAX)
+    });
+    providers.sort_by_key(|provider| provider.disabled);
+}
+
+// Aplica a ordem salva ao cache em memória e ao disco para o tray refletir
+// imediatamente, sem esperar a próxima varredura completa.
+fn apply_order_to_cache(order: &[String]) {
     let report = {
         let cache = CACHE.get_or_init(|| Mutex::new(None));
         let Ok(mut guard) = cache.lock() else {
@@ -1821,15 +1846,36 @@ fn refresh_disabled_flag(provider_id: &str, disabled: bool) {
         let Some(cached) = guard.as_mut() else {
             return;
         };
-        let Some(provider) = cached
+        apply_provider_order(&mut cached.report.providers, order);
+        cached.report.clone()
+    };
+    save_persisted_cache(&report);
+    notify_subscription_updated(&report);
+}
+
+// Atualiza imediatamente o cache em memória e o disco para que o tray reflita o
+// estado sem esperar a próxima varredura completa.
+fn refresh_disabled_flag(provider_id: &str, disabled: bool) {
+    let order = provider_order();
+    let report = {
+        let cache = CACHE.get_or_init(|| Mutex::new(None));
+        let Ok(mut guard) = cache.lock() else {
+            return;
+        };
+        let Some(cached) = guard.as_mut() else {
+            return;
+        };
+        if let Some(provider) = cached
             .report
             .providers
             .iter_mut()
             .find(|provider| provider.id == provider_id)
-        else {
+        {
+            provider.disabled = disabled;
+        } else {
             return;
-        };
-        provider.disabled = disabled;
+        }
+        apply_provider_order(&mut cached.report.providers, &order);
         cached.report.clone()
     };
     save_persisted_cache(&report);
@@ -1868,6 +1914,7 @@ fn start_background_scan() {
 
         let disabled = disabled_provider_ids();
         apply_disabled_flags(&mut providers, &disabled);
+        apply_provider_order(&mut providers, &provider_order());
 
         let (sender, receiver) = mpsc::channel();
         for (id, query) in [
@@ -2072,6 +2119,7 @@ fn current_settings() -> SubscriptionSettings {
         opencode_go_configured: opencode_go.is_some(),
         opencode_go_masked: opencode_go.as_deref().map(mask_key),
         disabled_providers: disabled_provider_ids(),
+        provider_order: provider_order(),
     }
 }
 
@@ -2194,6 +2242,28 @@ fn set_provider_enabled_sync(
     save_preferences(&preferences)?;
     refresh_disabled_flag(provider_id, !enabled);
     invalidate_cache_and_rescan();
+    Ok(current_settings())
+}
+
+#[tauri::command]
+pub async fn set_provider_order(order: Vec<String>) -> Result<SubscriptionSettings, String> {
+    tauri::async_runtime::spawn_blocking(move || set_provider_order_sync(order))
+        .await
+        .map_err(|_| "Falha ao atualizar a ordem dos provedores.".to_string())?
+}
+
+fn set_provider_order_sync(order: Vec<String>) -> Result<SubscriptionSettings, String> {
+    let mut sanitized = Vec::new();
+    for id in order {
+        if PROVIDER_IDS.contains(&id.as_str()) && !sanitized.contains(&id) {
+            sanitized.push(id);
+        }
+    }
+    let mut preferences = load_preferences();
+    preferences.provider_order = sanitized;
+    save_preferences(&preferences)?;
+    let stored = provider_order();
+    apply_order_to_cache(&stored);
     Ok(current_settings())
 }
 

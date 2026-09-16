@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { DragEventHandler } from "react";
 import { ModuleIcon } from "./Identity";
 import { ProviderIcon } from "./ProviderIcon";
 
@@ -47,6 +48,7 @@ type SubscriptionSettings = {
   opencodeGoConfigured: boolean;
   opencodeGoMasked?: string | null;
   disabledProviders?: string[];
+  providerOrder?: string[];
 };
 
 export function safePercent(value: number | null | undefined): number | null {
@@ -141,6 +143,49 @@ export function formatUsd(value: number | null | undefined): string {
     : `$ ${measured.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
 }
 
+function PowerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3v9" />
+      <path d="M6.6 6.6a8 8 0 1 0 10.8 0" />
+    </svg>
+  );
+}
+
+function KeyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="7.5" cy="16" r="3.6" />
+      <path d="M10.2 13.4 20 3.6" />
+      <path d="M17 6.6l2 2" />
+      <path d="M14.4 9.2l2 2" />
+    </svg>
+  );
+}
+
+function GripIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true">
+      <circle cx="9" cy="6" r="1.5" />
+      <circle cx="15" cy="6" r="1.5" />
+      <circle cx="9" cy="12" r="1.5" />
+      <circle cx="15" cy="12" r="1.5" />
+      <circle cx="9" cy="18" r="1.5" />
+      <circle cx="15" cy="18" r="1.5" />
+    </svg>
+  );
+}
+
+export function reorderIds(ids: string[], fromId: string, toId: string): string[] | null {
+  const from = ids.indexOf(fromId);
+  const to = ids.indexOf(toId);
+  if (from < 0 || to < 0 || from === to) return null;
+  const next = [...ids];
+  next.splice(from, 1);
+  next.splice(to, 0, fromId);
+  return next;
+}
+
 function QuotaMeter({ quota, providerId }: { quota: QuotaWindow; providerId: string }) {
   const remaining = safePercent(quota.remainingPercent);
   const used = safePercent(quota.usedPercent);
@@ -180,12 +225,24 @@ function ProviderCard({
   onConfigureKey,
   onToggleEnabled,
   toggleBusy,
+  reorderEnabled,
+  dragging,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: {
   provider: ProviderUsage;
   disabled: boolean;
   onConfigureKey?: () => void;
   onToggleEnabled?: () => void;
   toggleBusy?: boolean;
+  reorderEnabled?: boolean;
+  dragging?: boolean;
+  onDragStart?: DragEventHandler<HTMLElement>;
+  onDragOver?: DragEventHandler<HTMLElement>;
+  onDrop?: DragEventHandler<HTMLElement>;
+  onDragEnd?: DragEventHandler<HTMLElement>;
 }) {
   const windows = Array.isArray(provider.windows) ? provider.windows : [];
   const plan = planLabel(provider.plan);
@@ -197,12 +254,24 @@ function ProviderCard({
   const sampledAt = measuredNumber(provider.sampledAtUnixMs);
   const managedTarget = keyManagedProvider(provider);
   return (
-    <article className={`quota-provider-card provider-${provider.id}${disabled ? " is-disabled" : available ? "" : " is-unavailable"}`}>
+    <article
+      className={`quota-provider-card provider-${provider.id}${disabled ? " is-disabled" : available ? "" : " is-unavailable"}${reorderEnabled ? " is-reorderable" : ""}${dragging ? " is-dragging" : ""}`}
+      draggable={reorderEnabled}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+    >
       <header className="quota-provider-heading">
+        {reorderEnabled && (
+          <span className="quota-drag-handle" title="Arraste para reordenar" aria-hidden="true">
+            <GripIcon />
+          </span>
+        )}
         <span className="quota-provider-mark" aria-hidden="true">
           <ProviderIcon providerId={provider.id} size={20} />
         </span>
-        <div>
+        <div className="quota-provider-identity">
           <div className="quota-provider-title">
             <strong>{provider.provider || "Provedor desconhecido"}</strong>
             {plan && <span>{plan}</span>}
@@ -213,24 +282,24 @@ function ProviderCard({
           {onToggleEnabled && (
             <button
               type="button"
-              className={`quota-mini-action${disabled ? "" : " is-danger"}`}
+              className={`quota-icon-btn${disabled ? "" : " is-danger"}`}
               onClick={onToggleEnabled}
               disabled={toggleBusy}
               title={disabled ? `Reativar ${provider.provider}` : `Desativar ${provider.provider} (pausa as atualizações)`}
               aria-label={disabled ? `Reativar ${provider.provider}` : `Desativar ${provider.provider}`}
             >
-              {toggleBusy ? "…" : disabled ? "Reativar" : "Desativar"}
+              {toggleBusy ? <span className="quota-icon-busy" aria-hidden="true">…</span> : <PowerIcon />}
             </button>
           )}
           {!disabled && managedTarget && onConfigureKey && (
             <button
               type="button"
-              className="quota-mini-action"
+              className="quota-icon-btn"
               onClick={onConfigureKey}
               title={managedTarget === "openrouter" ? "Configurar chave de API do OpenRouter" : "Configurar chave de API do OpenCode Go"}
               aria-label={managedTarget === "openrouter" ? "Configurar chave OpenRouter" : "Configurar chave OpenCode Go"}
             >
-              Chave
+              <KeyIcon />
             </button>
           )}
           <span className={`quota-status${disabled ? " is-disabled" : available ? " is-online" : ""}`}>
@@ -334,6 +403,9 @@ export function SubscriptionUsage() {
   const [keyModalOpen, setKeyModalOpen] = useState(false);
   const [keyModalTarget, setKeyModalTarget] = useState<"openrouter" | "opencode-go">("openrouter");
   const [toggleBusy, setToggleBusy] = useState<string | null>(null);
+  const [order, setOrder] = useState<string[]>([]);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [orderBusy, setOrderBusy] = useState(false);
 
   const load = useCallback(async (forceRefresh: boolean) => {
     setLoading(true);
@@ -407,6 +479,10 @@ export function SubscriptionUsage() {
     return () => { disposed = true; };
   }, []);
 
+  useEffect(() => {
+    if (Array.isArray(settings?.providerOrder)) setOrder(settings.providerOrder);
+  }, [settings?.providerOrder]);
+
   const openModal = (target: "openrouter" | "opencode-go") => {
     setSettingsError(null);
     if (target === "openrouter") setOpenrouterKey("");
@@ -476,12 +552,67 @@ export function SubscriptionUsage() {
     () => report?.providers.filter(hasMeasuredQuota) ?? [],
     [report],
   );
-  const displayProviders = useMemo(
-    () => report?.providers.filter(provider =>
+
+  const orderIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    order.forEach((id, index) => map.set(id, index));
+    return map;
+  }, [order]);
+
+  const displayProviders = useMemo(() => {
+    const providers = report?.providers ?? [];
+    const weight = (provider: ProviderUsage) => orderIndex.get(provider.id) ?? Number.MAX_SAFE_INTEGER;
+    const visible = providers.filter(provider =>
       hasMeasuredQuota(provider) || keyManagedProvider(provider) != null || isProviderDisabled(provider, disabledIds),
-    ) ?? [],
-    [report, disabledIds],
-  );
+    );
+    const active = visible
+      .filter(provider => !isProviderDisabled(provider, disabledIds))
+      .sort((a, b) => weight(a) - weight(b));
+    const inactive = visible
+      .filter(provider => isProviderDisabled(provider, disabledIds))
+      .sort((a, b) => weight(a) - weight(b));
+    return [...active, ...inactive];
+  }, [report, disabledIds, orderIndex]);
+
+  const persistOrder = useCallback(async (nextOrder: string[]) => {
+    setOrderBusy(true);
+    setSettingsError(null);
+    try {
+      const next = await invoke<SubscriptionSettings>("set_provider_order", { order: nextOrder });
+      if (next && Array.isArray(next.providerOrder)) setSettings(next);
+    } catch (error) {
+      setSettingsError(typeof error === "string" ? error : "Não foi possível salvar a ordem dos provedores.");
+    } finally {
+      setOrderBusy(false);
+    }
+  }, []);
+
+  const handleDragStart = (id: string): DragEventHandler<HTMLElement> => event => {
+    setDraggingId(id);
+    event.dataTransfer.effectAllowed = "move";
+    try { event.dataTransfer.setData("text/plain", id); } catch {}
+  };
+  const handleDragOver = (id: string): DragEventHandler<HTMLElement> => event => {
+    if (!draggingId || draggingId === id) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  };
+  const handleDrop = (id: string): DragEventHandler<HTMLElement> => event => {
+    event.preventDefault();
+    const fromId = draggingId;
+    setDraggingId(null);
+    if (!fromId || fromId === id || orderBusy) return;
+    const activeIds = displayProviders
+      .filter(provider => !isProviderDisabled(provider, disabledIds))
+      .map(provider => provider.id);
+    const next = reorderIds(activeIds, fromId, id);
+    if (!next) return;
+    setOrder(next);
+    void persistOrder(next);
+  };
+  const handleDragEnd = () => setDraggingId(null);
+
+
   const hasMeasuredProvider = measuredProviders.length > 0;
   const unavailableReasons = useMemo(
     () => report?.providers
@@ -547,6 +678,12 @@ export function SubscriptionUsage() {
                         toggleBusy={toggleBusy === provider.id}
                         onToggleEnabled={() => void toggleProvider(provider, disabled)}
                         onConfigureKey={target ? () => openModal(target) : undefined}
+                        reorderEnabled={!disabled && !orderBusy}
+                        dragging={draggingId === provider.id}
+                        onDragStart={handleDragStart(provider.id)}
+                        onDragOver={handleDragOver(provider.id)}
+                        onDrop={handleDrop(provider.id)}
+                        onDragEnd={handleDragEnd}
                       />
                     );
                   })}

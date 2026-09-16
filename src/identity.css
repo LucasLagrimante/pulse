@@ -1757,6 +1757,44 @@ select:focus {
   box-shadow: var(--neu-track-inset);
 }
 
+[data-theme] .quota-icon-btn {
+  color: var(--neu-text-primary) !important;
+  background: var(--neu-surface) !important;
+  border-color: var(--neu-divider) !important;
+  box-shadow: var(--neu-shadow-raised-sm);
+}
+
+[data-theme] .quota-icon-btn.is-danger {
+  color: #b4574a !important;
+  border-color: color-mix(in srgb, #b4574a 42%, var(--neu-divider)) !important;
+}
+
+[data-theme] .quota-drag-handle {
+  color: var(--neu-text-muted);
+}
+
+[data-theme] .quota-toolbar button:hover,
+[data-theme] .quota-page-empty button:hover,
+[data-theme] .quota-key-actions button:hover,
+[data-theme] .quota-card-setup-btn:hover,
+[data-theme] .quota-icon-btn:hover {
+  background: var(--neu-surface-hover) !important;
+  border-color: var(--neu-accent) !important;
+  color: var(--neu-text-title) !important;
+}
+
+[data-theme] .quota-icon-btn.is-danger:hover {
+  background: var(--neu-surface-hover) !important;
+  border-color: var(--neu-danger) !important;
+  color: var(--neu-danger) !important;
+}
+
+[data-theme] .quota-key-actions button.is-danger:hover {
+  background: var(--neu-surface-hover) !important;
+  border-color: var(--neu-danger) !important;
+  color: var(--neu-danger) !important;
+}
+
 [data-theme] .quota-provider-empty p,
 [data-theme] .quota-meter.is-unavailable p,
 [data-theme] .quota-page-empty p,

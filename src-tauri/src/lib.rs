@@ -122,7 +122,8 @@ pub fn run() {
             subscription_usage::clear_openrouter_api_key,
             subscription_usage::set_opencode_go_api_key,
             subscription_usage::clear_opencode_go_api_key,
-            subscription_usage::set_provider_enabled
+            subscription_usage::set_provider_enabled,
+            subscription_usage::set_provider_order
         ])
         .run(tauri::generate_context!())
         .expect("error while running Pulse");

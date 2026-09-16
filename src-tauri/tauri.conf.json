@@ -18,7 +18,8 @@
         "height": 780,
         "minWidth": 960,
         "minHeight": 640,
-        "resizable": true
+        "resizable": true,
+        "dragDropEnabled": false
       },
       {
         "label": "tray-flyout",
