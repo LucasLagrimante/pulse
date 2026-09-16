@@ -54,6 +54,48 @@ export function safePercent(value: number | null | undefined): number | null {
   return Math.max(0, Math.min(100, value));
 }
 
+export function measuredWindowMinutes(window: QuotaWindow): number | null {
+  return typeof window.windowMinutes === "number" && Number.isFinite(window.windowMinutes) && window.windowMinutes > 0
+    ? window.windowMinutes
+    : null;
+}
+
+export function shortQuotaWindowLabel(window: QuotaWindow): string {
+  const minutes = measuredWindowMinutes(window);
+  if (minutes != null) {
+    if (minutes % 1440 === 0) return `${Math.round(minutes / 1440)}d`;
+    if (minutes % 60 === 0) return `${Math.round(minutes / 60)}h`;
+    return `${Math.round(minutes)}min`;
+  }
+  const label = (window.label || "").toLowerCase();
+  const id = (window.id || "").toLowerCase();
+  if (label.includes("sess") || id.includes("sess") || label.includes("5h") || label.includes("5 hora")) return "5h";
+  if (label.includes("sem") || id.includes("week") || label.includes("7d") || label.includes("7 dia")) return "7d";
+  if (label.includes("mensal") || id.includes("month") || label.includes("30d")) return "30d";
+  const fallback = window.label?.trim() || "Cota";
+  return fallback.length > 6 ? `${fallback.slice(0, 4)}…` : fallback;
+}
+
+export function selectFlyoutQuotaWindows(windows: QuotaWindow[], limit = 2): QuotaWindow[] {
+  const measured = (Array.isArray(windows) ? windows : []).filter(
+    window => safePercent(window.remainingPercent) != null && !window.unavailableReason,
+  );
+  const byWindow = new Map<string, QuotaWindow>();
+  for (const window of measured) {
+    const minutes = measuredWindowMinutes(window);
+    const key = minutes != null ? `m${minutes}` : `l${window.label || window.id || "cota"}`;
+    const current = byWindow.get(key);
+    const remaining = safePercent(window.remainingPercent) ?? 100;
+    const currentRemaining = current ? safePercent(current.remainingPercent) ?? 100 : null;
+    if (currentRemaining == null || remaining < currentRemaining) {
+      byWindow.set(key, window);
+    }
+  }
+  return [...byWindow.values()]
+    .sort((a, b) => (measuredWindowMinutes(a) ?? Number.MAX_SAFE_INTEGER) - (measuredWindowMinutes(b) ?? Number.MAX_SAFE_INTEGER))
+    .slice(0, limit);
+}
+
 export function formatReset(timestampSeconds: number | null | undefined, nowMs = Date.now()): string {
   if (typeof timestampSeconds !== "number" || !Number.isFinite(timestampSeconds)) return "Reset não informado";
   const difference = timestampSeconds * 1000 - nowMs;

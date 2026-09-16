@@ -13,7 +13,7 @@ import {
 } from "./Charts";
 import { DiskAnalyzer } from "./DiskAnalyzer";
 import { DiskCleanup } from "./DiskCleanup";
-import { formatUsd, hasMeasuredQuota, safePercent, SubscriptionUsage, type ProviderUsage } from "./SubscriptionUsage";
+import { formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, SubscriptionUsage, type ProviderUsage } from "./SubscriptionUsage";
 import { ProviderIcon } from "./ProviderIcon";
 
 const navigationItems = [
@@ -933,7 +933,7 @@ export function TrayFlyout({
       : undefined;
   const diskHealth = getDiskCapacityHealth(diskPercent);
   const visibleQuotaProviders = useMemo(
-    () => subscriptionProviders.filter(hasMeasuredQuota),
+    () => subscriptionProviders.filter(provider => provider.disabled !== true && hasMeasuredQuota(provider)),
     [subscriptionProviders],
   );
   const openrouterCredits = visibleQuotaProviders.find(provider => provider.id === "openrouter")?.creditsRemaining;
@@ -1110,9 +1110,7 @@ export function TrayFlyout({
         {subscriptionScanStatus === "running" && !hasQuotaResult ? <p className="flyout-quota-empty">Consultando fontes locais…</p> : visibleQuotaProviders.length > 0 ? (
           <div className="flyout-quota-grid">
             {visibleQuotaProviders.map(provider => {
-              const measuredWindows = (provider.windows ?? []).filter(
-                window => safePercent(window.remainingPercent) != null && !window.unavailableReason,
-              );
+              const trayWindows = selectFlyoutQuotaWindows(provider.windows);
               const planName = provider.plan?.trim() ? provider.plan.toUpperCase() : "ATUAL";
 
               return (

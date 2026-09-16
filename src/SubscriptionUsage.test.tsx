@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { formatReset, formatUsd, hasMeasuredQuota, safePercent, SubscriptionUsage, type SubscriptionUsageReport } from "./SubscriptionUsage";
+import { formatReset, formatUsd, hasMeasuredQuota, isProviderDisabled, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, SubscriptionUsage, type SubscriptionUsageReport } from "./SubscriptionUsage";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({
@@ -117,6 +117,40 @@ describe("SubscriptionUsage", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
+  it("keeps OpenCode Go discoverable and reachable for key setup even without a confirmed quota", async () => {
+    const reportWithOpencodeGo: SubscriptionUsageReport = {
+      ...report,
+      providers: [
+        ...report.providers,
+        {
+          id: "opencode-go", provider: "OpenCode Go", subtitle: "Assinatura de modelos Open (USD)", status: "unavailable",
+          source: "OpenCode Go API · /zen/go/v1/usage", windows: [],
+          unavailableReason: "Chave não configurada. Informe uma chave nas configurações de Cotas de IA para consultar a cota do OpenCode Go.",
+        },
+      ],
+    };
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_subscription_settings") {
+        return Promise.resolve({ openrouterConfigured: true, opencodeGoConfigured: false }) as never;
+      }
+      return Promise.resolve(reportWithOpencodeGo) as never;
+    });
+    render(<SubscriptionUsage />);
+
+    expect(await screen.findByText("OpenCode Go")).toBeInTheDocument();
+    expect(screen.getByText("Cota não confirmada")).toBeInTheDocument();
+    expect(screen.getByText("Chave não configurada. Informe uma chave nas configurações de Cotas de IA para consultar a cota do OpenCode Go.")).toBeInTheDocument();
+
+    // Abrir via botão do card indisponível
+    fireEvent.click(screen.getByRole("button", { name: "CONFIGURAR CHAVE OPENCODE GO" }));
+    expect(screen.getByRole("heading", { name: "Configurar OpenCode Go" })).toBeInTheDocument();
+    fireEvent.click(screen.getByText("CANCELAR"));
+
+    // Abrir via botão dedicado da toolbar
+    fireEvent.click(screen.getByRole("button", { name: "CONFIGURAR OPENCODE GO" }));
+    expect(screen.getByRole("heading", { name: "Configurar OpenCode Go" })).toBeInTheDocument();
+  });
+
   it("formats OpenRouter values explicitly as dollars", () => {
     expect(formatUsd(0.2971)).toBe("$ 0,2971");
     expect(formatUsd(0)).toBe("$ 0,00");
@@ -134,5 +168,60 @@ describe("SubscriptionUsage", () => {
 
     expect(screen.getByRole("status", { name: "Consultando cotas locais" })).toBeInTheDocument();
     expect(container.querySelector(".quota-skeleton")).not.toBeInTheDocument();
+  });
+
+  it("labels tray windows by their real duration instead of truncating model names", () => {
+    expect(shortQuotaWindowLabel({ id: "agy-0", label: "Gemini Models · 5 horas", windowMinutes: 300 })).toBe("5h");
+    expect(shortQuotaWindowLabel({ id: "agy-1", label: "Gemini Models · Semanal", windowMinutes: 10080 })).toBe("7d");
+    expect(shortQuotaWindowLabel({ id: "agy-2", label: "Mensal", windowMinutes: 43200 })).toBe("30d");
+    expect(shortQuotaWindowLabel({ id: "session", label: "Sessão atual" })).toBe("5h");
+    expect(shortQuotaWindowLabel({ id: "weekly", label: "Cota semanal" })).toBe("7d");
+    expect(shortQuotaWindowLabel({ id: "custom", label: "Reserva extra" })).toBe("Rese…");
+  });
+
+  it("picks the worst measured window of each duration for the tray", () => {
+    const windows = [
+      { id: "agy-0", label: "Gemini Models · Semanal", remainingPercent: 85, windowMinutes: 10080 },
+      { id: "agy-1", label: "Gemini Models · 5 horas", remainingPercent: 100, windowMinutes: 300 },
+      { id: "agy-2", label: "Claude and GPT models · Semanal", remainingPercent: 66, windowMinutes: 10080 },
+      { id: "agy-3", label: "Claude and GPT models · 5 horas", remainingPercent: 100, windowMinutes: 300 },
+    ];
+    const picked = selectFlyoutQuotaWindows(windows);
+    expect(picked).toHaveLength(2);
+    expect(picked[0].label).toBe("Gemini Models · 5 horas");
+    expect(picked[1].label).toBe("Claude and GPT models · Semanal");
+    expect(selectFlyoutQuotaWindows([
+      ...windows,
+      { id: "vencida", label: "Claude and GPT models · 5 horas", remainingPercent: null, windowMinutes: 300, unavailableReason: "A janela foi reiniciada." },
+    ])).toHaveLength(2);
+  });
+
+  it("renders a disabled provider as inactive and re-enables it on demand", async () => {
+    const disabledClaude = { ...report.providers[0], disabled: true };
+    const settings = { openrouterConfigured: false, opencodeGoConfigured: false, disabledProviders: ["claude"] };
+    vi.mocked(invoke).mockImplementation((command: string, args?: unknown) => {
+      if (command === "get_subscription_settings") return Promise.resolve(settings) as never;
+      if (command === "set_provider_enabled") {
+        expect(args).toEqual({ providerId: "claude", enabled: true });
+        return Promise.resolve({ ...settings, disabledProviders: [] }) as never;
+      }
+      return Promise.resolve({ ...report, providers: [disabledClaude, report.providers[1]] }) as never;
+    });
+
+    const { container } = render(<SubscriptionUsage />);
+    expect(await screen.findByText("Claude Code")).toBeInTheDocument();
+    expect(screen.getByText("DESATIVADO")).toBeInTheDocument();
+    expect(screen.getByText("Provedor desativado")).toBeInTheDocument();
+    expect(isProviderDisabled(disabledClaude)).toBe(true);
+
+    const claudeCard = container.querySelector(".quota-provider-card.provider-claude");
+    expect(claudeCard).toHaveClass("is-disabled");
+    expect(claudeCard?.querySelector(".quota-track")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reativar Claude Code" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_provider_enabled", { providerId: "claude", enabled: true }));
+    await waitFor(() => expect(screen.queryByText("DESATIVADO")).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Desativar Claude Code" })).toBeInTheDocument();
+    expect(screen.getByText("92% restante")).toBeInTheDocument();
   });
 });

@@ -363,6 +363,42 @@ describe("Formatters and Components", () => {
       expect(screen.getAllByText("$ 4,50").length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText("Claude Code")).toBeInTheDocument();
     });
+
+    it("hides disabled AI providers from the tray flyout", async () => {
+      const providers = [
+        {
+          id: "claude",
+          provider: "Claude Code",
+          subtitle: "Assinatura Anthropic",
+          status: "available",
+          disabled: true,
+          windows: [{ id: "session", label: "Sessão", remainingPercent: 85 }],
+          source: "Claude Code",
+        },
+        {
+          id: "codex",
+          provider: "Codex",
+          subtitle: "ChatGPT",
+          status: "available",
+          windows: [{ id: "session", label: "Sessão", remainingPercent: 90 }],
+          source: "Codex",
+        },
+      ];
+      localStorage.setItem("pulse-subscription-providers", JSON.stringify(providers));
+
+      vi.mocked(invoke).mockImplementation((command: string) => {
+        if (command === "get_subscription_usage") {
+          return Promise.resolve({ providers, scanStatus: "ready" }) as never;
+        }
+        return Promise.resolve() as never;
+      });
+
+      render(<TrayFlyout onOpenMain={vi.fn()} />);
+
+      expect(await screen.findByText("Codex")).toBeInTheDocument();
+      expect(screen.queryByText("Claude Code")).not.toBeInTheDocument();
+      expect(screen.getByText("1 DISPONÍVEIS")).toBeInTheDocument();
+    });
   });
 
   describe("DiskAnalyzer scan reconciliation", () => {
