@@ -34,6 +34,15 @@ const MAX_SCAN_DURATION: Duration = Duration::from_millis(1500);
 const FILES_TO_INSPECT: usize = 24;
 const OPENROUTER_SERVICE: &str = "Pulse";
 const OPENROUTER_ACCOUNT: &str = "openrouter-api-key";
+const OPENCODE_GO_SERVICE: &str = "Pulse";
+const OPENCODE_GO_ACCOUNT: &str = "opencode-go-api-key";
+const PROVIDER_IDS: [&str; 5] = [
+    "claude",
+    "codex",
+    "antigravity",
+    "openrouter",
+    "opencode-go",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -65,6 +74,8 @@ pub struct ProviderUsage {
     pub sampled_at_unix_ms: Option<i64>,
     pub source: String,
     pub unavailable_reason: Option<String>,
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -82,6 +93,16 @@ pub struct SubscriptionUsageReport {
 pub struct SubscriptionSettings {
     pub openrouter_configured: bool,
     pub openrouter_masked: Option<String>,
+    pub opencode_go_configured: bool,
+    pub opencode_go_masked: Option<String>,
+    pub disabled_providers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct SubscriptionPreferences {
+    #[serde(default)]
+    disabled_providers: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -137,11 +158,12 @@ fn unavailable_provider(
         sampled_at_unix_ms: None,
         source: source.into(),
         unavailable_reason: Some(reason.into()),
+        disabled: false,
     }
 }
 
-fn json_field<'a>(value: &'a Value, snake: &str, camel: &str) -> Option<&'a Value> {
-    value.get(snake).or_else(|| value.get(camel))
+fn pick<'a>(value: &'a Value, keys: &[&str]) -> Option<&'a Value> {
+    keys.iter().find_map(|key| value.get(*key))
 }
 
 fn number(value: Option<&Value>) -> Option<f64> {
@@ -579,6 +601,7 @@ fn codex_from_rate_limits(data: &Value, source: &str) -> Option<ProviderUsage> {
         sampled_at_unix_ms: Some(now_unix_ms()),
         source: source.into(),
         unavailable_reason: None,
+        disabled: false,
     })
 }
 
@@ -980,6 +1003,7 @@ fn query_claude_from_wsl_cli() -> Option<ProviderUsage> {
         sampled_at_unix_ms: Some(now_unix_ms()),
         source: "Claude Code CLI · /usage".into(),
         unavailable_reason: None,
+        disabled: false,
     })
 }
 
@@ -1007,6 +1031,7 @@ fn query_antigravity_from_wsl_cli() -> Option<ProviderUsage> {
         sampled_at_unix_ms: Some(now_unix_ms()),
         source: "Antigravity CLI · /usage".into(),
         unavailable_reason: None,
+        disabled: false,
     })
 }
 
@@ -1140,6 +1165,7 @@ fn query_claude() -> ProviderUsage {
         sampled_at_unix_ms: Some(now_unix_ms()),
         source: source.into(),
         unavailable_reason: None,
+        disabled: false,
     }
 }
 
@@ -1392,6 +1418,7 @@ fn query_antigravity() -> ProviderUsage {
         sampled_at_unix_ms: Some(now_unix_ms()),
         source: source.into(),
         unavailable_reason: None,
+        disabled: false,
     }
 }
 
@@ -1452,6 +1479,123 @@ fn openrouter_key() -> Option<String> {
         .ok()
         .map(|key| key.trim().to_owned())
         .filter(|key| !key.is_empty())
+}
+
+fn opencode_go_key() -> Option<String> {
+    keyring::Entry::new(OPENCODE_GO_SERVICE, OPENCODE_GO_ACCOUNT)
+        .ok()?
+        .get_password()
+        .ok()
+        .map(|key| key.trim().to_owned())
+        .filter(|key| !key.is_empty())
+}
+
+fn query_opencode_go() -> ProviderUsage {
+    let source = "OpenCode Go API · /zen/go/v1/usage";
+    let Some(key) = opencode_go_key() else {
+        return unavailable_provider(
+            "opencode-go",
+            "OpenCode Go",
+            "Assinatura de modelos Open (USD)",
+            source,
+            "Chave não configurada. Informe uma chave nas configurações de Cotas de IA para consultar a cota do OpenCode Go.",
+        );
+    };
+    let Ok(client) = http_client() else {
+        return unavailable_provider(
+            "opencode-go",
+            "OpenCode Go",
+            "Assinatura de modelos Open (USD)",
+            source,
+            "Cliente HTTP indisponível.",
+        );
+    };
+    let response = client
+        .get("https://opencode.ai/zen/go/v1/usage")
+        .bearer_auth(key)
+        .header("Accept", "application/json")
+        .header("x-opencode-session", "pulse")
+        .send();
+    let Ok(response) = response else {
+        return unavailable_provider(
+            "opencode-go",
+            "OpenCode Go",
+            "Assinatura de modelos Open (USD)",
+            source,
+            "A fonte oficial não respondeu dentro do limite de 4s.",
+        );
+    };
+    if matches!(
+        response.status(),
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+    ) {
+        return unavailable_provider(
+            "opencode-go",
+            "OpenCode Go",
+            "Assinatura de modelos Open (USD)",
+            source,
+            "A chave OpenCode Go foi recusada.",
+        );
+    }
+    let Ok(body) = response.json::<Value>() else {
+        return unavailable_provider(
+            "opencode-go",
+            "OpenCode Go",
+            "Assinatura de modelos Open (USD)",
+            source,
+            "Resposta oficial inválida.",
+        );
+    };
+    let usage = body.get("usage").unwrap_or(&body);
+    let mut windows = Vec::new();
+    for (key, label, minutes, order) in [
+        ("rolling", "Janela atual (5h)", 300u64, 0u8),
+        ("weekly", "Semanal", 10080u64, 1u8),
+        ("monthly", "Mensal", 43200u64, 2u8),
+    ] {
+        let Some(window) = usage.get(key) else {
+            continue;
+        };
+        let used = percent(window.get("percent"));
+        let Some(used) = used else { continue };
+        let resets_at = parse_reset(window.get("resetsAt"));
+        windows.push(QuotaWindow {
+            id: format!("{key}-{order}"),
+            label: label.into(),
+            used_percent: Some(used),
+            remaining_percent: Some((100.0 - used).clamp(0.0, 100.0)),
+            window_minutes: Some(minutes),
+            resets_at_unix_seconds: resets_at,
+            reset_description: None,
+            unavailable_reason: None,
+        });
+    }
+    if windows.is_empty() {
+        return unavailable_provider(
+            "opencode-go",
+            "OpenCode Go",
+            "Assinatura de modelos Open (USD)",
+            source,
+            "A resposta não expôs uma cota confirmada.",
+        );
+    }
+    ProviderUsage {
+        id: "opencode-go".into(),
+        provider: "OpenCode Go".into(),
+        subtitle: "Assinatura de modelos Open (USD)".into(),
+        plan: Some("Go · $10/mês".into()),
+        environment: Some("HTTP oficial · chave no Credential Manager".into()),
+        status: "available".into(),
+        windows,
+        credits_remaining: None,
+        credits_total: None,
+        credits_used: None,
+        reset_credits_available: None,
+        sampled_at_unix_ms: Some(now_unix_ms()),
+        source: source.into(),
+        unavailable_reason: None,
+        disabled: false,
+    }
 }
 
 fn query_openrouter() -> ProviderUsage {
@@ -1541,6 +1685,7 @@ fn query_openrouter() -> ProviderUsage {
         sampled_at_unix_ms: Some(now_unix_ms()),
         source: source.into(),
         unavailable_reason: None,
+        disabled: false,
     }
 }
 
@@ -1572,6 +1717,13 @@ fn placeholder_report(status: &str) -> SubscriptionUsageReport {
                 "openrouter",
                 "OpenRouter",
                 "Saldo em Dólares (USD)",
+                "Leitura local",
+                "Aguardando leitura oficial.",
+            ),
+            unavailable_provider(
+                "opencode-go",
+                "OpenCode Go",
+                "Assinatura de modelos Open (USD)",
                 "Leitura local",
                 "Aguardando leitura oficial.",
             ),
@@ -1620,6 +1772,70 @@ fn notify_subscription_updated(report: &SubscriptionUsageReport) {
     }
 }
 
+fn preferences_file() -> PathBuf {
+    env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(env::temp_dir)
+        .join("Pulse")
+        .join("subscription-preferences.json")
+}
+
+fn load_preferences() -> SubscriptionPreferences {
+    fs::read_to_string(preferences_file())
+        .ok()
+        .and_then(|content| serde_json::from_str(&content).ok())
+        .unwrap_or_default()
+}
+
+fn save_preferences(preferences: &SubscriptionPreferences) -> Result<(), String> {
+    let file = preferences_file();
+    if let Some(directory) = file.parent() {
+        fs::create_dir_all(directory).map_err(|error| error.to_string())?;
+    }
+    let content = serde_json::to_string_pretty(preferences).map_err(|error| error.to_string())?;
+    fs::write(file, content).map_err(|error| error.to_string())
+}
+
+fn disabled_provider_ids() -> Vec<String> {
+    load_preferences()
+        .disabled_providers
+        .into_iter()
+        .filter(|id| PROVIDER_IDS.contains(&id.as_str()))
+        .collect()
+}
+
+fn apply_disabled_flags(providers: &mut [ProviderUsage], disabled: &[String]) {
+    for provider in providers.iter_mut() {
+        provider.disabled = disabled.iter().any(|id| id == &provider.id);
+    }
+}
+
+// Atualiza imediatamente o cache em memória e o disco para que o tray reflita o
+// estado sem esperar a próxima varredura completa.
+fn refresh_disabled_flag(provider_id: &str, disabled: bool) {
+    let report = {
+        let cache = CACHE.get_or_init(|| Mutex::new(None));
+        let Ok(mut guard) = cache.lock() else {
+            return;
+        };
+        let Some(cached) = guard.as_mut() else {
+            return;
+        };
+        let Some(provider) = cached
+            .report
+            .providers
+            .iter_mut()
+            .find(|provider| provider.id == provider_id)
+        else {
+            return;
+        };
+        provider.disabled = disabled;
+        cached.report.clone()
+    };
+    save_persisted_cache(&report);
+    notify_subscription_updated(&report);
+}
+
 fn start_background_scan() {
     if SCAN_RUNNING
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
@@ -1640,14 +1856,18 @@ fn start_background_scan() {
         }
         .or_else(|| load_persisted_cache().map(|r| r.providers));
 
-        let mut providers = cached_providers.unwrap_or_else(|| placeholder_report("running").providers);
+        let mut providers =
+            cached_providers.unwrap_or_else(|| placeholder_report("running").providers);
 
         // Garante a presença de todos os provedores canônicos
-        for required_id in ["claude", "codex", "antigravity", "openrouter"] {
+        for required_id in PROVIDER_IDS {
             if !providers.iter().any(|p| p.id == required_id) {
                 providers.push(unavailable_for_id(required_id));
             }
         }
+
+        let disabled = disabled_provider_ids();
+        apply_disabled_flags(&mut providers, &disabled);
 
         let (sender, receiver) = mpsc::channel();
         for (id, query) in [
@@ -1655,7 +1875,12 @@ fn start_background_scan() {
             ("codex", query_codex as fn() -> ProviderUsage),
             ("antigravity", query_antigravity as fn() -> ProviderUsage),
             ("openrouter", query_openrouter as fn() -> ProviderUsage),
+            ("opencode-go", query_opencode_go as fn() -> ProviderUsage),
         ] {
+            // Provedores desativados mantêm a última leitura sem disparar novas consultas.
+            if disabled.iter().any(|disabled_id| disabled_id == id) {
+                continue;
+            }
             let sender = sender.clone();
             thread::spawn(move || {
                 // Keep recursive log inspection off the runtime executor while still using
@@ -1747,10 +1972,17 @@ fn unavailable_for_id(id: &str) -> ProviderUsage {
             "Leitura oficial",
             "Consulta falhou.",
         ),
-        _ => unavailable_provider(
+        "openrouter" => unavailable_provider(
             "openrouter",
             "OpenRouter",
             "Saldo em Dólares (USD)",
+            "Leitura oficial",
+            "Consulta falhou.",
+        ),
+        _ => unavailable_provider(
+            "opencode-go",
+            "OpenCode Go",
+            "Assinatura de modelos Open (USD)",
             "Leitura oficial",
             "Consulta falhou.",
         ),
@@ -1828,19 +2060,34 @@ fn mask_key(key: &str) -> String {
 pub async fn get_subscription_settings() -> SubscriptionSettings {
     tauri::async_runtime::spawn_blocking(get_subscription_settings_sync)
         .await
-        .unwrap_or(SubscriptionSettings {
-            openrouter_configured: false,
-            openrouter_masked: None,
-        })
+        .unwrap_or_else(|_| current_settings())
+}
+
+fn current_settings() -> SubscriptionSettings {
+    let openrouter = openrouter_key();
+    let opencode_go = opencode_go_key();
+    SubscriptionSettings {
+        openrouter_configured: openrouter.is_some(),
+        openrouter_masked: openrouter.as_deref().map(mask_key),
+        opencode_go_configured: opencode_go.is_some(),
+        opencode_go_masked: opencode_go.as_deref().map(mask_key),
+        disabled_providers: disabled_provider_ids(),
+    }
 }
 
 fn get_subscription_settings_sync() -> SubscriptionSettings {
-    let key = openrouter_key();
-    SubscriptionSettings {
-        openrouter_configured: key.is_some(),
-        openrouter_masked: key.as_deref().map(mask_key),
-    }
+    current_settings()
 }
+
+fn invalidate_cache_and_rescan() {
+    if let Ok(mut guard) = CACHE.get_or_init(|| Mutex::new(None)).lock() {
+        if let Some(cached) = guard.as_mut() {
+            cached.stored_at = Instant::now() - CACHE_TTL;
+        }
+    }
+    start_background_scan();
+}
+
 #[tauri::command]
 pub async fn set_openrouter_api_key(api_key: String) -> Result<SubscriptionSettings, String> {
     tauri::async_runtime::spawn_blocking(move || set_openrouter_api_key_sync(&api_key))
@@ -1858,17 +2105,10 @@ fn set_openrouter_api_key_sync(api_key: &str) -> Result<SubscriptionSettings, St
     entry
         .set_password(key)
         .map_err(|_| "Não foi possível guardar a chave no Credential Manager.".to_string())?;
-    if let Ok(mut guard) = CACHE.get_or_init(|| Mutex::new(None)).lock() {
-        if let Some(cached) = guard.as_mut() {
-            cached.stored_at = Instant::now() - CACHE_TTL;
-        }
-    }
-    start_background_scan();
-    Ok(SubscriptionSettings {
-        openrouter_configured: true,
-        openrouter_masked: Some(mask_key(key)),
-    })
+    invalidate_cache_and_rescan();
+    Ok(current_settings())
 }
+
 #[tauri::command]
 pub async fn clear_openrouter_api_key() -> Result<SubscriptionSettings, String> {
     tauri::async_runtime::spawn_blocking(clear_openrouter_api_key_sync)
@@ -1883,16 +2123,78 @@ fn clear_openrouter_api_key_sync() -> Result<SubscriptionSettings, String> {
         Ok(()) | Err(keyring::Error::NoEntry) => {}
         Err(_) => return Err("Não foi possível remover a chave do Credential Manager.".into()),
     }
-    if let Ok(mut guard) = CACHE.get_or_init(|| Mutex::new(None)).lock() {
-        if let Some(cached) = guard.as_mut() {
-            cached.stored_at = Instant::now() - CACHE_TTL;
-        }
+    invalidate_cache_and_rescan();
+    Ok(current_settings())
+}
+
+#[tauri::command]
+pub async fn set_opencode_go_api_key(api_key: String) -> Result<SubscriptionSettings, String> {
+    tauri::async_runtime::spawn_blocking(move || set_opencode_go_api_key_sync(&api_key))
+        .await
+        .map_err(|_| "Falha ao guardar a chave com segurança.".to_string())?
+}
+
+fn set_opencode_go_api_key_sync(api_key: &str) -> Result<SubscriptionSettings, String> {
+    let key = api_key.trim();
+    if key.len() < 20 || !key.starts_with("sk-") || key.chars().any(char::is_whitespace) {
+        return Err("Informe uma chave OpenCode Go válida (sk-…).".into());
     }
-    start_background_scan();
-    Ok(SubscriptionSettings {
-        openrouter_configured: false,
-        openrouter_masked: None,
-    })
+    let entry = keyring::Entry::new(OPENCODE_GO_SERVICE, OPENCODE_GO_ACCOUNT)
+        .map_err(|_| "O Credential Manager do Windows está indisponível.".to_string())?;
+    entry
+        .set_password(key)
+        .map_err(|_| "Não foi possível guardar a chave no Credential Manager.".to_string())?;
+    invalidate_cache_and_rescan();
+    Ok(current_settings())
+}
+
+#[tauri::command]
+pub async fn clear_opencode_go_api_key() -> Result<SubscriptionSettings, String> {
+    tauri::async_runtime::spawn_blocking(clear_opencode_go_api_key_sync)
+        .await
+        .map_err(|_| "Falha ao remover a chave com segurança.".to_string())?
+}
+
+fn clear_opencode_go_api_key_sync() -> Result<SubscriptionSettings, String> {
+    let entry = keyring::Entry::new(OPENCODE_GO_SERVICE, OPENCODE_GO_ACCOUNT)
+        .map_err(|_| "O Credential Manager do Windows está indisponível.".to_string())?;
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => {}
+        Err(_) => return Err("Não foi possível remover a chave do Credential Manager.".into()),
+    }
+    invalidate_cache_and_rescan();
+    Ok(current_settings())
+}
+
+#[tauri::command]
+pub async fn set_provider_enabled(
+    provider_id: String,
+    enabled: bool,
+) -> Result<SubscriptionSettings, String> {
+    tauri::async_runtime::spawn_blocking(move || set_provider_enabled_sync(&provider_id, enabled))
+        .await
+        .map_err(|_| "Falha ao atualizar o provedor.".to_string())?
+}
+
+fn set_provider_enabled_sync(
+    provider_id: &str,
+    enabled: bool,
+) -> Result<SubscriptionSettings, String> {
+    if !PROVIDER_IDS.contains(&provider_id) {
+        return Err("Provedor de IA desconhecido.".into());
+    }
+    let mut preferences = load_preferences();
+    preferences
+        .disabled_providers
+        .retain(|id| id != provider_id && PROVIDER_IDS.contains(&id.as_str()));
+    if !enabled {
+        preferences.disabled_providers.push(provider_id.to_owned());
+        preferences.disabled_providers.dedup();
+    }
+    save_preferences(&preferences)?;
+    refresh_disabled_flag(provider_id, !enabled);
+    invalidate_cache_and_rescan();
+    Ok(current_settings())
 }
 
 #[allow(dead_code)]

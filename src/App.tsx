@@ -261,6 +261,7 @@ const debugOperationLabel = (operation: string) => ({
   subscription_usage_codex: "Cota do Codex",
   subscription_usage_antigravity: "Cota do Antigravity",
   subscription_usage_openrouter: "Saldo do OpenRouter",
+  subscription_usage_opencode_go: "Cota do OpenCode Go",
 }[operation] ?? operation.replace(/_/g, " "));
 
 export type DebugEventGroup = {

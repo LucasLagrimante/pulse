@@ -30,6 +30,7 @@ export type ProviderUsage = {
   sampledAtUnixMs?: number | null;
   source: string;
   unavailableReason?: string | null;
+  disabled?: boolean;
 };
 
 export type SubscriptionUsageReport = {
@@ -43,6 +44,9 @@ export type SubscriptionUsageReport = {
 type SubscriptionSettings = {
   openrouterConfigured: boolean;
   openrouterMasked?: string | null;
+  opencodeGoConfigured: boolean;
+  opencodeGoMasked?: string | null;
+  disabledProviders?: string[];
 };
 
 export function safePercent(value: number | null | undefined): number | null {
@@ -76,6 +80,16 @@ export function hasMeasuredQuota(provider: ProviderUsage): boolean {
   const windows = Array.isArray(provider.windows) ? provider.windows : [];
   const hasWindow = windows.some(window => safePercent(window.remainingPercent) != null && !window.unavailableReason);
   return provider.status === "available" && (hasWindow || measuredNumber(provider.creditsRemaining) != null);
+}
+
+export type KeyManagedProvider = "openrouter" | "opencode-go";
+
+export function keyManagedProvider(provider: ProviderUsage): KeyManagedProvider | null {
+  return provider.id === "openrouter" || provider.id === "opencode-go" ? provider.id : null;
+}
+
+export function isProviderDisabled(provider: ProviderUsage, disabledIds?: Set<string>): boolean {
+  return provider.disabled === true || (disabledIds?.has(provider.id) ?? false);
 }
 
 export function formatUsd(value: number | null | undefined): string {
@@ -118,7 +132,19 @@ function QuotaMeter({ quota, providerId }: { quota: QuotaWindow; providerId: str
   );
 }
 
-function ProviderCard({ provider, onConfigureKey }: { provider: ProviderUsage; onConfigureKey?: () => void }) {
+function ProviderCard({
+  provider,
+  disabled,
+  onConfigureKey,
+  onToggleEnabled,
+  toggleBusy,
+}: {
+  provider: ProviderUsage;
+  disabled: boolean;
+  onConfigureKey?: () => void;
+  onToggleEnabled?: () => void;
+  toggleBusy?: boolean;
+}) {
   const windows = Array.isArray(provider.windows) ? provider.windows : [];
   const plan = planLabel(provider.plan);
   const credits = measuredNumber(provider.creditsRemaining);
@@ -127,8 +153,9 @@ function ProviderCard({ provider, onConfigureKey }: { provider: ProviderUsage; o
   const available = hasMeasuredQuota(provider);
   const resetCredits = measuredNumber(provider.resetCreditsAvailable);
   const sampledAt = measuredNumber(provider.sampledAtUnixMs);
+  const managedTarget = keyManagedProvider(provider);
   return (
-    <article className={`quota-provider-card provider-${provider.id}${available ? "" : " is-unavailable"}`}>
+    <article className={`quota-provider-card provider-${provider.id}${disabled ? " is-disabled" : available ? "" : " is-unavailable"}`}>
       <header className="quota-provider-heading">
         <span className="quota-provider-mark" aria-hidden="true">
           <ProviderIcon providerId={provider.id} size={20} />
@@ -141,22 +168,41 @@ function ProviderCard({ provider, onConfigureKey }: { provider: ProviderUsage; o
           <small>{provider.subtitle || "Assinatura de IA"}</small>
         </div>
         <div className="quota-header-end">
-          {provider.id === "openrouter" && onConfigureKey && (
+          {onToggleEnabled && (
+            <button
+              type="button"
+              className={`quota-mini-action${disabled ? "" : " is-danger"}`}
+              onClick={onToggleEnabled}
+              disabled={toggleBusy}
+              title={disabled ? `Reativar ${provider.provider}` : `Desativar ${provider.provider} (pausa as atualizações)`}
+              aria-label={disabled ? `Reativar ${provider.provider}` : `Desativar ${provider.provider}`}
+            >
+              {toggleBusy ? "…" : disabled ? "Reativar" : "Desativar"}
+            </button>
+          )}
+          {!disabled && managedTarget && onConfigureKey && (
             <button
               type="button"
               className="quota-mini-action"
               onClick={onConfigureKey}
-              title="Configurar chave de API do OpenRouter"
-              aria-label="Configurar chave OpenRouter"
+              title={managedTarget === "openrouter" ? "Configurar chave de API do OpenRouter" : "Configurar chave de API do OpenCode Go"}
+              aria-label={managedTarget === "openrouter" ? "Configurar chave OpenRouter" : "Configurar chave OpenCode Go"}
             >
               Chave
             </button>
           )}
-          <span className={`quota-status ${available ? "is-online" : ""}`}>{available ? "ATUAL" : "INDISPONÍVEL"}</span>
+          <span className={`quota-status${disabled ? " is-disabled" : available ? " is-online" : ""}`}>
+            {disabled ? "DESATIVADO" : available ? "ATUAL" : "INDISPONÍVEL"}
+          </span>
         </div>
       </header>
 
-      {available ? (
+      {disabled ? (
+        <div className="quota-provider-empty quota-provider-disabled" role="status">
+          <strong>Provedor desativado</strong>
+          <p>As atualizações estão pausadas e este provedor não é exibido no ícone da bandeja. Reative para voltar a acompanhar a cota.</p>
+        </div>
+      ) : available ? (
         <div className="quota-window-list">
           {windows.length > 0 ? windows.map((quota, index) => <QuotaMeter key={quota.id || `${provider.id}-${index}`} quota={quota} providerId={provider.provider} />) : (
             <div className="quota-credit-summary">
@@ -169,15 +215,15 @@ function ProviderCard({ provider, onConfigureKey }: { provider: ProviderUsage; o
         <div className="quota-provider-empty" role="status">
           <strong>Cota não confirmada</strong>
           <p>{provider.unavailableReason || "A fonte oficial não retornou percentuais."}</p>
-          {provider.id === "openrouter" && onConfigureKey && (
+          {managedTarget && onConfigureKey && (
             <button type="button" className="quota-card-setup-btn" onClick={onConfigureKey}>
-              CONFIGURAR CHAVE OPENROUTER
+              CONFIGURAR CHAVE {managedTarget === "openrouter" ? "OPENROUTER" : "OPENCODE GO"}
             </button>
           )}
         </div>
       )}
 
-      {(credits != null || creditsTotal != null || creditsUsed != null || resetCredits != null) && (
+      {!disabled && (credits != null || creditsTotal != null || creditsUsed != null || resetCredits != null) && (
         <div className="quota-value-row">
           {credits != null && (
             <span>
@@ -240,9 +286,12 @@ export function SubscriptionUsage() {
   const [failure, setFailure] = useState<string | null>(null);
   const [settings, setSettings] = useState<SubscriptionSettings | null>(null);
   const [openrouterKey, setOpenrouterKey] = useState("");
+  const [opencodeGoKey, setOpencodeGoKey] = useState("");
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [keyModalOpen, setKeyModalOpen] = useState(false);
+  const [keyModalTarget, setKeyModalTarget] = useState<"openrouter" | "opencode-go">("openrouter");
+  const [toggleBusy, setToggleBusy] = useState<string | null>(null);
 
   const load = useCallback(async (forceRefresh: boolean) => {
     setLoading(true);
@@ -316,33 +365,80 @@ export function SubscriptionUsage() {
     return () => { disposed = true; };
   }, []);
 
-  const saveOpenrouterKey = async () => {
-    if (!openrouterKey.trim() || settingsBusy) return;
+  const openModal = (target: "openrouter" | "opencode-go") => {
+    setSettingsError(null);
+    if (target === "openrouter") setOpenrouterKey("");
+    else setOpencodeGoKey("");
+    setKeyModalTarget(target);
+    setKeyModalOpen(true);
+  };
+
+  const saveKey = async () => {
+    if (settingsBusy) return;
+    if (keyModalTarget === "openrouter" && !openrouterKey.trim()) return;
+    if (keyModalTarget === "opencode-go" && !opencodeGoKey.trim()) return;
     setSettingsBusy(true); setSettingsError(null);
     try {
-      const next = await invoke<SubscriptionSettings>("set_openrouter_api_key", { apiKey: openrouterKey });
-      setSettings(next); setOpenrouterKey(""); setKeyModalOpen(false); void load(true);
+      const command = keyModalTarget === "openrouter" ? "set_openrouter_api_key" : "set_opencode_go_api_key";
+      const apiKey = keyModalTarget === "openrouter" ? openrouterKey : opencodeGoKey;
+      const next = await invoke<SubscriptionSettings>(command, { apiKey });
+      setSettings(next); setOpenrouterKey(""); setOpencodeGoKey(""); setKeyModalOpen(false); void load(true);
     } catch (error) {
       setSettingsError(typeof error === "string" ? error : "Não foi possível guardar a chave com segurança.");
     } finally { setSettingsBusy(false); }
   };
 
-  const clearOpenrouterKey = async () => {
+  const clearKey = async () => {
     if (settingsBusy) return;
     setSettingsBusy(true); setSettingsError(null);
-    try { setSettings(await invoke<SubscriptionSettings>("clear_openrouter_api_key")); void load(true); }
+    try {
+      const command = keyModalTarget === "openrouter" ? "clear_openrouter_api_key" : "clear_opencode_go_api_key";
+      setSettings(await invoke<SubscriptionSettings>(command)); void load(true);
+    }
     catch (error) { setSettingsError(typeof error === "string" ? error : "Não foi possível remover a chave com segurança."); }
     finally { setSettingsBusy(false); }
   };
 
+  const disabledIds = useMemo(
+    () => new Set(settings?.disabledProviders ?? []),
+    [settings],
+  );
+
+  const toggleProvider = async (provider: ProviderUsage, enabled: boolean) => {
+    if (toggleBusy) return;
+    setToggleBusy(provider.id);
+    setSettingsError(null);
+    try {
+      const next = await invoke<SubscriptionSettings>("set_provider_enabled", { providerId: provider.id, enabled });
+      if (next && Array.isArray(next.disabledProviders)) setSettings(next);
+      setReport(previous => {
+        if (!previous) return previous;
+        const updated = {
+          ...previous,
+          providers: previous.providers.map(item => item.id === provider.id ? { ...item, disabled: !enabled } : item),
+        };
+        try { localStorage.setItem("pulse-subscription-report", JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+    } catch (error) {
+      setSettingsError(typeof error === "string" ? error : "Não foi possível alterar o provedor.");
+    } finally { setToggleBusy(null); }
+  };
+
   const summary = useMemo(() => {
     const providers = report?.providers ?? [];
-    const available = providers.filter(hasMeasuredQuota).length;
-    return { available, total: providers.length || 4 };
-  }, [report]);
+    const available = providers.filter(provider => !isProviderDisabled(provider, disabledIds) && hasMeasuredQuota(provider)).length;
+    return { available, total: providers.length || 5 };
+  }, [report, disabledIds]);
   const measuredProviders = useMemo(
     () => report?.providers.filter(hasMeasuredQuota) ?? [],
     [report],
+  );
+  const displayProviders = useMemo(
+    () => report?.providers.filter(provider =>
+      hasMeasuredQuota(provider) || keyManagedProvider(provider) != null || isProviderDisabled(provider, disabledIds),
+    ) ?? [],
+    [report, disabledIds],
   );
   const hasMeasuredProvider = measuredProviders.length > 0;
   const unavailableReasons = useMemo(
@@ -367,10 +463,18 @@ export function SubscriptionUsage() {
             <button
               type="button"
               className="quota-config-btn"
-              onClick={() => { setSettingsError(null); setKeyModalOpen(true); }}
-              title="Configurar chaves de API locais (OpenRouter)"
+              onClick={() => openModal("openrouter")}
+              title="Configurar chave de API local do OpenRouter"
             >
               {settings?.openrouterConfigured ? "CHAVE OPENROUTER ✓" : "CONFIGURAR OPENROUTER"}
+            </button>
+            <button
+              type="button"
+              className="quota-config-btn"
+              onClick={() => openModal("opencode-go")}
+              title="Configurar chave de API local do OpenCode Go"
+            >
+              {settings?.opencodeGoConfigured ? "CHAVE OPENCODE GO ✓" : "CONFIGURAR OPENCODE GO"}
             </button>
             <button type="button" onClick={() => void load(true)} disabled={loading}>
               {loading ? "CONSULTANDO…" : "ATUALIZAR COTAS"}
@@ -387,16 +491,23 @@ export function SubscriptionUsage() {
         ) : loading && !hasMeasuredProvider ? <QuotaLoading /> : report ? (
           <>
             {loading && <div className="quota-refreshing" role="status"><i />Atualizando fontes oficiais em segundo plano…</div>}
-            {measuredProviders.length > 0 ? (
+            {displayProviders.length > 0 ? (
               <div className="quota-data-region">
                 <div className="quota-provider-list">
-                  {measuredProviders.map(provider => (
-                  <ProviderCard
-                    key={provider.id}
-                    provider={provider}
-                    onConfigureKey={provider.id === "openrouter" ? () => { setSettingsError(null); setKeyModalOpen(true); } : undefined}
-                  />
-                  ))}
+                  {displayProviders.map(provider => {
+                    const target = keyManagedProvider(provider);
+                    const disabled = isProviderDisabled(provider, disabledIds);
+                    return (
+                      <ProviderCard
+                        key={provider.id}
+                        provider={provider}
+                        disabled={disabled}
+                        toggleBusy={toggleBusy === provider.id}
+                        onToggleEnabled={() => void toggleProvider(provider, disabled)}
+                        onConfigureKey={target ? () => openModal(target) : undefined}
+                      />
+                    );
+                  })}
                 </div>
               </div>
             ) : (
@@ -418,12 +529,12 @@ export function SubscriptionUsage() {
 
       {/* Modal / Dialog para configuração de chaves externas sem quebrar o layout da tela */}
       {keyModalOpen && (
-        <div className="quota-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-openrouter-title">
+        <div className="quota-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-quota-key-title">
           <div className="quota-modal-card">
             <header className="quota-modal-header">
               <div>
-                <p className="eyebrow">SALDO EM DÓLARES (USD)</p>
-                <h3 id="modal-openrouter-title">Configurar OpenRouter</h3>
+                <p className="eyebrow">{keyModalTarget === "openrouter" ? "SALDO EM DÓLARES (USD)" : "COTA DA ASSINATURA"}</p>
+                <h3 id="modal-quota-key-title">{keyModalTarget === "openrouter" ? "Configurar OpenRouter" : "Configurar OpenCode Go"}</h3>
               </div>
               <button
                 type="button"
@@ -435,39 +546,42 @@ export function SubscriptionUsage() {
               </button>
             </header>
             <div className="quota-modal-body">
-              <p>A chave fica armazenada com criptografia no <strong>Credential Manager do Windows</strong>. O Pulse consulta apenas o saldo em dólares e o uso acumulado sem persistir o texto da chave na interface.</p>
+              <p>A chave fica armazenada com criptografia no <strong>Credential Manager do Windows</strong>. O Pulse consulta apenas a cota oficial sem persistir o texto da chave na interface.</p>
 
               <div className="quota-key-form">
                 <label>
-                  <span>CHAVE OPENROUTER (SK-OR-…)</span>
+                  <span>{keyModalTarget === "openrouter" ? "CHAVE OPENROUTER (SK-OR-…)" : "CHAVE OPENCODE GO (SK-…)"}</span>
                   <input
                     type="password"
                     autoComplete="off"
                     spellCheck={false}
-                    value={openrouterKey}
-                    onChange={event => setOpenrouterKey(event.target.value)}
-                    placeholder={settings?.openrouterMasked || "sk-or-…"}
-                    aria-label="Chave OpenRouter"
+                    value={keyModalTarget === "openrouter" ? openrouterKey : opencodeGoKey}
+                    onChange={event => keyModalTarget === "openrouter" ? setOpenrouterKey(event.target.value) : setOpencodeGoKey(event.target.value)}
+                    placeholder={keyModalTarget === "openrouter" ? (settings?.openrouterMasked || "sk-or-…") : (settings?.opencodeGoMasked || "sk-…")}
+                    aria-label={keyModalTarget === "openrouter" ? "Chave OpenRouter" : "Chave OpenCode Go"}
                   />
                 </label>
-                {settings?.openrouterConfigured && (
+                {keyModalTarget === "openrouter" && settings?.openrouterConfigured && (
                   <small className="quota-key-state">Chave atual salva: {settings.openrouterMasked}</small>
+                )}
+                {keyModalTarget === "opencode-go" && settings?.opencodeGoConfigured && (
+                  <small className="quota-key-state">Chave atual salva: {settings.opencodeGoMasked}</small>
                 )}
                 {settingsError && <small className="quota-key-error" role="alert">{settingsError}</small>}
 
                 <div className="quota-key-actions">
                   <button
                     type="button"
-                    onClick={() => void saveOpenrouterKey()}
-                    disabled={settingsBusy || !openrouterKey.trim()}
+                    onClick={() => void saveKey()}
+                    disabled={settingsBusy || (keyModalTarget === "openrouter" ? !openrouterKey.trim() : !opencodeGoKey.trim())}
                   >
                     {settingsBusy ? "GUARDANDO…" : "SALVAR NO WINDOWS"}
                   </button>
-                  {settings?.openrouterConfigured && (
+                  {((keyModalTarget === "openrouter" && settings?.openrouterConfigured) || (keyModalTarget === "opencode-go" && settings?.opencodeGoConfigured)) && (
                     <button
                       type="button"
                       className="is-danger"
-                      onClick={() => void clearOpenrouterKey()}
+                      onClick={() => void clearKey()}
                       disabled={settingsBusy}
                     >
                       REMOVER CHAVE

@@ -826,6 +826,7 @@ h1 {
 .quota-provider-card.provider-codex { --quota-accent: #34c6a1; --quota-accent-soft: #203b35; }
 .quota-provider-card.provider-antigravity { --quota-accent: #7f9eff; --quota-accent-soft: #272f4a; }
 .quota-provider-card.provider-openrouter { --quota-accent: #8ec9a3; --quota-accent-soft: #23382d; }
+.quota-provider-card.provider-opencode-go { --quota-accent: #f2b66d; --quota-accent-soft: #3a2f20; }
 .quota-provider-card.is-unavailable { opacity: .86; }
 
 .quota-provider-heading { gap: 11px; }
@@ -854,6 +855,12 @@ h1 {
 
 .quota-status { margin-left: auto; padding: 4px 6px; border: 1px solid #4a3d3b; border-radius: 5px; color: #bc8f86; background: #2a2221; font: .52rem "Cascadia Mono", Consolas, monospace; letter-spacing: .05em; }
 .quota-status.is-online { border-color: #345447; color: #83c4aa; background: #1e2d27; }
+.quota-status.is-disabled { border-color: #4a4e54; color: #a4abb2; background: #24272b; }
+
+.quota-provider-card.is-disabled { opacity: .62; filter: saturate(.45); }
+.quota-provider-card.is-disabled .quota-provider-mark { border-color: #4a4e54; color: #8b9198; background: #23262a; }
+.quota-provider-disabled { border-style: solid; border-color: #3f434a; }
+.quota-provider-disabled strong { color: #b9bfc5; }
 
 .quota-window-list { display: flex; flex-direction: column; gap: 14px; }
 .quota-meter { display: flex; flex-direction: column; min-width: 0; gap: 7px; }
@@ -918,6 +925,17 @@ h1 {
   background: #23352b;
   color: #ddede2;
 }
+.quota-mini-action.is-danger {
+  border-color: #4a3b39;
+  color: #d9a79c;
+  background: #241d1c;
+}
+.quota-mini-action.is-danger:hover {
+  border-color: #c9766b;
+  background: #332624;
+  color: #f3d6cf;
+}
+.quota-mini-action:disabled { opacity: .55; cursor: wait; }
 
 .quota-card-setup-btn {
   margin-top: 10px;
