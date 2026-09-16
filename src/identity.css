@@ -1821,6 +1821,102 @@ select:focus {
   color: var(--neu-text-secondary) !important;
 }
 
+/* O módulo Debug ainda carregava a paleta escura fixa do App.css. */
+[data-theme] .debug-summary,
+[data-theme] .debug-stat,
+[data-theme] .debug-transparency > div,
+[data-theme] .debug-event {
+  border-color: var(--neu-divider) !important;
+}
+
+[data-theme] .debug-filters,
+[data-theme] .debug-event-list {
+  background: var(--neu-surface-sunken) !important;
+}
+
+[data-theme] .debug-filters {
+  border-bottom-color: var(--neu-divider) !important;
+}
+
+[data-theme] .debug-event:hover {
+  background: var(--neu-surface-hover) !important;
+}
+
+[data-theme] .debug-event.is-grouped {
+  background: color-mix(in srgb, var(--neu-signal-secondary) 8%, transparent);
+}
+
+[data-theme] .debug-stat strong,
+[data-theme] .debug-event-heading strong,
+[data-theme] .debug-empty strong {
+  color: var(--neu-text-title) !important;
+}
+
+[data-theme] .debug-stat span,
+[data-theme] .debug-stat small,
+[data-theme] .debug-transparency span,
+[data-theme] .debug-event-heading code,
+[data-theme] .debug-event-meta,
+[data-theme] .debug-group-item-meta,
+[data-theme] .debug-group-summary,
+[data-theme] .debug-live-indicator {
+  color: var(--neu-text-muted) !important;
+}
+
+[data-theme] .debug-transparency strong,
+[data-theme] .debug-group-item p {
+  color: var(--neu-text-secondary) !important;
+}
+
+[data-theme] .debug-group-item {
+  background: var(--neu-surface) !important;
+  border-color: var(--neu-divider) !important;
+}
+
+[data-theme] .debug-group-item-meta strong,
+[data-theme] .debug-duration {
+  color: var(--neu-signal-secondary) !important;
+}
+
+[data-theme] .debug-group-count {
+  color: var(--neu-signal-secondary) !important;
+  background: color-mix(in srgb, var(--neu-signal-secondary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--neu-signal-secondary) 32%, transparent) !important;
+}
+
+[data-theme] .debug-outcome {
+  color: var(--neu-success) !important;
+  background: color-mix(in srgb, var(--neu-success) 12%, transparent);
+  border-color: color-mix(in srgb, var(--neu-success) 32%, transparent) !important;
+}
+
+[data-theme] .debug-outcome.is-error {
+  color: var(--neu-danger) !important;
+  background: color-mix(in srgb, var(--neu-danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--neu-danger) 32%, transparent) !important;
+}
+
+[data-theme] .debug-event-marker {
+  background: var(--neu-signal-secondary) !important;
+}
+
+[data-theme] .debug-event.is-error .debug-event-marker {
+  background: var(--neu-danger) !important;
+}
+
+[data-theme] .debug-live-indicator span {
+  background: var(--neu-text-muted) !important;
+}
+
+[data-theme] .debug-live-indicator.is-active {
+  color: var(--neu-success) !important;
+}
+
+[data-theme] .debug-live-indicator.is-active span {
+  background: var(--neu-success) !important;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--neu-success) 14%, transparent) !important;
+}
+
 /* O botão de tema do flyout não pode depender do estilo padrão do WebView. */
 .flyout-header-actions {
   display: flex;
