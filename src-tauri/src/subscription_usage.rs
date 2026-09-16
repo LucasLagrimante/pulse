@@ -189,28 +189,68 @@ fn credential_expired(expires_at_unix_ms: Option<i64>) -> bool {
     expires_at_unix_ms.is_some_and(|expires_at| expires_at <= now_unix_ms() + 30_000)
 }
 
+fn reset_from_window(value: &Value) -> Option<i64> {
+    if let Some(absolute) = pick(value, &["resets_at", "resetsAt", "reset_at", "resetAt"])
+        .and_then(|reset| parse_reset(Some(reset)))
+    {
+        return Some(absolute);
+    }
+    let relative = number(pick(
+        value,
+        &[
+            "reset_after_seconds",
+            "resetAfterSeconds",
+            "resets_in_seconds",
+            "resetsInSeconds",
+        ],
+    ))?;
+    Some(now_unix_ms() / 1000 + relative.max(0.0) as i64)
+}
+
+fn window_minutes_from(value: &Value) -> Option<u64> {
+    number(pick(
+        value,
+        &[
+            "window_minutes",
+            "windowMinutes",
+            "window_duration_mins",
+            "windowDurationMins",
+        ],
+    ))
+    .map(|minutes| minutes.max(0.0).round() as u64)
+    .filter(|minutes| *minutes > 0)
+    .or_else(|| {
+        number(pick(
+            value,
+            &[
+                "limit_window_seconds",
+                "limitWindowSeconds",
+                "window_seconds",
+                "windowSeconds",
+            ],
+        ))
+        .map(|seconds| (seconds.max(0.0) / 60.0).round() as u64)
+        .filter(|minutes| *minutes > 0)
+    })
+}
+
 fn quota_from_used(id: &str, label: &str, value: Option<&Value>) -> Option<QuotaWindow> {
-    let value = value?.as_object()?;
-    let used_percent = percent(
-        value
-            .get("used_percent")
-            .or_else(|| value.get("usedPercent")),
-    )?;
-    let resets_at = parse_reset(value.get("resets_at").or_else(|| value.get("resetsAt")));
+    let value = value?;
+    let used_percent = percent(pick(value, &["used_percent", "usedPercent"]))?;
+    let resets_at = reset_from_window(value);
     let expired = resets_at.is_some_and(|reset| reset * 1000 <= now_unix_ms());
     Some(QuotaWindow {
         id: id.into(),
         label: label.into(),
         used_percent: (!expired).then_some(used_percent),
         remaining_percent: (!expired).then_some((100.0 - used_percent).clamp(0.0, 100.0)),
-        window_minutes: value
-            .get("window_minutes")
-            .or_else(|| value.get("windowMinutes"))
-            .and_then(Value::as_u64),
+        window_minutes: window_minutes_from(value),
         resets_at_unix_seconds: resets_at,
         reset_description: None,
-        unavailable_reason: expired
-            .then(|| "A leitura desta janela venceu; atualize a cota.".into()),
+        unavailable_reason: expired.then(|| {
+            "A janela foi reiniciada depois desta leitura; abra a ferramenta e atualize a cota."
+                .into()
+        }),
     })
 }
 
@@ -455,36 +495,53 @@ fn query_codex_app_server() -> Result<Value, String> {
 }
 
 fn codex_from_rate_limits(data: &Value, source: &str) -> Option<ProviderUsage> {
-    let rate_limits = json_field(data, "rate_limits", "rateLimits").unwrap_or(data);
+    let rate_limits = pick(
+        data,
+        &["rate_limits", "rateLimits", "rate_limit", "rateLimit"],
+    )
+    .unwrap_or(data);
+    let primary = pick(rate_limits, &["primary", "primary_window", "primaryWindow"]);
+    let secondary = pick(
+        rate_limits,
+        &["secondary", "secondary_window", "secondaryWindow"],
+    );
     let mut windows = Vec::new();
-    if let Some(window) = quota_from_used("session", "Sessão", rate_limits.get("primary")) {
+    if let Some(window) = quota_from_used("session", "Sessão", primary) {
         windows.push(window);
     }
-    if let Some(window) = quota_from_used("weekly", "Semanal", rate_limits.get("secondary")) {
+    if let Some(window) = quota_from_used("weekly", "Semanal", secondary) {
         windows.push(window);
     }
-    if let Some(groups) = json_field(data, "rate_limits_by_limit_id", "rateLimitsByLimitId")
-        .and_then(Value::as_object)
+    if let Some(groups) = pick(
+        data,
+        &[
+            "rate_limits_by_limit_id",
+            "rateLimitsByLimitId",
+            "additional_rate_limits",
+            "additionalRateLimits",
+        ],
+    )
+    .and_then(Value::as_object)
     {
         for (limit_id, value) in groups {
             if limit_id.eq_ignore_ascii_case("codex") {
                 continue;
             }
-            let name = json_field(value, "limit_name", "limitName")
+            let name = pick(value, &["limit_name", "limitName"])
                 .and_then(Value::as_str)
                 .filter(|name| !name.trim().is_empty())
                 .unwrap_or(limit_id);
             if let Some(window) = quota_from_used(
                 &format!("{limit_id}-session"),
                 &format!("{name} · sessão"),
-                value.get("primary"),
+                pick(value, &["primary", "primary_window", "primaryWindow"]),
             ) {
                 windows.push(window);
             }
             if let Some(window) = quota_from_used(
                 &format!("{limit_id}-weekly"),
                 &format!("{name} · semanal"),
-                value.get("secondary"),
+                pick(value, &["secondary", "secondary_window", "secondaryWindow"]),
             ) {
                 windows.push(window);
             }
@@ -497,23 +554,28 @@ fn codex_from_rate_limits(data: &Value, source: &str) -> Option<ProviderUsage> {
         id: "codex".into(),
         provider: "Codex".into(),
         subtitle: "ChatGPT".into(),
-        plan: json_field(rate_limits, "plan_type", "planType")
+        plan: pick(data, &["plan_type", "planType"])
+            .or_else(|| pick(rate_limits, &["plan_type", "planType"]))
             .and_then(Value::as_str)
             .filter(|v| !v.trim().is_empty())
             .map(str::to_owned),
         environment: Some("Windows · assinatura única".into()),
         status: "available".into(),
         windows,
-        credits_remaining: credits(rate_limits.get("credits")),
+        credits_remaining: pick(rate_limits, &["credits"])
+            .or_else(|| pick(data, &["credits"]))
+            .and_then(|value| credits(Some(value))),
         credits_total: None,
         credits_used: None,
-        reset_credits_available: json_field(
-            rate_limits,
-            "rate_limit_reset_credits",
-            "rateLimitResetCredits",
-        )
-        .and_then(|value| json_field(value, "available_count", "availableCount"))
-        .and_then(Value::as_u64),
+        reset_credits_available: pick(data, &["rate_limit_reset_credits", "rateLimitResetCredits"])
+            .or_else(|| {
+                pick(
+                    rate_limits,
+                    &["rate_limit_reset_credits", "rateLimitResetCredits"],
+                )
+            })
+            .and_then(|value| pick(value, &["available_count", "availableCount"]))
+            .and_then(Value::as_u64),
         sampled_at_unix_ms: Some(now_unix_ms()),
         source: source.into(),
         unavailable_reason: None,
@@ -1847,7 +1909,7 @@ fn strip_terminal(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        codex_from_rate_limits, mask_key, parse_antigravity_cli_usage,
+        codex_from_rate_limits, mask_key, now_unix_ms, parse_antigravity_cli_usage,
         parse_antigravity_credential, parse_claude_cli_usage, parse_claude_credential,
         quota_from_used, strip_terminal,
     };
@@ -1865,6 +1927,53 @@ mod tests {
         assert!(
             quota_from_used("session", "Sessão", Some(&json!({"windowMinutes":300}))).is_none()
         );
+    }
+    #[test]
+    fn reads_official_wham_usage_shape_with_snake_case_windows() {
+        let provider = codex_from_rate_limits(
+            &json!({
+                "plan_type": "plus",
+                "rate_limit": {
+                    "allowed": true,
+                    "primary_window": {
+                        "used_percent": 0,
+                        "limit_window_seconds": 18000,
+                        "reset_after_seconds": 18000,
+                        "reset_at": 4_000_000_000_i64
+                    },
+                    "secondary_window": {
+                        "used_percent": 98,
+                        "limit_window_seconds": 604800,
+                        "reset_after_seconds": 258700,
+                        "reset_at": 4_000_100_000_i64
+                    }
+                },
+                "credits": {"has_credits": false, "balance": "0"},
+                "rate_limit_reset_credits": {"available_count": 2, "applicable_available_count": 0}
+            }),
+            "teste",
+        )
+        .unwrap();
+        assert_eq!(provider.plan.as_deref(), Some("plus"));
+        assert_eq!(provider.windows.len(), 2);
+        assert_eq!(provider.windows[0].label, "Sessão");
+        assert_eq!(provider.windows[0].window_minutes, Some(300));
+        assert_eq!(provider.windows[0].remaining_percent, Some(100.0));
+        assert_eq!(provider.windows[1].window_minutes, Some(10080));
+        assert_eq!(provider.windows[1].remaining_percent, Some(2.0));
+        assert_eq!(provider.reset_credits_available, Some(2));
+    }
+    #[test]
+    fn relative_reset_seconds_are_used_when_absolute_timestamp_is_absent() {
+        let window = quota_from_used(
+            "session",
+            "Sessão",
+            Some(&json!({"used_percent": 10, "window_minutes": 300, "reset_after_seconds": 3600})),
+        )
+        .unwrap();
+        assert_eq!(window.remaining_percent, Some(90.0));
+        assert!(window.resets_at_unix_seconds.is_some());
+        assert!(window.resets_at_unix_seconds.unwrap() * 1000 > now_unix_ms());
     }
     #[test]
     fn terminal_escape_sequences_are_removed_before_parsing() {
