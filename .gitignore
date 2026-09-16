@@ -15,3 +15,6 @@ src-tauri/target/
 
 # Logs
 *.log
+
+.history
+.playwright-mcp
