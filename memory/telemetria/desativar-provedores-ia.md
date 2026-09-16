@@ -13,3 +13,4 @@ metadata:
 2. Marcar `ProviderUsage.disabled` no backend e pular a consulta no `start_background_scan` para ids desativados, mantendo a última leitura.
 3. Comando `set_provider_enabled(providerId, enabled)` atualiza o cache/notify imediatamente (tray reage) e invalida o scan.
 4. No frontend, `isProviderDisabled` combina `provider.disabled` com `disabledProviders`; card fica esmaecido com botão Reativar e o `TrayFlyout` filtra por `provider.disabled !== true`.
+5. Desativados são sempre empurrados ao final (backend e tela), e o cabeçalho do card usa três elementos à direita — desativar/reativar e chave como ícones (`quota-icon-btn`) + pill de status, nunca como texto empilhado.
