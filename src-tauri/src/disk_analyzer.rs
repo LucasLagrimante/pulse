@@ -207,31 +207,109 @@ pub fn parse_drives_json(json_str: &str) -> Vec<DriveInfo> {
 pub fn get_system_drives() -> Vec<DriveInfo> {
     #[cfg(windows)]
     {
-        let script = r#"
-            Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 -or $_.DriveType -eq 2 } | ForEach-Object {
-                @{
-                    deviceId = $_.DeviceID
-                    volumeName = $_.VolumeName
-                    size = [uint64]$_.Size
-                    freeSpace = [uint64]$_.FreeSpace
-                }
-            } | ConvertTo-Json -Compress
-        "#;
-        if let Ok(output) = crate::process::hidden_command("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command", script])
-            .output()
-        {
-            if output.status.success() {
-                if let Ok(text) = std::str::from_utf8(&output.stdout) {
-                    let drives = parse_drives_json(text.trim());
-                    if !drives.is_empty() {
-                        return drives;
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+
+        extern "system" {
+            fn GetLogicalDrives() -> u32;
+            fn GetDriveTypeW(lpRootPathName: *const u16) -> u32;
+            fn GetVolumeInformationW(
+                lpRootPathName: *const u16,
+                lpVolumeNameBuffer: *mut u16,
+                nVolumeNameSize: u32,
+                lpVolumeSerialNumber: *mut u32,
+                lpMaximumComponentLength: *mut u32,
+                lpFileSystemFlags: *mut u32,
+                lpFileSystemNameBuffer: *mut u16,
+                nFileSystemNameSize: u32,
+            ) -> i32;
+            fn GetDiskFreeSpaceExW(
+                lpDirectoryName: *const u16,
+                lpFreeBytesAvailableToCaller: *mut u64,
+                lpTotalNumberOfBytes: *mut u64,
+                lpTotalNumberOfFreeBytes: *mut u64,
+            ) -> i32;
+        }
+
+        let bitmask = unsafe { GetLogicalDrives() };
+        let mut drives = Vec::new();
+
+        if bitmask != 0 {
+            for i in 0..26 {
+                if (bitmask & (1 << i)) != 0 {
+                    let letter = (b'A' + i as u8) as char;
+                    let path = format!("{letter}:\\");
+                    let wide_path: Vec<u16> = OsStr::new(&path)
+                        .encode_wide()
+                        .chain(std::iter::once(0))
+                        .collect();
+
+                    let drive_type = unsafe { GetDriveTypeW(wide_path.as_ptr()) };
+                    // DRIVE_REMOVABLE = 2, DRIVE_FIXED = 3
+                    if drive_type != 2 && drive_type != 3 {
+                        continue;
                     }
+
+                    let mut vol_buf = [0u16; 260];
+                    let vol_ok = unsafe {
+                        GetVolumeInformationW(
+                            wide_path.as_ptr(),
+                            vol_buf.as_mut_ptr(),
+                            vol_buf.len() as u32,
+                            std::ptr::null_mut(),
+                            std::ptr::null_mut(),
+                            std::ptr::null_mut(),
+                            std::ptr::null_mut(),
+                            0,
+                        )
+                    };
+
+                    let vol_name = if vol_ok != 0 {
+                        let len = vol_buf.iter().position(|&c| c == 0).unwrap_or(vol_buf.len());
+                        String::from_utf16_lossy(&vol_buf[..len]).trim().to_string()
+                    } else {
+                        String::new()
+                    };
+
+                    let label = if !vol_name.is_empty() {
+                        format!("{vol_name} ({letter}:)")
+                    } else {
+                        format!("Disco Local ({letter}:)")
+                    };
+
+                    let mut free_avail: u64 = 0;
+                    let mut total_bytes: u64 = 0;
+                    let mut total_free: u64 = 0;
+                    let space_ok = unsafe {
+                        GetDiskFreeSpaceExW(
+                            wide_path.as_ptr(),
+                            &mut free_avail,
+                            &mut total_bytes,
+                            &mut total_free,
+                        )
+                    };
+
+                    let (total, free) = if space_ok != 0 && total_bytes > 0 {
+                        (Some(total_bytes), Some(total_free))
+                    } else {
+                        (None, None)
+                    };
+
+                    drives.push(DriveInfo {
+                        path,
+                        label,
+                        total_bytes: total,
+                        free_bytes: free,
+                    });
                 }
             }
         }
 
-        // Fallback no Windows: verificar unidades de C: a Z:
+        if !drives.is_empty() {
+            return drives;
+        }
+
+        // Fallback rápido no Windows: verificar unidades de C: a Z:
         let mut fallback = Vec::new();
         for letter in b'C'..=b'Z' {
             let p = format!("{}:\\", letter as char);

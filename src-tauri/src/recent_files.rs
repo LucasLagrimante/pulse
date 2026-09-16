@@ -153,12 +153,19 @@ fn default_roots() -> Vec<PathBuf> {
 }
 
 fn roots() -> Vec<PathBuf> {
-    let mut all = default_roots();
+    let mut all = Vec::new();
 
+    // Pastas personalizadas configuradas pelo usuário têm prioridade máxima de varredura
     for custom in load_custom_folders() {
         let p = PathBuf::from(&custom);
         if !all.iter().any(|root| root == &p) {
             all.push(p);
+        }
+    }
+
+    for default_root in default_roots() {
+        if !all.iter().any(|root| root == &default_root) {
+            all.push(default_root);
         }
     }
     all
@@ -260,20 +267,18 @@ fn scan_all() -> Vec<RecentFile> {
     let cutoff = SystemTime::now()
         .checked_sub(Duration::from_secs(MAX_AGE_DAYS * 86_400))
         .unwrap_or(SystemTime::UNIX_EPOCH);
-    let mut budget = ScanBudget {
-        directories_visited: 0,
-        files_checked: 0,
-        deadline: Instant::now() + MAX_SCAN_DURATION,
-    };
+
     for root in roots() {
-        if budget.directories_visited >= MAX_DIRS_TOTAL
-            || budget.files_checked >= MAX_FILES_TOTAL
-            || Instant::now() >= budget.deadline
-            || files.len() >= MAX_RESULTS
-        {
+        if files.len() >= MAX_RESULTS {
             break;
         }
-        scan(&root, &mut files, cutoff, 0, &mut budget);
+        // Cada raiz possui seu próprio orçamento e prazo de 1.5s (conforme AGENTS.md 3.1)
+        let mut root_budget = ScanBudget {
+            directories_visited: 0,
+            files_checked: 0,
+            deadline: Instant::now() + MAX_SCAN_DURATION,
+        };
+        scan(&root, &mut files, cutoff, 0, &mut root_budget);
     }
     files.sort_by(|a, b| {
         b.modified_at_unix_ms
@@ -489,6 +494,28 @@ mod tests {
         assert!(folders
             .iter()
             .any(|f| f.eq_ignore_ascii_case("d:\\images\\screenshots")));
+    }
+
+    #[test]
+    fn roots_prioritize_custom_folders() {
+        let custom = vec![PathBuf::from("D:\\Images\\Screenshots")];
+        let defaults = vec![
+            PathBuf::from("C:\\Users\\User\\Downloads"),
+            PathBuf::from("C:\\Users\\User\\Desktop"),
+        ];
+        let mut all = Vec::new();
+        for c in &custom {
+            if !all.iter().any(|r| r == c) {
+                all.push(c.clone());
+            }
+        }
+        for d in &defaults {
+            if !all.iter().any(|r| r == d) {
+                all.push(d.clone());
+            }
+        }
+        assert_eq!(all[0], PathBuf::from("D:\\Images\\Screenshots"));
+        assert_eq!(all.len(), 3);
     }
 
     #[cfg(windows)]

@@ -240,7 +240,6 @@ export function DiskAnalyzer({
   const [scanResult, setScanResult] = useState<DiskItemNode | null>(null);
   const [cachedScan, setCachedScan] = useState<CachedDiskScan | null>(null);
   const [isRestoringScan, setIsRestoringScan] = useState(true);
-  const [areDrivesLoading, setAreDrivesLoading] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -379,9 +378,6 @@ export function DiskAnalyzer({
           setDrives([{ path: "C:\\", label: "Disco Local (C:)" }]);
           setSelectedPath("C:\\");
         }
-      })
-      .finally(() => {
-        if (!unmounted) setAreDrivesLoading(false);
       });
 
     return () => {
@@ -1118,7 +1114,7 @@ export function DiskAnalyzer({
             </div>
 
             <div className="disk-tree-body">
-              {(isRestoringScan || areDrivesLoading) && !scanResult ? (
+              {isRestoringScan && !scanResult ? (
                 <div className="disk-panel-loading" role="status" aria-live="polite">
                   <span className="disk-panel-loading-mark" aria-hidden="true"><ModuleIcon index={3} /></span>
                   <div>
@@ -1193,7 +1189,7 @@ export function DiskAnalyzer({
               className="treemap-canvas"
               onMouseLeave={() => setHoveredNode(null)}
             >
-              {(isRestoringScan || areDrivesLoading) && !scanResult && (
+              {isRestoringScan && !scanResult && (
                 <div className="disk-panel-loading" role="status" aria-live="polite">
                   <span className="disk-panel-loading-mark" aria-hidden="true"><ModuleIcon index={3} /></span>
                   <div>

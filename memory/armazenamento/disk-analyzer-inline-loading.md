@@ -1,7 +1,9 @@
-# Carregamento local do analisador de disco
-
-- Ao montar `DiskAnalyzer`, mantenha um estado explícito enquanto `get_disk_scan_state`, `get_cached_disk_scan` e `get_system_drives` restauram a última análise e as unidades.
-- Mostre o feedback dentro dos painéis de árvore e treemap; uma busca automática em segundo plano não deve ocupar o toast global.
-- Preserve o estado vazio somente depois que a tentativa de restauração terminar.
-- A entrada automática no módulo pode carregar arquivos recentes silenciosamente; reserve o toast para uma atualização solicitada pelo usuário.
-- Animações de loading devem respeitar `prefers-reduced-motion`.
+---
+name: disk-analyzer-inline-loading
+description: O loading dos painéis de análise de disco depende apenas do cache local e não do inventário de unidades
+module: armazenamento
+metadata:
+  type: project
+---
+**Why:** Acoplar o loading da árvore/treemap ao inventário de unidades ou rodar PowerShell no backend atrasa em segundos a renderização do cache local já salvo.
+**How to apply:** O loading interno de `DiskAnalyzer` deve depender exclusivamente de `isRestoringScan` (`get_cached_disk_scan`). A enumeração de unidades (`get_system_drives`) deve rodar em segundo plano via APIs Win32 nativas (`GetLogicalDrives`, `GetVolumeInformationW`, `GetDiskFreeSpaceExW`) sem travar a árvore.
