@@ -180,7 +180,29 @@ fn set_tray_icon<R: tauri::Runtime>(app: &AppHandle<R>, theme: &str) -> Result<(
 #[tauri::command]
 pub fn set_tray_icon_theme(app: AppHandle, theme: String) -> Result<(), String> {
     let normalized = if theme == "dark" { "dark" } else { "light" };
+    apply_window_theme(&app, normalized);
     set_tray_icon(&app, normalized)
+}
+
+/// Alinha a moldura nativa ao tema do shell: o Windows desenha a barra de
+/// título com o tema do sistema, então a caption e o fundo do WebView ficavam
+/// destoando do restante da janela.
+fn apply_window_theme<R: tauri::Runtime>(app: &AppHandle<R>, theme: &str) {
+    let window_theme = if theme == "dark" {
+        tauri::Theme::Dark
+    } else {
+        tauri::Theme::Light
+    };
+    let background = if theme == "dark" {
+        tauri::window::Color(24, 27, 32, 255)
+    } else {
+        tauri::window::Color(230, 237, 245, 255)
+    };
+
+    for window in app.webview_windows().values() {
+        let _ = window.set_theme(Some(window_theme));
+        let _ = window.set_background_color(Some(background));
+    }
 }
 
 use tauri::menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
