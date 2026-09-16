@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Component, type ErrorInfo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, type ErrorInfo, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Moon, Sun } from "lucide-react";
 import "./App.css";
 import "./identity.css";
 import { PulseMark, ModuleIcon, PulseLoading, FileIcon } from "./Identity";
@@ -79,9 +80,25 @@ export function useNeumorphicTheme(): ["light" | "dark", () => void] {
     } catch {}
     return "light";
   });
+  const themeSwitchToken = useRef(0);
 
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+  // Aplicado antes da pintura para o tema nunca aparecer atrasado em relação ao
+  // botão. A classe .theme-switching desliga as transições só neste recálculo,
+  // evitando o cross-fade lento das cores e sombras do shell.
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const ticket = ++themeSwitchToken.current;
+    // Mantém as transições desligadas até o novo tema ser efetivamente pintado;
+    // religá-las antes disso faria o navegador animar o cross-fade. Dois frames
+    // garantem que o tema novo já foi pintado sem transição.
+    root.classList.add("theme-switching");
+    root.setAttribute("data-theme", theme);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (themeSwitchToken.current === ticket) root.classList.remove("theme-switching");
+      });
+    });
+
     try {
       localStorage.setItem("pulse-theme", theme);
     } catch {}
@@ -1182,7 +1199,11 @@ export function TrayFlyout({
             title={`Tema atual: ${theme === "light" ? "Claro (Porcelain)" : "Escuro (Obsidian)"}`}
             onClick={toggleTheme}
           >
-            {theme === "light" ? "☼" : "☾"}
+            {theme === "light" ? (
+              <Sun className="theme-toggle-icon" size={20} aria-hidden="true" />
+            ) : (
+              <Moon className="theme-toggle-icon" size={20} aria-hidden="true" />
+            )}
           </button>
           <button
             aria-label="Fechar painel rápido"
@@ -2294,9 +2315,14 @@ function App() {
               title={`Tema atual: ${theme === "light" ? "Claro (Porcelain)" : "Escuro (Obsidian)"}. Clique para alternar.`}
               onClick={toggleTheme}
             >
-              {theme === "light" ? "CLARO ☼" : "ESCURO ☾"}
+              {theme === "light" ? (
+                <>CLARO <Sun className="theme-toggle-icon" size={16} aria-hidden="true" /></>
+              ) : (
+                <>ESCURO <Moon className="theme-toggle-icon" size={16} aria-hidden="true" /></>
+              )}
             </button>
             <button
+              type="button"
               aria-label="Minimizar para o tray icon"
               className="tray-minimize-button"
               title="Minimizar para a área de notificação da barra de tarefas"

@@ -160,6 +160,15 @@ html, body, #root {
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 
+/* A troca de tema é instantânea: enquanto .theme-switching está ativa as
+   transições ficam desligadas e o novo data-theme é aplicado sem cross-fade. */
+html.theme-switching,
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition: none !important;
+}
+
 button, input, select {
   border-radius: 12px;
   font-family: inherit;
@@ -398,6 +407,13 @@ button:disabled {
 .theme-toggle-button:active {
   box-shadow: var(--neu-shadow-inset-sm) !important;
   transform: translateY(1px) scale(0.98);
+}
+
+/* Ícones reais da lucide-react: sem traçado manual e alinhados ao texto do botão */
+.theme-toggle-icon {
+  display: block;
+  flex-shrink: 0;
+  stroke-width: 2.1;
 }
 
 .command-bar > .header-toggle:first-of-type {
@@ -1824,9 +1840,13 @@ select:focus {
   background: var(--neu-surface) !important;
   box-shadow: var(--neu-shadow-raised-xs) !important;
   color: var(--neu-accent) !important;
-  font-size: 1rem;
-  line-height: 1;
   cursor: pointer;
+}
+
+.flyout-theme-toggle .theme-toggle-icon {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
 }
 
 .flyout-theme-toggle:hover {

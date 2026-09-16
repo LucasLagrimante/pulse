@@ -239,6 +239,36 @@ describe("Formatters and Components", () => {
       expect(invoke).toHaveBeenCalledWith("exit_app");
     });
 
+    it("renders real lucide sun/moon icons in the theme toggle instead of glyphs", async () => {
+      vi.clearAllMocks();
+      vi.mocked(invoke).mockResolvedValue({
+        cpuPercent: 18,
+        memoryUsedGb: 6,
+        memoryTotalGb: 16,
+        diskUsedGb: 150,
+        diskTotalGb: 500,
+        startupItemCount: 2,
+        topProcesses: [],
+        sampledAtUnixMs: 1725000000,
+        source: "Native Win32",
+      } as never);
+      localStorage.setItem("pulse-theme", "light");
+
+      const { container } = render(<TrayFlyout onOpenMain={vi.fn()} />);
+      const toggle = screen.getByRole("button", { name: "Alternar para tema escuro" });
+
+      expect(toggle.querySelector(".lucide-sun")).toBeInTheDocument();
+      expect(toggle.textContent).not.toContain("☼");
+      expect(toggle.textContent).not.toContain("☾");
+
+      fireEvent.click(toggle);
+
+      expect(
+        screen.getByRole("button", { name: "Alternar para tema claro" }).querySelector(".lucide-moon"),
+      ).toBeInTheDocument();
+      expect(container.querySelector(".flyout-theme-toggle .lucide-sun")).not.toBeInTheDocument();
+    });
+
     it("polls only while the tray flyout is in the foreground", async () => {
       vi.clearAllMocks();
       vi.mocked(invoke).mockResolvedValue({
