@@ -15,24 +15,30 @@ describe("SparklineChart component", () => {
   });
   it("does not draw zero for an unavailable series", () => {
     const { container } = render(<SparklineChart data={[null, undefined, NaN, Infinity]} />);
-    expect(container.querySelector('.sparkline-line')).not.toBeInTheDocument();
+    expect(container.querySelector('.sparkline-bars')).not.toBeInTheDocument();
     expect(screen.getByText(/sem amostras válidas/)).toBeInTheDocument();
   });
 
   it("leaves a gap between measurements separated by missing data", () => {
     const { container } = render(<SparklineChart data={[20, null, 40]} />);
-    const path = container.querySelector('.sparkline-line')?.getAttribute('d');
+    const path = container.querySelector('.sparkline-bars')?.getAttribute('d');
     expect(path?.match(/M/g)).toHaveLength(2);
     expect(path).not.toContain(' C ');
   });
-  it("renders with valid data, paths and accessible attributes", () => {
+  it("keeps fixed bar spacing anchored to the right edge", () => {
+    const { container } = render(<SparklineChart data={[10, 20]} ariaLabel="Dense chart" />);
+    const d = container.querySelector('.sparkline-bars')?.getAttribute('d') ?? '';
+    const centers = Array.from(d.matchAll(/M\s*([\d.]+)/g), match => Number(match[1]));
+    expect(centers).toHaveLength(2);
+    expect(centers.every(center => center > 160)).toBe(true);
+    expect(centers[1] - centers[0]).toBeCloseTo(6, 1);
+  });
+  it("renders one vertical bar per sample with time-fade gradient and grid", () => {
     const { container } = render(
       <SparklineChart
         data={[10, 25, 40, 30, 80]}
         color="#d95d39"
         height={32}
-        showArea
-        showPoint
         showGrid
         ariaLabel="CPU Activity Sparkline"
       />,
@@ -40,9 +46,9 @@ describe("SparklineChart component", () => {
 
     const svg = screen.getByRole("img", { name: "CPU Activity Sparkline" });
     expect(svg).toBeInTheDocument();
-    expect(svg.querySelector("path.sparkline-line")).toBeInTheDocument();
-    expect(svg.querySelector("path.sparkline-area")).toBeInTheDocument();
-    expect(container.querySelector(".sparkline-marker")).toBeInTheDocument();
+    const bars = svg.querySelector("path.sparkline-bars");
+    expect(bars?.getAttribute("d")?.match(/M/g)).toHaveLength(5);
+    expect(bars?.getAttribute("stroke")).toMatch(/^url\(#spark-fade-/);
     expect(container.querySelector(".sparkline-grid")).toBeInTheDocument();
   });
 

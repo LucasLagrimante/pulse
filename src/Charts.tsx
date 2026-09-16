@@ -1,5 +1,8 @@
-import { memo, useId, useMemo } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import { metric } from "./App";
+
+const FALLBACK_WIDTH = 320;
+const TOP_PADDING = 2;
 
 export type SparklineChartProps = {
   data: (number | null | undefined)[];
@@ -8,9 +11,9 @@ export type SparklineChartProps = {
   height?: number | string;
   min?: number;
   max?: number;
-  showArea?: boolean;
-  showPoint?: boolean;
   showGrid?: boolean;
+  barWidth?: number;
+  barGap?: number;
   ariaLabel?: string;
   className?: string;
 };
@@ -22,9 +25,9 @@ function areSparklinePropsEqual(prev: SparklineChartProps, next: SparklineChartP
     prev.height !== next.height ||
     prev.min !== next.min ||
     prev.max !== next.max ||
-    prev.showArea !== next.showArea ||
-    prev.showPoint !== next.showPoint ||
     prev.showGrid !== next.showGrid ||
+    prev.barWidth !== next.barWidth ||
+    prev.barGap !== next.barGap ||
     prev.ariaLabel !== next.ariaLabel ||
     prev.className !== next.className
   ) {
@@ -38,8 +41,12 @@ function areSparklinePropsEqual(prev: SparklineChartProps, next: SparklineChartP
 }
 
 /**
- * Gráfico Sparkline vetorial ultra-otimizado (SVG puro, sem dependências, memoizado).
- * Utiliza interpolação cúbica Bézier monotônica suave que nunca ultrapassa os limites dos dados.
+ * Medidor de telemetria em barras verticais (SVG puro, sem dependências, memoizado).
+ * As colunas usam largura e espaçamento fixos em pixels reais (medidos via ResizeObserver)
+ * e são ancoradas na borda direita: o histórico cresce para a esquerda, como um registrador
+ * em rolagem. O gradiente horizontal sinaliza a idade do dado — a amostra mais recente,
+ * à direita, mantém a cor cheia; as antigas esmaecem. Um único <path> evita dezenas de
+ * nós DOM no histórico completo.
  */
 export const SparklineChart = memo(function SparklineChart({
   data,
@@ -48,20 +55,39 @@ export const SparklineChart = memo(function SparklineChart({
   height = 28,
   min = 0,
   max = 100,
-  showArea = true,
-  showPoint = true,
   showGrid = false,
+  barWidth = 4,
+  barGap = 2,
   ariaLabel = "Gráfico de telemetria",
   className = "",
 }: SparklineChartProps) {
   const rawId = useId();
-  const gradientId = `spark-grad-${rawId.replace(/[^a-zA-Z0-9-_]/g, "")}`;
+  const gradientId = `spark-fade-${rawId.replace(/[^a-zA-Z0-9-_]/g, "")}`;
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [containerWidth, setContainerWidth] = useState(FALLBACK_WIDTH);
 
-  const width = 100;
-  const chartHeight = 40;
-  const paddingY = 3;
+  const numericHeight =
+    typeof height === "number" && Number.isFinite(height) && height > 0 ? height : 40;
+  const chartWidth = containerWidth > 0 ? containerWidth : FALLBACK_WIDTH;
 
-  const { linePath, areaPath, lastCoord } = useMemo(() => {
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const apply = (value: number) => {
+      if (value <= 0) return;
+      setContainerWidth(previous => (Math.abs(previous - value) >= 0.5 ? value : previous));
+    };
+    apply(element.clientWidth);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0];
+      if (entry) apply(entry.contentRect.width);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const { barsPath, barThickness, hasSamples, occupiedStart } = useMemo(() => {
     // Sanitiza dados contra null, undefined e NaN
     const sanitized: (number | null)[] = [];
     for (let i = 0; i < data.length; i++) {
@@ -71,50 +97,36 @@ export const SparklineChart = memo(function SparklineChart({
       );
     }
 
-    const points = sanitized;
+    const len = sanitized.length;
+    if (len === 0) {
+      return { barsPath: "", barThickness: barWidth, hasSamples: false, occupiedStart: chartWidth };
+    }
 
-    const effectiveHeight = chartHeight - paddingY * 2;
     const range = max - min || 1;
-    const len = points.length;
+    const usableHeight = numericHeight - TOP_PADDING;
+    const slot = Math.min(barWidth + barGap, chartWidth / len);
+    const thickness = Math.max(0.5, Math.min(barWidth, slot * 0.78));
+    const occupiedWidth = slot * len;
+    const startX = chartWidth - occupiedWidth;
 
-    const coords: ({ x: number; y: number } | null)[] = new Array(len);
+    let path = "";
+    let hasSamples = false;
     for (let i = 0; i < len; i++) {
-      const value = points[i];
-      if (value == null) { coords[i] = null; continue; }
-      const x = len === 1 ? width / 2 : (i / (len - 1)) * width;
+      const value = sanitized[i];
+      if (value == null) continue;
+      hasSamples = true;
+      const centerX = startX + slot * (i + 0.5);
       const normalized = (value - min) / range;
-      const y = chartHeight - paddingY - normalized * effectiveHeight;
-      coords[i] = { x, y };
+      const topY = numericHeight - normalized * usableHeight;
+      path += ` M ${centerX.toFixed(2)} ${numericHeight} L ${centerX.toFixed(2)} ${topY.toFixed(2)}`;
     }
 
-    // Constrói caminho Bézier cúbico contínuo
-    let line = "";
-    let area = "";
-    let first: { x: number; y: number } | null = null;
-    for (let i = 0; i < len; i++) {
-      const prev = coords[i - 1];
-      const curr = coords[i];
-      if (!curr) continue;
-      let segment: string;
-      if (!prev) {
-        first = curr;
-        segment = `M ${curr.x.toFixed(2)} ${curr.y.toFixed(2)}`;
-      } else {
-        const midX = (prev.x + curr.x) / 2;
-        segment = ` C ${midX.toFixed(2)} ${prev.y.toFixed(2)}, ${midX.toFixed(2)} ${curr.y.toFixed(2)}, ${curr.x.toFixed(2)} ${curr.y.toFixed(2)}`;
-      }
-      line += segment;
-      area += segment;
-      if (!coords[i + 1] && first) area += ` L ${curr.x} ${chartHeight} L ${first.x} ${chartHeight} Z `;
-    }
-
-    const last = coords[len - 1];
-
-    return { linePath: line, areaPath: area, lastCoord: last };
-  }, [data, min, max]);
+    return { barsPath: path.trim(), barThickness: thickness, hasSamples, occupiedStart: startX };
+  }, [data, min, max, chartWidth, numericHeight, barWidth, barGap]);
 
   return (
     <div
+      ref={containerRef}
       className={`sparkline-container ${loading ? "chart-is-loading" : ""} ${className}`}
       style={{ height: typeof height === "number" ? `${height}px` : height, width: "100%" }}
       aria-busy={loading}
@@ -123,7 +135,7 @@ export const SparklineChart = memo(function SparklineChart({
         <div className="chart-skeleton chart-skeleton-compact" role="status" aria-label="Coletando dados do gráfico" />
       )}
       <svg
-        viewBox={`0 0 ${width} ${chartHeight}`}
+        viewBox={`0 0 ${chartWidth} ${numericHeight}`}
         preserveAspectRatio="none"
         role="img"
         aria-label={ariaLabel}
@@ -131,59 +143,37 @@ export const SparklineChart = memo(function SparklineChart({
         shapeRendering="geometricPrecision"
       >
         <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.35" />
-            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+          <linearGradient
+            id={gradientId}
+            x1={occupiedStart}
+            y1="0"
+            x2={chartWidth}
+            y2="0"
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+            <stop offset="100%" stopColor={color} stopOpacity="1" />
           </linearGradient>
         </defs>
 
         {showGrid && (
-          <g className="sparkline-grid" stroke="rgba(255, 255, 255, 0.08)" strokeDasharray="2 3">
-            <line x1="0" y1={paddingY} x2={width} y2={paddingY} />
-            <line x1="0" y1={chartHeight / 2} x2={width} y2={chartHeight / 2} />
-            <line x1="0" y1={chartHeight - paddingY} x2={width} y2={chartHeight - paddingY} />
+          <g className="sparkline-grid" stroke="rgba(255, 255, 255, 0.07)">
+            <line x1="0" y1={TOP_PADDING} x2={chartWidth} y2={TOP_PADDING} />
+            <line x1="0" y1={(numericHeight + TOP_PADDING) / 2} x2={chartWidth} y2={(numericHeight + TOP_PADDING) / 2} />
+            <line x1="0" y1={numericHeight} x2={chartWidth} y2={numericHeight} />
           </g>
         )}
 
-        {showArea && areaPath && (
-          <path
-            d={areaPath}
-            fill={`url(#${gradientId})`}
-            className="sparkline-area"
-          />
-        )}
-
-        {linePath && <path
-          d={linePath}
+        {barsPath && <path
+          d={barsPath}
           fill="none"
-          stroke={color}
-          strokeWidth="1.75"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="sparkline-line"
+          stroke={`url(#${gradientId})`}
+          strokeWidth={barThickness}
+          strokeLinecap="butt"
+          className="sparkline-bars"
         />}
-
-        {showPoint && lastCoord && (
-          <g className="sparkline-marker">
-            <circle
-              cx={lastCoord.x}
-              cy={lastCoord.y}
-              r="4.5"
-              fill={color}
-              fillOpacity="0.25"
-              className="sparkline-marker-halo"
-            />
-            <circle
-              cx={lastCoord.x}
-              cy={lastCoord.y}
-              r="2.5"
-              fill={color}
-              className="sparkline-marker-dot"
-            />
-          </g>
-        )}
       </svg>
-      {!loading && !linePath && <span className="chart-unavailable">Indisponível · sem amostras válidas</span>}
+      {!loading && !hasSamples && <span className="chart-unavailable">Indisponível · sem amostras válidas</span>}
     </div>
   );
 }, areSparklinePropsEqual);
@@ -323,9 +313,9 @@ export const DetailedResourceChart = memo(function DetailedResourceChart({
             data={history}
             color={color}
             height={90}
-            showArea
-            showPoint
             showGrid
+            barWidth={6}
+            barGap={3}
             ariaLabel={ariaLabel || title}
           />}
         </div>

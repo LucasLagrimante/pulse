@@ -4598,33 +4598,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   shape-rendering: geometricPrecision;
 }
 
-.sparkline-area {
+.sparkline-bars {
   pointer-events: none;
-}
-
-.sparkline-line {
-  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.45));
-}
-
-.sparkline-marker-halo {
-  animation: pulse-spark-glow 2.4s infinite ease-in-out;
-  transform-origin: center;
-  will-change: transform, opacity;
-}
-
-@keyframes pulse-spark-glow {
-  0%, 100% {
-    r: 4.5;
-    opacity: 0.25;
-  }
-  50% {
-    r: 6;
-    opacity: 0.55;
-  }
-}
-
-.sparkline-marker-dot {
-  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.5));
 }
 
 /* Mini Barra de Capacidade de Armazenamento */

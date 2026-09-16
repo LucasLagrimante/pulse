@@ -69,19 +69,32 @@ fn tray_icon_for_theme(theme: &str) -> tauri::image::Image<'static> {
         (20.0, 40.0),
     ]
     .map(transform);
-    let signal_path = [
-        (4.0, 26.0),
-        (14.0, 26.0),
-        (19.0, 14.0),
-        (19.0, 38.0),
-        (26.0, 18.0),
-        (30.0, 26.0),
-        (46.0, 26.0),
-    ]
-    .map(transform);
 
     draw_polyline(&mut rgba, SIZE, &rail_path, 2.8 * SCALE, rail);
-    draw_polyline(&mut rgba, SIZE, &signal_path, 4.2 * SCALE, signal);
+
+    // Colunas de telemetria com esmaecimento da amostra mais antiga para a mais recente,
+    // na mesma linguagem visual dos gráficos de CPU e memória do aplicativo.
+    const COLUMNS: [(f32, f32); 4] = [(0.34, 0.34), (0.62, 0.55), (0.46, 0.78), (0.82, 1.0)];
+    const COLUMN_WIDTH: f32 = 4.5;
+    const COLUMN_GAP: f32 = 2.5;
+    const BASE_Y: f32 = 37.5;
+    const TOP_Y: f32 = 13.0;
+    let span =
+        COLUMN_WIDTH * COLUMNS.len() as f32 + COLUMN_GAP * (COLUMNS.len().saturating_sub(1)) as f32;
+    let start_x = 24.0 - span / 2.0;
+    for (index, (height, alpha)) in COLUMNS.iter().enumerate() {
+        let x0 = start_x + index as f32 * (COLUMN_WIDTH + COLUMN_GAP);
+        let column_top = BASE_Y - height * (BASE_Y - TOP_Y);
+        draw_rect(
+            &mut rgba,
+            SIZE,
+            transform((x0, column_top)),
+            transform((x0 + COLUMN_WIDTH, BASE_Y)),
+            signal,
+            *alpha,
+        );
+    }
+
     tauri::image::Image::new_owned(rgba, SIZE, SIZE)
 }
 
@@ -111,25 +124,49 @@ fn draw_polyline(rgba: &mut [u8], size: u32, points: &[(f32, f32)], width: f32, 
             }
 
             let coverage = (half_width + 0.8 - distance).clamp(0.0, 1.0);
-            if coverage == 0.0 {
-                continue;
-            }
-
-            let offset = ((y * size + x) * 4) as usize;
-            let existing_alpha = rgba[offset + 3] as f32 / 255.0;
-            let source_alpha = coverage;
-            let output_alpha = source_alpha + existing_alpha * (1.0 - source_alpha);
-            for channel in 0..3 {
-                let existing = rgba[offset + channel] as f32 / 255.0;
-                let source = color[channel] as f32 / 255.0;
-                rgba[offset + channel] = ((source * source_alpha
-                    + existing * existing_alpha * (1.0 - source_alpha))
-                    / output_alpha
-                    * 255.0) as u8;
-            }
-            rgba[offset + 3] = (output_alpha * 255.0) as u8;
+            blend_pixel(rgba, size, x, y, color, coverage);
         }
     }
+}
+
+fn draw_rect(
+    rgba: &mut [u8],
+    size: u32,
+    (x0, y0): (f32, f32),
+    (x1, y1): (f32, f32),
+    color: [u8; 3],
+    alpha: f32,
+) {
+    for y in 0..size {
+        for x in 0..size {
+            let px = x as f32 + 0.5;
+            let py = y as f32 + 0.5;
+            let dx = (x0 - px).max(px - x1).max(0.0);
+            let dy = (y0 - py).max(py - y1).max(0.0);
+            let coverage = (0.8 - dx.hypot(dy)).clamp(0.0, 1.0) * alpha;
+            blend_pixel(rgba, size, x, y, color, coverage);
+        }
+    }
+}
+
+fn blend_pixel(rgba: &mut [u8], size: u32, x: u32, y: u32, color: [u8; 3], coverage: f32) {
+    if coverage <= 0.0 {
+        return;
+    }
+
+    let offset = ((y * size + x) * 4) as usize;
+    let existing_alpha = rgba[offset + 3] as f32 / 255.0;
+    let source_alpha = coverage.clamp(0.0, 1.0);
+    let output_alpha = source_alpha + existing_alpha * (1.0 - source_alpha);
+    for channel in 0..3 {
+        let existing = rgba[offset + channel] as f32 / 255.0;
+        let source = color[channel] as f32 / 255.0;
+        rgba[offset + channel] = ((source * source_alpha
+            + existing * existing_alpha * (1.0 - source_alpha))
+            / output_alpha
+            * 255.0) as u8;
+    }
+    rgba[offset + 3] = (output_alpha * 255.0) as u8;
 }
 
 fn set_tray_icon<R: tauri::Runtime>(app: &AppHandle<R>, theme: &str) -> Result<(), String> {
@@ -417,5 +454,32 @@ mod tests {
         assert!(light.rgba().chunks_exact(4).any(|pixel| pixel[3] > 0));
         assert_ne!(light.rgba(), dark.rgba());
         assert!(light.rgba().chunks_exact(4).any(|pixel| pixel[3] == 0));
+    }
+
+    #[test]
+    fn tray_icon_columns_fade_towards_the_latest_sample() {
+        const SIZE: u32 = 32;
+        let icon = tray_icon_for_theme("dark");
+        let mut older = 0u64;
+        let mut latest = 0u64;
+
+        for (index, pixel) in icon.rgba().chunks_exact(4).enumerate() {
+            let is_signal =
+                pixel[3] > 0 && pixel[0] > 180 && (90..190).contains(&pixel[1]) && pixel[2] < 80;
+            if !is_signal {
+                continue;
+            }
+            if index as u32 % SIZE < SIZE / 2 {
+                older += pixel[3] as u64;
+            } else {
+                latest += pixel[3] as u64;
+            }
+        }
+
+        assert!(older > 0, "as colunas de telemetria devem existir");
+        assert!(
+            latest > older,
+            "a metade recente das colunas deve concentrar mais sinal"
+        );
     }
 }
