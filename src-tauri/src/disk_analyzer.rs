@@ -8,7 +8,7 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{Emitter, Window};
+use tauri::{Emitter, Manager, Window};
 
 static CANCEL_FLAG: AtomicBool = AtomicBool::new(false);
 static IS_SCANNING: AtomicBool = AtomicBool::new(false);
@@ -20,6 +20,26 @@ const PROGRESS_INTERVAL_MS: u128 = 120;
 const SNAPSHOT_INTERVAL_MS: u128 = 350;
 const STREAM_SNAPSHOT_MAX_DEPTH: usize = 5;
 const STREAM_SNAPSHOT_MAX_CHILDREN: usize = 16;
+/// Cota global de nós da árvore final. A varredura continua completa
+/// (tamanhos e contagens reais), mas o resultado persistido e enviado ao React
+/// mantém apenas os maiores ramos e agrega o excedente. Sem essa cota o cache
+/// passa de centenas de MB e restaurar a última análise custa segundos.
+pub const MAX_TREE_NODES: usize = 40_000;
+/// Caches acima deste tamanho vieram de versões sem cota global. Lê-los custa
+/// segundos e centenas de MB de RAM; são ignorados e a próxima varredura
+/// (warm-up no startup) grava um resultado compacto por cima.
+const MAX_CACHE_FILE_BYTES: u64 = 32 * 1024 * 1024;
+/// Versão do algoritmo de poda embutida no cache. Suba este número quando a
+/// árvore persistida passar a ser construída de outra forma, para que caches
+/// antigos sejam descartados e o warm-up regenere o resultado.
+const CACHE_VERSION: u32 = 2;
+/// A varredura de fundo só roda se a última análise estiver mais velha que
+/// isso: reabrir o aplicativo várias vezes não deve varrer o disco sem
+/// necessidade.
+const WARMUP_MAX_AGE_MS: i64 = 30 * 60 * 1000;
+/// Pequena espera após o startup para não competir com o carregamento inicial
+/// da interface e a primeira coleta da visão geral.
+const WARMUP_START_DELAY_MS: u64 = 4_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -77,6 +97,8 @@ pub struct CachedDiskScan {
     pub items_scanned: u64,
     #[serde(default)]
     pub stop_reason: Option<String>,
+    #[serde(default)]
+    pub tree_version: u32,
 }
 
 static SCAN_STATE: Mutex<DiskScanState> = Mutex::new(DiskScanState {
@@ -122,14 +144,33 @@ fn persist_disk_scan(cache: &CachedDiskScan) -> Result<(), String> {
         .map_err(|error| format!("Não foi possível criar o diretório do cache: {error}"))?;
     let json = serde_json::to_string(cache)
         .map_err(|error| format!("Não foi possível serializar o cache da varredura: {error}"))?;
-    fs::write(disk_scan_cache_file(), json)
-        .map_err(|error| format!("Não foi possível salvar o cache da varredura: {error}"))
+    // Escrita atômica: uma interrupção no meio do arquivo não pode deixar um
+    // JSON truncado que invalide todo o cache nas próximas aberturas.
+    let target = disk_scan_cache_file();
+    let temporary = target.with_extension("json.tmp");
+    fs::write(&temporary, json)
+        .map_err(|error| format!("Não foi possível salvar o cache da varredura: {error}"))?;
+    fs::rename(&temporary, &target)
+        .map_err(|error| format!("Não foi possível finalizar o cache da varredura: {error}"))
 }
 
-#[tauri::command]
-pub fn get_cached_disk_scan() -> Option<CachedDiskScan> {
-    let content = fs::read_to_string(disk_scan_cache_file()).ok()?;
+/// Cache em memória da última varredura persistida. Evita reler e desserializar
+/// o arquivo a cada consulta (a UI consulta ao abrir a aba, ao remontar e ao
+/// reconciliar o estado após uma varredura).
+static PERSISTED_CACHE: Mutex<Option<CachedDiskScan>> = Mutex::new(None);
+static CACHE_LOADED: AtomicBool = AtomicBool::new(false);
+
+fn read_cached_scan_from_disk() -> Option<CachedDiskScan> {
+    let path = disk_scan_cache_file();
+    let metadata = fs::metadata(&path).ok()?;
+    if metadata.len() > MAX_CACHE_FILE_BYTES {
+        return None;
+    }
+    let content = fs::read_to_string(path).ok()?;
     let cache = serde_json::from_str::<CachedDiskScan>(&content).ok()?;
+    if cache.tree_version < CACHE_VERSION {
+        return None;
+    }
     let ended_by_legacy_limit = matches!(
         cache.stop_reason.as_deref(),
         Some("itemLimit" | "timeout" | "batchLimit")
@@ -139,6 +180,26 @@ pub fn get_cached_disk_scan() -> Option<CachedDiskScan> {
     } else {
         Some(cache)
     }
+}
+
+fn store_cached_scan_in_memory(cache: &CachedDiskScan) {
+    if let Ok(mut guard) = PERSISTED_CACHE.lock() {
+        *guard = Some(cache.clone());
+    }
+    CACHE_LOADED.store(true, Ordering::Release);
+}
+
+#[tauri::command]
+pub fn get_cached_disk_scan() -> Option<CachedDiskScan> {
+    if CACHE_LOADED.load(Ordering::Acquire) {
+        return PERSISTED_CACHE.lock().ok().and_then(|guard| guard.clone());
+    }
+    let loaded = read_cached_scan_from_disk();
+    if let Ok(mut guard) = PERSISTED_CACHE.lock() {
+        *guard = loaded.clone();
+    }
+    CACHE_LOADED.store(true, Ordering::Release);
+    loaded
 }
 
 #[derive(Debug, Deserialize)]
@@ -855,8 +916,136 @@ fn scan_path_aggregate_stream(
     }
 }
 
+/// Substitui todos os filhos por um nó sintético que preserva a soma de
+/// tamanho, arquivos e pastas. Usado quando o orçamento global de nós acabou.
+fn collapse_children_into_aggregate(node: &mut DiskItemNode) {
+    if node.children.len() <= 1 {
+        return;
+    }
+    let size_bytes = node.children.iter().map(|child| child.size_bytes).sum();
+    let file_count = node.children.iter().map(|child| child.file_count).sum();
+    let dir_count = node.children.iter().map(|child| child.dir_count).sum();
+    let hidden_count = node.children.len();
+    node.children = vec![DiskItemNode {
+        id: format!("{}::[budget]", node.path),
+        name: format!("[Outros {hidden_count} itens agregados]"),
+        path: node.path.clone(),
+        size_bytes,
+        file_count,
+        dir_count,
+        is_dir: false,
+        modified_at_unix_ms: None,
+        children: Vec::new(),
+    }];
+}
+
+fn count_tree_nodes(node: &DiskItemNode) -> usize {
+    1 + node.children.iter().map(count_tree_nodes).sum::<usize>()
+}
+
+/// Poda a árvore final para caber em `budget` nós. Quando a árvore inteira já
+/// cabe, nada é podado. Caso contrário, reserva um nó por filho e distribui o
+/// orçamento restante proporcionalmente ao tamanho, para que os maiores ramos
+/// continuem navegáveis em profundidade em vez de virarem um agregado.
+pub fn prune_tree_to_budget(node: &mut DiskItemNode, budget: usize) -> usize {
+    let total = count_tree_nodes(node);
+    if total <= budget {
+        return total;
+    }
+    prune_tree_recursive(node, budget)
+}
+
+fn prune_tree_recursive(node: &mut DiskItemNode, budget: usize) -> usize {
+    if node.children.is_empty() {
+        return 1;
+    }
+    // Sem espaço para ramificar neste nível: agrega os filhos em um nó só.
+    if budget <= 1 {
+        node.children.clear();
+        return 1;
+    }
+    let children_count = node.children.len();
+    let remaining = budget - 1;
+    if remaining < children_count {
+        collapse_children_into_aggregate(node);
+        return node.children.len() + 1;
+    }
+    let extra = remaining - children_count;
+    let total_size = node.size_bytes;
+    let mut used = 1;
+    for child in node.children.iter_mut() {
+        let bonus = if total_size > 0 {
+            ((u128::from(child.size_bytes) * extra as u128) / u128::from(total_size)) as usize
+        } else {
+            0
+        };
+        used += prune_tree_recursive(child, 1 + bonus);
+    }
+    used
+}
+
+/// Varredura completa em segundo plano disparada no startup. Reaproveita a
+/// última raiz analisada quando ainda existe; caso contrário usa o disco do
+/// sistema. Só roda se o cache estiver ausente, parcial ou mais velho que
+/// `WARMUP_MAX_AGE_MS`.
+pub fn init(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(WARMUP_START_DELAY_MS));
+        if IS_SCANNING.load(Ordering::Relaxed) {
+            return;
+        }
+        let cached = get_cached_disk_scan();
+        if let Some(cache) = cached.as_ref() {
+            if !scan_cache_is_stale(cache) {
+                return;
+            }
+        }
+        let Some(webview_window) = app.get_webview_window("main") else {
+            return;
+        };
+        let window: Window = webview_window.as_ref().window();
+        let path = cached
+            .as_ref()
+            .map(|cache| cache.result.path.clone())
+            .filter(|path| Path::new(path).exists())
+            .unwrap_or_else(default_scan_root);
+        tauri::async_runtime::spawn(async move {
+            if let Err(error) = run_disk_scan(window, path, Some(MAX_TREE_DEPTH)).await {
+                eprintln!("Varredura em segundo plano não concluída: {error}");
+            }
+        });
+    });
+}
+
+fn scan_cache_is_stale(cache: &CachedDiskScan) -> bool {
+    if cache.is_partial {
+        return true;
+    }
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or(0);
+    now_ms.saturating_sub(cache.completed_at_unix_ms) >= WARMUP_MAX_AGE_MS
+}
+
+fn default_scan_root() -> String {
+    env::var("SystemDrive")
+        .ok()
+        .filter(|drive| !drive.is_empty())
+        .map(|drive| format!("{drive}\\"))
+        .unwrap_or_else(|| "C:\\".to_owned())
+}
+
 #[tauri::command]
 pub async fn start_disk_scan(
+    window: Window,
+    path: String,
+    max_depth: Option<usize>,
+) -> Result<DiskItemNode, String> {
+    run_disk_scan(window, path, max_depth).await
+}
+
+async fn run_disk_scan(
     window: Window,
     path: String,
     max_depth: Option<usize>,
@@ -913,7 +1102,10 @@ pub async fn start_disk_scan(
         let mut publish_partial = |snapshot: DiskItemNode| {
             ctx.emit_partial_snapshot(snapshot);
         };
-        let result = scan_path_recursive_stream(&target_path, 0, &ctx, &mut publish_partial);
+        let mut result = scan_path_recursive_stream(&target_path, 0, &ctx, &mut publish_partial);
+        // Tamanhos e contagens continuam reais, mas a árvore enviada ao
+        // frontend e persistida cabe na cota global de nós.
+        prune_tree_to_budget(&mut result, MAX_TREE_NODES);
         let cancelled = CANCEL_FLAG.load(Ordering::Relaxed);
         let is_partial = cancelled;
         let stop_reason = if cancelled {
@@ -974,9 +1166,11 @@ pub async fn start_disk_scan(
         is_partial,
         items_scanned,
         stop_reason,
+        tree_version: CACHE_VERSION,
     };
     // Uma falha ao salvar não invalida a análise recém-concluída.
     let _ = persist_disk_scan(&cache);
+    store_cached_scan_in_memory(&cache);
 
     Ok(result)
 }
@@ -1240,6 +1434,130 @@ mod tests {
         assert!(node.dir_count >= 6);
 
         let _ = fs::remove_dir_all(&temp);
+    }
+
+    fn max_tree_depth(node: &DiskItemNode) -> usize {
+        if node.children.is_empty() {
+            0
+        } else {
+            1 + node.children.iter().map(max_tree_depth).max().unwrap_or(0)
+        }
+    }
+
+    fn build_synthetic_tree(depth: usize, fanout: usize, size: u64) -> DiskItemNode {
+        let children = if depth == 0 {
+            Vec::new()
+        } else {
+            (0..fanout)
+                .map(|index| build_synthetic_tree(depth - 1, fanout, size + index as u64 + 1))
+                .collect()
+        };
+        let size_bytes = if children.is_empty() {
+            size
+        } else {
+            children.iter().map(|child| child.size_bytes).sum()
+        };
+        let file_count = if children.is_empty() {
+            1
+        } else {
+            children.iter().map(|child| child.file_count).sum()
+        };
+        DiskItemNode {
+            id: format!("synthetic-{depth}-{size}"),
+            name: "synthetic".to_owned(),
+            path: "synthetic".to_owned(),
+            size_bytes,
+            file_count,
+            dir_count: if children.is_empty() { 0 } else { 1 },
+            is_dir: !children.is_empty(),
+            modified_at_unix_ms: None,
+            children,
+        }
+    }
+
+    #[test]
+    fn prunes_the_tree_to_the_global_node_budget() {
+        let mut root = build_synthetic_tree(4, 5, 1);
+        let total_size = root.size_bytes;
+        let total_files = root.file_count;
+        let nodes_before = count_tree_nodes(&root);
+        assert!(nodes_before > 100);
+
+        let kept = prune_tree_to_budget(&mut root, 40);
+
+        assert!(count_tree_nodes(&root) <= 40);
+        assert_eq!(count_tree_nodes(&root), kept);
+        // A poda agrega ramos, então os totais continuam verdadeiros.
+        assert_eq!(root.size_bytes, total_size);
+        assert_eq!(root.file_count, total_files);
+    }
+
+    #[test]
+    fn keeps_the_whole_tree_when_it_fits_the_budget() {
+        let mut root = build_synthetic_tree(2, 2, 1);
+        let nodes_before = count_tree_nodes(&root);
+        let kept = prune_tree_to_budget(&mut root, nodes_before);
+        assert_eq!(kept, nodes_before);
+        assert_eq!(count_tree_nodes(&root), nodes_before);
+    }
+
+    #[test]
+    fn collapsing_children_preserves_real_totals() {
+        let mut root = build_synthetic_tree(1, 4, 1);
+        let expected =
+            root.children
+                .iter()
+                .fold((0u64, 0u64, 0u64), |(size, files, dirs), child| {
+                    (
+                        size + child.size_bytes,
+                        files + child.file_count,
+                        dirs + child.dir_count,
+                    )
+                });
+
+        collapse_children_into_aggregate(&mut root);
+
+        assert_eq!(root.children.len(), 1);
+        let aggregate = &root.children[0];
+        assert_eq!(
+            (
+                aggregate.size_bytes,
+                aggregate.file_count,
+                aggregate.dir_count
+            ),
+            expected
+        );
+        assert!(aggregate.id.ends_with("::[budget]"));
+    }
+
+    #[test]
+    fn keeps_the_largest_branch_navigable_under_the_budget() {
+        // Um ramo grande com netos e bisnetos ao lado de irmãos pequenos.
+        let big = build_synthetic_tree(3, 4, 10_000);
+        let mut root = build_synthetic_tree(1, 4, 1);
+        root.children[0] = big;
+        root.size_bytes = root.children.iter().map(|child| child.size_bytes).sum();
+        root.file_count = root.children.iter().map(|child| child.file_count).sum();
+        let big_id = root.children[0].id.clone();
+
+        let kept = prune_tree_to_budget(&mut root, 60);
+
+        assert!(kept <= 60);
+        assert_eq!(count_tree_nodes(&root), kept);
+        let big_after = root
+            .children
+            .iter()
+            .find(|child| child.id == big_id)
+            .unwrap();
+        // O maior ramo não pode virar um agregado: os filhos continuam
+        // listados e com seus próprios filhos, permitindo descer até o que
+        // ocupa espaço.
+        assert!(big_after.children.len() > 1);
+        assert!(big_after
+            .children
+            .iter()
+            .all(|child| !child.id.contains("[budget]")));
+        assert!(max_tree_depth(big_after) >= 2);
     }
 
     #[test]

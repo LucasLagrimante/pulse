@@ -44,6 +44,7 @@ pub fn run() {
                 }
             }
             subscription_usage::init(app.handle().clone());
+            disk_analyzer::init(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| match event {

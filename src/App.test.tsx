@@ -19,6 +19,7 @@ import App, {
 } from "./App";
 import { DiskAnalyzer, extractTopFiles, formatElapsedSince, getFileExtension } from "./DiskAnalyzer";
 import { DiskCleanup } from "./DiskCleanup";
+import { resetDiskAnalyzerStateForTests } from "./diskScanStore";
 
 let registeredEventListeners: Record<string, (event: unknown) => void> = {};
 
@@ -422,6 +423,10 @@ describe("Formatters and Components", () => {
   });
 
   describe("DiskAnalyzer scan reconciliation", () => {
+    beforeEach(() => {
+      resetDiskAnalyzerStateForTests();
+    });
+
     it("shows loading feedback inside both disk panels while restoring cached data", async () => {
       let resolveScanState!: (state: unknown) => void;
       vi.mocked(invoke).mockImplementation((command: string) => {
@@ -598,6 +603,38 @@ describe("Formatters and Components", () => {
       expect(screen.getAllByText("Users").length).toBeGreaterThanOrEqual(2);
       expect(screen.getByRole("button", { name: "PARAR VARREDURA" })).toBeInTheDocument();
     });
+
+    it("keeps the restored scan in a shared store instead of refetching it on remount", async () => {
+      vi.mocked(invoke).mockImplementation((command: string) => {
+        if (command === "get_system_drives") {
+          return Promise.resolve([{ path: "C:\\", label: "Disco Local (C:)" }]) as never;
+        }
+        if (command === "get_cached_disk_scan") {
+          return Promise.resolve({
+            completedAtUnixMs: Date.now(),
+            durationMs: 1200,
+            result: { id: "C:\\", name: "C:\\", path: "C:\\", sizeBytes: 500, fileCount: 1, dirCount: 0, isDir: true, children: [] },
+          }) as never;
+        }
+        if (command === "get_disk_scan_state") {
+          return Promise.resolve({ isScanning: false, progress: null, result: null, error: null }) as never;
+        }
+        return Promise.resolve(null) as never;
+      });
+
+      const first = render(<DiskAnalyzer />);
+      await waitFor(() => {
+        expect(screen.getByText("RESULTADO EM CACHE")).toBeInTheDocument();
+      });
+      first.unmount();
+
+      vi.mocked(invoke).mockClear();
+      render(<DiskAnalyzer />);
+
+      expect(screen.getByText("RESULTADO EM CACHE")).toBeInTheDocument();
+      expect(invoke).not.toHaveBeenCalledWith("get_disk_scan_state");
+      expect(invoke).not.toHaveBeenCalledWith("get_cached_disk_scan");
+    });
   });
 
   describe("DiskCleanup", () => {
@@ -672,6 +709,7 @@ describe("Formatters and Components", () => {
 describe("Pulse application shell", () => {
   beforeEach(() => {
     registeredEventListeners = {};
+    resetDiskAnalyzerStateForTests();
     vi.clearAllMocks();
     vi.mocked(invoke).mockImplementation((command: string) => {
       switch (command) {

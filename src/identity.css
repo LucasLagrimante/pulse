@@ -723,8 +723,7 @@ button:disabled {
 
 /* Segmented Control Neumórfico para Período (1m, 5m, 15m) */
 .detailed-chart-timeframes,
-.disk-view-modes,
-.storage-tabs-bar {
+.disk-view-modes {
   display: inline-flex;
   padding: 4px;
   border-radius: 16px;
@@ -735,7 +734,6 @@ button:disabled {
 }
 
 .chart-timeframe-btn,
-.storage-tab-btn,
 .disk-view-btn {
   padding: 6px 14px !important;
   border: 0 !important;
@@ -750,17 +748,104 @@ button:disabled {
 }
 
 .chart-timeframe-btn:hover,
-.storage-tab-btn:hover,
 .disk-view-btn:hover {
   color: var(--neu-text-title) !important;
 }
 
 .chart-timeframe-btn.active,
-.storage-tab-btn.active,
 .disk-view-btn.active {
   background: var(--neu-surface) !important;
   color: var(--neu-accent) !important;
   box-shadow: var(--neu-shadow-raised-sm) !important;
+}
+
+/* ==========================================================================
+   Abas de Armazenamento — trilho com indicador inferior para deixar
+   explícito qual ferramenta (Tree Size, Recentes, Limpeza) está selecionada.
+   ========================================================================== */
+
+.storage-tabs-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  margin: 0 0 14px;
+  padding: 0 0 0 2px;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--neu-divider);
+  box-shadow: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.storage-tabs-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.storage-tab-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 9px 16px !important;
+  border: 0 !important;
+  border-radius: 12px 12px 0 0 !important;
+  background: transparent !important;
+  color: var(--neu-text-secondary) !important;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.7rem !important;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: none !important;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.storage-tab-btn::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: transparent;
+  transition: background 0.2s ease;
+}
+
+.storage-tab-btn:hover {
+  background: var(--neu-surface-hover) !important;
+  color: var(--neu-text-title) !important;
+}
+
+.storage-tab-btn.active {
+  background: var(--neu-accent-soft) !important;
+  color: var(--neu-accent) !important;
+  box-shadow: none !important;
+}
+
+.storage-tab-btn.active::after {
+  background: var(--neu-accent);
+  box-shadow: 0 0 10px var(--neu-accent-soft);
+}
+
+.storage-tab-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--neu-accent-soft);
+  color: var(--neu-accent);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.storage-tab-btn.active .storage-tab-badge {
+  background: var(--neu-accent);
+  color: var(--neu-surface);
 }
 
 /* ==========================================================================

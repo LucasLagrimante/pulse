@@ -13,6 +13,7 @@ import {
 } from "./Charts";
 import { DiskAnalyzer } from "./DiskAnalyzer";
 import { DiskCleanup } from "./DiskCleanup";
+import { ensureDiskAnalyzerLoaded } from "./diskScanStore";
 import { formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, SubscriptionUsage, type ProviderUsage } from "./SubscriptionUsage";
 import { ProviderIcon } from "./ProviderIcon";
 
@@ -1594,6 +1595,13 @@ function App() {
       setInitialLoadAllowed(true);
     }
   }, [isWindowForeground, windowLabel]);
+
+  // Pré-carrega o estado do analisador de disco na janela principal: a última
+  // varredura fica pronta antes de o usuário abrir Armazenamento e o backend
+  // atualiza em segundo plano quando o cache estiver velho.
+  useEffect(() => {
+    if (windowLabel === "main") void ensureDiskAnalyzerLoaded();
+  }, [windowLabel]);
 
   const memoryPercent =
     overview && typeof overview.memoryTotalGb === "number" && overview.memoryTotalGb > 0 && typeof overview.memoryUsedGb === "number"

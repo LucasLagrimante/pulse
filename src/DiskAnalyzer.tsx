@@ -1,50 +1,27 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatFileDate, formatFileSize } from "./App";
+import type { CachedDiskScan, DiskItemNode } from "./diskScanStore";
+import {
+  applyDiskScanResult,
+  beginUserDiskScan,
+  ensureDiskAnalyzerLoaded,
+  findDiskNodeById,
+  getDiskAnalyzerState,
+  reconcileDiskAnalyzer,
+  setDiskAnalyzerError,
+  setSelectedDiskPath,
+  subscribeDiskAnalyzer,
+} from "./diskScanStore";
 import { FileIcon, ModuleIcon } from "./Identity";
 
-export type DriveInfo = {
-  path: string;
-  label: string;
-  totalBytes?: number | null;
-  freeBytes?: number | null;
-};
-
-export type DiskItemNode = {
-  id: string;
-  name: string;
-  path: string;
-  sizeBytes: number;
-  fileCount: number;
-  dirCount: number;
-  isDir: boolean;
-  modifiedAtUnixMs?: number | null;
-  children: DiskItemNode[];
-};
-
-export type DiskScanProgress = {
-  itemsScanned: number;
-  totalBytesScanned: number;
-  currentPath: string;
-  partialResult?: DiskItemNode | null;
-};
-
-export type DiskScanState = {
-  isScanning: boolean;
-  progress?: DiskScanProgress | null;
-  result?: DiskItemNode | null;
-  error?: string | null;
-};
-
-export type CachedDiskScan = {
-  result: DiskItemNode;
-  completedAtUnixMs: number;
-  durationMs: number;
-  isPartial?: boolean;
-  itemsScanned?: number;
-  stopReason?: "itemLimit" | "timeout" | "cancelled" | null;
-};
+export type {
+  CachedDiskScan,
+  DiskItemNode,
+  DiskScanProgress,
+  DiskScanState,
+  DriveInfo,
+} from "./diskScanStore";
 
 function describeScanStop(cache: CachedDiskScan): string | null {
   if (!cache.isPartial) return null;
@@ -207,15 +184,6 @@ function isAggregateNode(node: DiskItemNode): boolean {
   return node.id.includes("::[");
 }
 
-function findNodeById(root: DiskItemNode, id: string): DiskItemNode | null {
-  if (root.id === id) return root;
-  for (const child of root.children) {
-    const match = findNodeById(child, id);
-    if (match) return match;
-  }
-  return null;
-}
-
 export function getFileExtension(path: string): string {
   const parts = path.split(/[/\\]/);
   const name = parts[parts.length - 1] || "";
@@ -233,19 +201,25 @@ export function DiskAnalyzer({
   overviewDiskUsedGb?: number | null;
   overviewDiskTotalGb?: number | null;
 } = {}) {
-  const [drives, setDrives] = useState<DriveInfo[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string>("C:\\");
-  const [isScanning, setIsScanning] = useState(false);
-  const [progress, setProgress] = useState<DiskScanProgress | null>(null);
-  const [scanResult, setScanResult] = useState<DiskItemNode | null>(null);
-  const [cachedScan, setCachedScan] = useState<CachedDiskScan | null>(null);
-  const [isRestoringScan, setIsRestoringScan] = useState(true);
+  const shared = useSyncExternalStore(subscribeDiskAnalyzer, getDiskAnalyzerState);
+  const {
+    drives,
+    selectedPath,
+    scanResult,
+    cachedScan,
+    isScanning,
+    progress,
+    isRestoringScan,
+    error,
+  } = shared;
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [error, setError] = useState<string | null>(null);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [selectedNode, setSelectedNode] = useState<DiskItemNode | null>(null);
-  const [focusedTreeNode, setFocusedTreeNode] = useState<DiskItemNode | null>(null);
-  const [treemapFocus, setTreemapFocus] = useState<DiskItemNode | null>(null);
+  const cachedRoot = useRef<DiskItemNode | null>(getDiskAnalyzerState().scanResult);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() =>
+    cachedRoot.current ? new Set([cachedRoot.current.id]) : new Set(),
+  );
+  const [selectedNode, setSelectedNode] = useState<DiskItemNode | null>(() => cachedRoot.current);
+  const [focusedTreeNode, setFocusedTreeNode] = useState<DiskItemNode | null>(() => cachedRoot.current);
+  const [treemapFocus, setTreemapFocus] = useState<DiskItemNode | null>(() => cachedRoot.current);
   const [viewMode, setViewMode] = useState<ViewMode>("split");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -286,71 +260,10 @@ export function DiskAnalyzer({
         ? "warning"
         : "normal";
 
-  const applyScanResult = (result: DiskItemNode) => {
-    setScanResult(result);
-    setSelectedNode(result);
-    setFocusedTreeNode(result);
-    setTreemapFocus(result);
-    setExpandedIds(new Set([result.id]));
-  };
-
-  const applyPartialScanResult = (result: DiskItemNode) => {
-    setScanResult(result);
-    setSelectedNode(previous => previous ? findNodeById(result, previous.id) ?? result : result);
-    setFocusedTreeNode(previous => previous ? findNodeById(result, previous.id) ?? result : result);
-    setTreemapFocus(previous => previous ? findNodeById(result, previous.id) ?? result : result);
-    setExpandedIds(previous => {
-      if (previous.has(result.id)) return previous;
-      const next = new Set(previous);
-      next.add(result.id);
-      return next;
-    });
-  };
-
-  const syncScanState = async () => {
-    try {
-      const state = await invoke<DiskScanState>("get_disk_scan_state");
-      if (!state) return;
-      setIsScanning(state.isScanning === true);
-      if (state.progress) {
-        setProgress(state.progress);
-        if (state.progress.partialResult) applyPartialScanResult(state.progress.partialResult);
-      }
-      if (state.result) applyScanResult(state.result);
-      if (state.error) setError(state.error);
-    } catch {
-      // A consulta é apenas uma reconciliação; o fluxo principal continua disponível.
-    }
-  };
-
+  // Carrega o cache/estado compartilhado uma única vez por sessão do app; as
+  // remontagens da aba apenas leem o store, sem reconsultar o backend.
   useEffect(() => {
-    let unmounted = false;
-    void invoke<DiskScanState>("get_disk_scan_state")
-      .then(async state => {
-        if (unmounted) return;
-        if (state?.isScanning) {
-          setCachedScan(null);
-          setIsScanning(true);
-          if (state.progress) {
-            setProgress(state.progress);
-            if (state.progress.partialResult) {
-              applyPartialScanResult(state.progress.partialResult);
-            }
-          }
-          return;
-        }
-
-        const cache = await invoke<CachedDiskScan | null>("get_cached_disk_scan");
-        if (!unmounted && cache?.result) {
-          setCachedScan(cache);
-          applyScanResult(cache.result);
-        }
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!unmounted) setIsRestoringScan(false);
-      });
-    return () => { unmounted = true; };
+    void ensureDiskAnalyzerLoaded();
   }, []);
 
   useEffect(() => {
@@ -358,74 +271,20 @@ export function DiskAnalyzer({
     return () => window.clearInterval(timer);
   }, []);
 
-  // Carrega apenas as unidades disponíveis para a análise de capacidade.
+  // Reconcilia a navegação local sempre que o resultado compartilhado muda
+  // (cache restaurado, snapshots parciais ou varredura concluída).
   useEffect(() => {
-    let unmounted = false;
-    void invoke<DriveInfo[]>("get_system_drives")
-      .then(res => {
-        if (!unmounted) {
-          if (Array.isArray(res) && res.length > 0) {
-            setDrives(res);
-            setSelectedPath(res[0].path);
-          } else {
-            setDrives([{ path: "C:\\", label: "Disco Local (C:)" }]);
-            setSelectedPath("C:\\");
-          }
-        }
-      })
-      .catch(() => {
-        if (!unmounted) {
-          setDrives([{ path: "C:\\", label: "Disco Local (C:)" }]);
-          setSelectedPath("C:\\");
-        }
-      });
-
-    return () => {
-      unmounted = true;
-    };
-  }, []);
-
-  // Evento de progresso da varredura em tempo real
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-
-    const setupProgressListener = async () => {
-      try {
-        const removeListener = await listen<DiskScanProgress>("pulse://disk-scan-progress", event => {
-          setProgress(event.payload);
-          if (event.payload.partialResult) {
-            applyPartialScanResult(event.payload.partialResult);
-          }
-          if (event.payload.currentPath.startsWith("Varredura concluída") || event.payload.currentPath === "Varredura cancelada") {
-            setIsScanning(false);
-            void syncScanState();
-          } else {
-            setIsScanning(true);
-          }
-        });
-
-        if (disposed) {
-          removeListener();
-          return;
-        }
-        unlisten = removeListener;
-      } catch {
-        // A reconciliação abaixo ainda recupera o estado atual sem eventos.
-      }
-
-      if (!disposed) {
-        await syncScanState();
-      }
-    };
-
-    void setupProgressListener();
-
-    return () => {
-      disposed = true;
-      if (unlisten) unlisten();
-    };
-  }, []);
+    if (!scanResult) return;
+    setSelectedNode(previous => previous ? findDiskNodeById(scanResult, previous.id) ?? scanResult : scanResult);
+    setFocusedTreeNode(previous => previous ? findDiskNodeById(scanResult, previous.id) ?? scanResult : scanResult);
+    setTreemapFocus(previous => previous ? findDiskNodeById(scanResult, previous.id) ?? scanResult : scanResult);
+    setExpandedIds(previous => {
+      if (previous.has(scanResult.id)) return previous;
+      const next = new Set(previous);
+      next.add(scanResult.id);
+      return next;
+    });
+  }, [scanResult]);
 
   // Observador de tamanho do Treemap usando ResizeObserver sem timers pendentes
   useEffect(() => {
@@ -450,32 +309,24 @@ export function DiskAnalyzer({
 
   const handleStartScan = async () => {
     if (!selectedPath) return;
-    setIsScanning(true);
-    setError(null);
-    setScanResult(null);
+    beginUserDiskScan(selectedPath);
     setSelectedNode(null);
     setFocusedTreeNode(null);
     setTreemapFocus(null);
     setExpandedIds(new Set());
-    setProgress({ itemsScanned: 0, totalBytesScanned: 0, currentPath: selectedPath, partialResult: null });
 
     try {
       const result = await invoke<DiskItemNode>("start_disk_scan", {
         path: selectedPath,
         maxDepth: 64,
       });
-      applyScanResult(result);
+      if (result) applyDiskScanResult(result);
       // O backend acabou de gravar o cache e é a fonte do horário e da duração
-      // reais; o fallback mantém a identificação clara mesmo se a releitura falhar.
-      const persisted = await invoke<CachedDiskScan | null>("get_cached_disk_scan");
-      setCachedScan(persisted?.result
-        ? persisted
-        : { result, completedAtUnixMs: Date.now(), durationMs: 0 });
+      // reais; a reconciliação atualiza os metadados exibidos na barra.
+      await reconcileDiskAnalyzer();
     } catch (err) {
-      setError(typeof err === "string" ? err : "Falha ao escanear o disco.");
-      void syncScanState();
-    } finally {
-      setIsScanning(false);
+      setDiskAnalyzerError(typeof err === "string" ? err : "Falha ao escanear o disco.");
+      await reconcileDiskAnalyzer();
     }
   };
 
@@ -485,7 +336,7 @@ export function DiskAnalyzer({
     } catch {
       // Ignora erro
     }
-    void syncScanState();
+    await reconcileDiskAnalyzer();
   };
 
   const toggleExpand = (id: string) => {
@@ -523,7 +374,7 @@ export function DiskAnalyzer({
     try {
       await invoke("open_disk_item", { path, reveal });
     } catch (err) {
-      setError(typeof err === "string" ? err : "Não foi possível abrir o item.");
+      setDiskAnalyzerError(typeof err === "string" ? err : "Não foi possível abrir o item.");
     }
   };
 
@@ -845,7 +696,7 @@ export function DiskAnalyzer({
               aria-label="Selecionar unidade de disco"
               value={selectedPath}
               onChange={e => {
-                setSelectedPath(e.target.value);
+                setSelectedDiskPath(e.target.value);
                 setFocusedTreeNode(null);
               }}
               disabled={isScanning}
@@ -1033,7 +884,7 @@ export function DiskAnalyzer({
       {error && (
         <div className="disk-error-banner" role="alert">
           <p>{error}</p>
-          <button type="button" onClick={() => setError(null)}>✕</button>
+          <button type="button" onClick={() => setDiskAnalyzerError(null)}>✕</button>
         </div>
       )}
 
