@@ -3099,6 +3099,7 @@ dependencies = [
  "chrono",
  "dirs",
  "keyring",
+ "png 0.17.16",
  "regex",
  "reqwest",
  "rusqlite",
