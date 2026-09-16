@@ -1,7 +1,75 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 48 48" fill="none">
-  <rect width="48" height="48" rx="10" fill="#191c20"/>
-  <g transform="translate(4 4) scale(.83333)" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M8 34V14a6 6 0 0 1 6-6h20a6 6 0 0 1 6 6v20a6 6 0 0 1-6 6H20" stroke="#8da9bf" stroke-width="2"/>
-    <path d="M4 26h10l5-12v24l7-20 4 8h14" stroke="#dda76d" stroke-width="3"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Gradiente de base da superfície neumórfica -->
+    <linearGradient id="neu-surface-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="35%" stop-color="#e8eef6"/>
+      <stop offset="80%" stop-color="#d6e0ec"/>
+      <stop offset="100%" stop-color="#c5d2e0"/>
+    </linearGradient>
+
+    <!-- Gradiente do pulso vital (âmbar/cobre Pulse) -->
+    <linearGradient id="pulse-signal-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffb859"/>
+      <stop offset="45%" stop-color="#f08823"/>
+      <stop offset="100%" stop-color="#c86208"/>
+    </linearGradient>
+
+    <!-- Gradiente do trilho do P -->
+    <linearGradient id="rail-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8098ad"/>
+      <stop offset="100%" stop-color="#556c80"/>
+    </linearGradient>
+
+    <!-- Sombra externa de relevo neumórfico -->
+    <filter id="neu-drop-shadow" x="-15%" y="-15%" width="135%" height="135%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="14" dy="16" stdDeviation="14" flood-color="#8ea2b8" flood-opacity="0.6"/>
+      <feDropShadow dx="-10" dy="-10" stdDeviation="12" flood-color="#ffffff" flood-opacity="0.95"/>
+    </filter>
+
+    <!-- Sombra de relevo do traço do pulso -->
+    <filter id="signal-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="#914502" flood-opacity="0.5"/>
+      <feDropShadow dx="-1.5" dy="-1.5" stdDeviation="2" flood-color="#fff2e0" flood-opacity="0.7"/>
+    </filter>
+
+    <!-- Sombra interna para o trilho esculpido -->
+    <filter id="rail-inset" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="2" stdDeviation="2" flood-color="#2d3b47" flood-opacity="0.35"/>
+      <feDropShadow dx="-1" dy="-1" stdDeviation="1.5" flood-color="#ffffff" flood-opacity="0.85"/>
+    </filter>
+  </defs>
+
+  <!-- Fundo com squircle neumórfico elevado -->
+  <g filter="url(#neu-drop-shadow)">
+    <!-- Base principal do squircle com cantos arredondados orgânicos -->
+    <rect x="28" y="28" width="456" height="456" rx="114" fill="url(#neu-surface-grad)"/>
+    <!-- Borda sutil de chanfro para relevo 3D tátil -->
+    <rect x="29" y="29" width="454" height="454" rx="113" stroke="rgba(255,255,255,0.85)" stroke-width="3" fill="none"/>
+  </g>
+
+  <!-- Brilho na borda superior-esquerda -->
+  <path d="M 142 29 C 75 29 29 75 29 142" stroke="rgba(255,255,255,0.95)" stroke-width="5" stroke-linecap="round" fill="none"/>
+
+  <!-- Símbolo Pulse centrado e proporcional -->
+  <g transform="translate(36, 36) scale(9.166)" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Trilho do P (em baixo-relevo esculpido) -->
+    <path d="M8 34V14a6 6 0 0 1 6-6h20a6 6 0 0 1 6 6v20a6 6 0 0 1-6 6H20"
+          stroke="url(#rail-grad)"
+          stroke-width="2.8"
+          filter="url(#rail-inset)"
+          opacity="0.95" />
+
+    <!-- Onda do Pulso (sinal vital em alto-relevo tátil com brilho âmbar) -->
+    <path d="M4 26h10l5-12v24l7-20 4 8h14"
+          stroke="url(#pulse-signal-grad)"
+          stroke-width="4.2"
+          filter="url(#signal-shadow)" />
+
+    <!-- Reflexo especular na crista da onda vital -->
+    <path d="M4 26h9.5 M19 14.2l5 23.5 M26 14l4 8"
+          stroke="rgba(255,255,255,0.75)"
+          stroke-width="1.3"
+          opacity="0.85" />
   </g>
 </svg>

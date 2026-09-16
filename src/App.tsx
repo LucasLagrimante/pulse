@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Component, type ErrorInfo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import "./identity.css";
 import { PulseMark, ModuleIcon, PulseLoading, FileIcon } from "./Identity";
@@ -13,7 +13,8 @@ import {
 } from "./Charts";
 import { DiskAnalyzer } from "./DiskAnalyzer";
 import { DiskCleanup } from "./DiskCleanup";
-import { formatReset, safePercent, SubscriptionUsage, type ProviderUsage } from "./SubscriptionUsage";
+import { formatUsd, hasMeasuredQuota, safePercent, SubscriptionUsage, type ProviderUsage } from "./SubscriptionUsage";
+import { ProviderIcon } from "./ProviderIcon";
 
 const navigationItems = [
   "Visão geral",
@@ -67,6 +68,42 @@ function useWindowForeground(): boolean | null {
   }, []);
 
   return isForeground;
+}
+
+export function useNeumorphicTheme(): ["light" | "dark", () => void] {
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    try {
+      const saved = localStorage.getItem("pulse-theme");
+      if (saved === "dark" || saved === "light") return saved;
+    } catch {}
+    return "light";
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem("pulse-theme", theme);
+    } catch {}
+
+    // O ícone nativo vive fora do WebView e precisa acompanhar a escolha feita
+    // no shell. Falhas aqui não podem impedir a interface de trocar de tema.
+    void Promise.resolve(invoke("set_tray_icon_theme", { theme })).catch(() => undefined);
+  }, [theme]);
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== "pulse-theme" || (event.newValue !== "light" && event.newValue !== "dark")) return;
+      setTheme(event.newValue);
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === "light" ? "dark" : "light"));
+  };
+
+  return [theme, toggleTheme];
 }
 
 export type TopProcess = {
@@ -219,7 +256,46 @@ const debugOperationLabel = (operation: string) => ({
   terminate_process: "Encerramento de processo",
   interface_render: "Renderização da interface",
   debug_mode_changed: "Estado da auditoria",
+  subscription_usage: "Consulta de cotas de IA",
+  subscription_usage_claude: "Cota do Claude Code",
+  subscription_usage_codex: "Cota do Codex",
+  subscription_usage_antigravity: "Cota do Antigravity",
+  subscription_usage_openrouter: "Saldo do OpenRouter",
 }[operation] ?? operation.replace(/_/g, " "));
+
+export type DebugEventGroup = {
+  key: string;
+  operation: string;
+  category?: string;
+  source?: string;
+  outcome: string;
+  entries: DebugEntry[];
+};
+
+export function groupConsecutiveDebugEntries(entries: DebugEntry[]): DebugEventGroup[] {
+  return entries.reduce<DebugEventGroup[]>((groups, entry) => {
+    const key = JSON.stringify([
+      entry.operation,
+      entry.category ?? "application",
+      entry.source ?? "unknown",
+      entry.outcome,
+    ]);
+    const previous = groups[groups.length - 1];
+    if (previous?.key === key) {
+      previous.entries.push(entry);
+    } else {
+      groups.push({
+        key,
+        operation: entry.operation,
+        category: entry.category,
+        source: entry.source,
+        outcome: entry.outcome,
+        entries: [entry],
+      });
+    }
+    return groups;
+  }, []);
+}
 
 export type DiskCapacityHealth = "normal" | "warning" | "critical" | "unknown";
 
@@ -231,9 +307,9 @@ export function getDiskCapacityHealth(percent: number | undefined | null): DiskC
 }
 
 export function diskCapacityColor(health: DiskCapacityHealth): string {
-  if (health === "critical") return "#e36a45";
-  if (health === "warning") return "#dda76d";
-  return "#8da9bf";
+  if (health === "critical") return "var(--neu-danger)";
+  if (health === "warning") return "var(--neu-warning)";
+  return "var(--neu-signal-secondary)";
 }
 
 function DiskHealthBadge({ health }: { health: DiskCapacityHealth }) {
@@ -652,17 +728,48 @@ export function TrayFlyout({
   onOpenMain: () => void;
   isForeground?: boolean | null;
 }) {
+  const [theme, toggleTheme] = useNeumorphicTheme();
   const [overview, setOverview] = useState<SystemOverview>();
   const [processToClose, setProcessToClose] = useState<TopProcess | null>(null);
   const [terminatingId, setTerminatingId] = useState<number | null>(null);
   const [processError, setProcessError] = useState("");
   const [cpuHistory, setCpuHistory] = useState<number[]>([]);
   const [ramHistory, setRamHistory] = useState<number[]>([]);
-  const [subscriptionProviders, setSubscriptionProviders] = useState<ProviderUsage[]>([]);
+  const [subscriptionProviders, setSubscriptionProviders] = useState<ProviderUsage[]>(() => {
+    try {
+      const cached = localStorage.getItem("pulse-subscription-providers");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
   const [subscriptionScanStatus, setSubscriptionScanStatus] = useState("idle");
   const [audioDevices, setAudioDevices] = useState<AudioDeviceInventory | null>(null);
   const [audioBusy, setAudioBusy] = useState<"input" | "output" | null>(null);
   const [audioError, setAudioError] = useState("");
+
+  const updateSubscriptionProviders = (newProviders?: ProviderUsage[], scanStatus?: string) => {
+    if (Array.isArray(newProviders) && newProviders.length > 0) {
+      setSubscriptionProviders(prev => {
+        const hasMeasured = newProviders.some(hasMeasuredQuota);
+        if (hasMeasured) {
+          try {
+            localStorage.setItem("pulse-subscription-providers", JSON.stringify(newProviders));
+          } catch {}
+          return newProviders;
+        }
+        if (prev.some(hasMeasuredQuota)) {
+          return prev;
+        }
+        return newProviders;
+      });
+    }
+    if (scanStatus) {
+      setSubscriptionScanStatus(scanStatus);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -748,15 +855,64 @@ export function TrayFlyout({
   };
 
   useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<{ providers?: ProviderUsage[]; scanStatus?: string }>(
+      "pulse://subscription-usage-updated",
+      event => {
+        const payload = event.payload;
+        if (payload) {
+          updateSubscriptionProviders(payload.providers, payload.scanStatus);
+        }
+      },
+    )
+      .then(cleanup => {
+        unlisten = cleanup;
+      })
+      .catch(() => undefined);
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "pulse-subscription-providers" && event.newValue) {
+        try {
+          const parsed = JSON.parse(event.newValue);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSubscriptionProviders(parsed);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      if (unlisten) unlisten();
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    void invoke<{ providers?: ProviderUsage[]; scanStatus?: string }>("get_subscription_usage", { forceRefresh: false })
+      .then(result => {
+        if (!disposed && result) {
+          updateSubscriptionProviders(result.providers, result.scanStatus);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (isForeground !== true) return;
     let disposed = false;
     const readQuotas = async () => {
       for (let attempt = 0; attempt < 12 && !disposed; attempt += 1) {
         try {
           const result = await invoke<{ providers?: ProviderUsage[]; scanStatus?: string }>("get_subscription_usage", { forceRefresh: false });
-          if (Array.isArray(result?.providers)) setSubscriptionProviders(result.providers);
-          setSubscriptionScanStatus(result?.scanStatus || "ready");
-          if (result?.scanStatus !== "running") break;
+          if (result) {
+            updateSubscriptionProviders(result.providers, result.scanStatus);
+            if (result.scanStatus !== "running") break;
+          }
           await new Promise(resolve => window.setTimeout(resolve, 700));
         } catch { break; }
       }
@@ -775,8 +931,12 @@ export function TrayFlyout({
       ? Math.round((overview.diskUsedGb / overview.diskTotalGb) * 100)
       : undefined;
   const diskHealth = getDiskCapacityHealth(diskPercent);
-  const openrouterCredits = subscriptionProviders.find(provider => provider.id === "openrouter")?.creditsRemaining;
-  const hasQuotaResult = subscriptionProviders.some(provider => provider.status === "available" && (provider.windows?.length > 0 || provider.creditsRemaining != null));
+  const visibleQuotaProviders = useMemo(
+    () => subscriptionProviders.filter(hasMeasuredQuota),
+    [subscriptionProviders],
+  );
+  const openrouterCredits = visibleQuotaProviders.find(provider => provider.id === "openrouter")?.creditsRemaining;
+  const hasQuotaResult = visibleQuotaProviders.length > 0;
 
   const handleClose = async () => {
     try {
@@ -823,48 +983,61 @@ export function TrayFlyout({
             <p>PAINEL RÁPIDO</p>
           </div>
           {typeof openrouterCredits === "number" && Number.isFinite(openrouterCredits) && (
-            <span className="flyout-training-credit" title="Créditos OpenRouter disponíveis" aria-label="Créditos OpenRouter disponíveis">
-              <span aria-hidden="true">◉</span>{openrouterCredits.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}
+            <span className="flyout-training-credit" title="Saldo OpenRouter disponível em dólares (USD)" aria-label="Saldo OpenRouter disponível em dólares (USD)">
+              {formatUsd(openrouterCredits)}
             </span>
           )}
         </div>
-        <button
-          aria-label="Fechar painel rápido"
-          className="flyout-close-button"
-          onClick={() => void handleClose()}
-        >
-          ✕
-        </button>
+        <div className="flyout-header-actions">
+          <button
+            type="button"
+            className="flyout-theme-toggle"
+            aria-label={`Alternar para tema ${theme === "light" ? "escuro" : "claro"}`}
+            title={`Tema atual: ${theme === "light" ? "Claro (Porcelain)" : "Escuro (Obsidian)"}`}
+            onClick={toggleTheme}
+          >
+            {theme === "light" ? "☼" : "☾"}
+          </button>
+          <button
+            aria-label="Fechar painel rápido"
+            className="flyout-close-button"
+            onClick={() => void handleClose()}
+          >
+            ✕
+          </button>
+        </div>
       </header>
 
       {!overview && <PulseLoading compact />}
       <section className="flyout-metrics">
-        <div className="flyout-metric-card">
-          <div className="flyout-metric-head">
-            <span>CPU</span>
-            <strong>{metric(overview?.cpuPercent, "%")}</strong>
+        <div className="flyout-metrics-row">
+          <div className="flyout-metric-card">
+            <div className="flyout-metric-head">
+              <span>CPU</span>
+              <strong>{metric(overview?.cpuPercent, "%")}</strong>
+            </div>
+            <SparklineChart
+              data={cpuHistory}
+              color="var(--neu-accent)"
+              height={18}
+              ariaLabel="Gráfico de histórico de CPU no tray"
+            />
           </div>
-          <SparklineChart
-            data={cpuHistory}
-            color="#dda76d"
-            height={22}
-            ariaLabel="Gráfico de histórico de CPU no tray"
-          />
-        </div>
 
-        <div className="flyout-metric-card">
-          <div className="flyout-metric-head">
-            <span>MEMÓRIA RAM</span>
-            <strong>
-              {metric(overview?.memoryUsedGb, " GB")} ({metric(memoryPercent, "%")})
-            </strong>
+          <div className="flyout-metric-card">
+            <div className="flyout-metric-head">
+              <span>RAM</span>
+              <strong>
+                {metric(overview?.memoryUsedGb, " GB")} ({metric(memoryPercent, "%")})
+              </strong>
+            </div>
+            <SparklineChart
+              data={ramHistory}
+              color="var(--neu-signal-secondary)"
+              height={18}
+              ariaLabel="Gráfico de histórico de Memória RAM no tray"
+            />
           </div>
-          <SparklineChart
-            data={ramHistory}
-            color="#8da9bf"
-            height={22}
-            ariaLabel="Gráfico de histórico de Memória RAM no tray"
-          />
         </div>
 
         <div className={`flyout-metric-card disk-health-card disk-health-${diskHealth}`}>
@@ -931,47 +1104,81 @@ export function TrayFlyout({
       <section className="flyout-quotas" aria-label="Cotas de assinaturas de IA">
         <div className="flyout-section-title">
           <span>COTAS DE IA</span>
-          <small>{subscriptionProviders.filter(provider => provider.status === "available").length || "—"} DISPONÍVEIS</small>
+          <small>{visibleQuotaProviders.length || "—"} DISPONÍVEIS</small>
         </div>
-        {subscriptionScanStatus === "running" && !hasQuotaResult ? <p className="flyout-quota-empty">Consultando fontes locais…</p> : subscriptionProviders.length > 0 ? (
-          <div className="flyout-quota-list">
-            {subscriptionProviders.filter(provider => subscriptionScanStatus !== "running" || provider.status === "available" && (provider.windows?.length > 0 || provider.creditsRemaining != null)).map(provider => {
-              const available = provider.status === "available";
+        {subscriptionScanStatus === "running" && !hasQuotaResult ? <p className="flyout-quota-empty">Consultando fontes locais…</p> : visibleQuotaProviders.length > 0 ? (
+          <div className="flyout-quota-grid">
+            {visibleQuotaProviders.map(provider => {
+              const measuredWindows = (provider.windows ?? []).filter(
+                window => safePercent(window.remainingPercent) != null && !window.unavailableReason,
+              );
+              const planName = provider.plan?.trim() ? provider.plan.toUpperCase() : "ATUAL";
+
               return (
-                <article className={`flyout-quota-card${available ? "" : " is-unavailable"}`} key={provider.id}>
-                  <header>
-                    <span className="flyout-quota-mark">{provider.id === "codex" ? "◎" : provider.provider.charAt(0)}</span>
-                    <strong>{provider.provider}</strong>
-                    <small>{available ? (provider.plan || "ATUAL") : "INDISPONÍVEL"}</small>
+                <article className="flyout-quota-mini-card" key={provider.id}>
+                  <header className="flyout-quota-head">
+                    <div className="flyout-quota-brand">
+                      <ProviderIcon providerId={provider.id} size={15} />
+                      <strong title={provider.provider}>{provider.provider}</strong>
+                    </div>
+                    <small className="flyout-quota-plan">{planName}</small>
                   </header>
-                  {available && provider.windows.slice(0, 2).map(window => {
-                    const remaining = safePercent(window.remainingPercent);
-                    return (
-                      <div className="flyout-quota-window" key={window.id}>
-                        <div><span>{window.label}</span><small>{remaining == null ? "Indisponível" : `${Math.round(remaining)}% restante`}</small></div>
-                        {remaining != null && <div className="flyout-quota-track"><i style={{ width: `${remaining}%` }} /></div>}
-                        <em>{window.resetDescription || formatReset(window.resetsAtUnixSeconds)}</em>
-                      </div>
-                    );
-                  })}
-                  {available && provider.id === "openrouter" && provider.creditsRemaining != null && (
-                    <div className="flyout-openrouter-credit"><span>CRÉDITOS</span><strong>{provider.creditsRemaining.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</strong></div>
+                  {provider.id === "openrouter" && provider.creditsRemaining != null ? (
+                    <div className="flyout-quota-usd">
+                      <span>SALDO</span>
+                      <strong>{formatUsd(provider.creditsRemaining)}</strong>
+                    </div>
+                  ) : measuredWindows.length > 0 ? (
+                    <div className="flyout-quota-bars">
+                      {measuredWindows.slice(0, 2).map((window, idx) => {
+                        const remaining = safePercent(window.remainingPercent) ?? 0;
+                        const labelLower = (window.label || "").toLowerCase();
+                        const idLower = (window.id || "").toLowerCase();
+                        let shortLabel = window.label || "Cota";
+                        if (labelLower.includes("sess") || idLower.includes("sess") || labelLower.includes("5h")) {
+                          shortLabel = "5h";
+                        } else if (labelLower.includes("sem") || idLower.includes("week") || labelLower.includes("7d")) {
+                          shortLabel = "7d";
+                        } else if (shortLabel.length > 5) {
+                          shortLabel = shortLabel.slice(0, 4);
+                        }
+
+                        return (
+                          <div className="flyout-quota-row" key={window.id || `${provider.id}-${idx}`}>
+                            <span className="flyout-quota-window-label" title={window.label}>
+                              {shortLabel}
+                            </span>
+                            <div className="flyout-quota-bar">
+                              <i
+                                style={{ width: `${remaining}%` }}
+                                className={remaining <= 20 ? "is-critical" : remaining <= 45 ? "is-warning" : ""}
+                              />
+                            </div>
+                            <span className="flyout-quota-value">{Math.round(remaining)}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flyout-quota-credit">
+                      <span>COTA</span>
+                      <strong>Confirmada</strong>
+                    </div>
                   )}
-                  {!available && <p>{provider.unavailableReason || "A fonte oficial não expôs a cota."}</p>}
                 </article>
               );
             })}
           </div>
-        ) : <p className="flyout-quota-empty">Consultando os provedores locais…</p>}
+        ) : <p className="flyout-quota-empty">Nenhuma cota confirmada nesta consulta.</p>}
       </section>
 
       <section className="flyout-processes">
         <div className="flyout-section-title">
           <span>TOP PROCESSOS</span>
-          <small>RAM</small>
+          <small>MAIOR CONSUMO DE MEMÓRIA</small>
         </div>
         <ul className="flyout-process-list">
-          {(overview?.topProcesses?.length ? overview.topProcesses.slice(0, TOP_PROCESS_LIMIT).map((p, i) => (
+          {(overview?.topProcesses?.length ? overview.topProcesses.slice(0, 5).map((p, i) => (
             <li key={p.id}>
               <span className="flyout-process-rank">{String(i + 1).padStart(2, "0")}</span>
               <span className="flyout-process-name" title={[p.displayName || p.name, p.name, p.publisher].filter(Boolean).join(" · ")}>
@@ -1034,6 +1241,7 @@ export function TrayFlyout({
 }
 
 function App() {
+  const [theme, toggleTheme] = useNeumorphicTheme();
   const isWindowForeground = useWindowForeground();
   const [windowLabel, setWindowLabel] = useState<string | null>(null);
   const [initialLoadAllowed, setInitialLoadAllowed] = useState(false);
@@ -1073,6 +1281,7 @@ function App() {
   const [debugOutcome, setDebugOutcome] = useState<"all" | "ok" | "error">("all");
   const [debugCategory, setDebugCategory] = useState("all");
   const [debugLoading, setDebugLoading] = useState(false);
+  const debugLoadingRef = useRef(false);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
   const [storageSubTab, setStorageSubTab] = useState<"analyzer" | "recent" | "cleanup">("analyzer");
   const [customFolders, setCustomFolders] = useState<string[]>([]);
@@ -1186,6 +1395,11 @@ function App() {
           .some(value => value!.toLocaleLowerCase("pt-BR").includes(query));
       });
   }, [debugCategory, debugLog, debugOutcome, debugQuery]);
+
+  const groupedDebugLog = useMemo(
+    () => groupConsecutiveDebugEntries(filteredDebugLog),
+    [filteredDebugLog],
+  );
 
 
   useEffect(() => {
@@ -1431,7 +1645,9 @@ function App() {
     };
   }, []);
 
-  const loadDebugAudit = async () => {
+  const loadDebugAudit = useCallback(async () => {
+    if (debugLoadingRef.current) return;
+    debugLoadingRef.current = true;
     setDebugLoading(true);
     try {
       const [enabled, entries, info] = await Promise.all([
@@ -1445,13 +1661,22 @@ function App() {
     } catch {
       setError("Não foi possível ler a trilha de auditoria local.");
     } finally {
+      debugLoadingRef.current = false;
       setDebugLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (activeArea === "Debug") void loadDebugAudit();
-  }, [activeArea]);
+  }, [activeArea, loadDebugAudit]);
+
+  useEffect(() => {
+    if (activeArea !== "Debug" || !debugEnabled) return;
+    const refreshTimer = window.setInterval(() => {
+      void loadDebugAudit();
+    }, 2000);
+    return () => window.clearInterval(refreshTimer);
+  }, [activeArea, debugEnabled, loadDebugAudit]);
 
   useEffect(() => {
     invoke<boolean>("get_debug_mode")
@@ -1774,6 +1999,15 @@ function App() {
               />
             </label>
             <button
+              type="button"
+              className="theme-toggle-button"
+              aria-label={`Alternar para tema ${theme === "light" ? "escuro" : "claro"}`}
+              title={`Tema atual: ${theme === "light" ? "Claro (Porcelain)" : "Escuro (Obsidian)"}. Clique para alternar.`}
+              onClick={toggleTheme}
+            >
+              {theme === "light" ? "CLARO ☼" : "ESCURO ☾"}
+            </button>
+            <button
               aria-label="Minimizar para o tray icon"
               className="tray-minimize-button"
               title="Minimizar para a área de notificação da barra de tarefas"
@@ -1815,7 +2049,7 @@ function App() {
                     <SparklineChart
                       data={cpuHistory}
                       loading={cpuChartLoading}
-                      color="#dda76d"
+                      color="var(--neu-accent)"
                       height={32}
                       showGrid
                       ariaLabel="Gráfico de tendência de CPU"
@@ -1833,7 +2067,7 @@ function App() {
                     <SparklineChart
                       data={ramHistory}
                       loading={ramChartLoading}
-                      color="#8da9bf"
+                      color="var(--neu-signal-secondary)"
                       height={32}
                       showGrid
                       ariaLabel="Gráfico de tendência de memória RAM"
@@ -1935,7 +2169,7 @@ function App() {
                       title="USO DA CPU EM TEMPO REAL"
                       history={cpuHistory}
                       currentValue={metric(overview?.cpuPercent, "%")}
-                      color="#dda76d"
+                            color="var(--neu-accent)"
                       ariaLabel="Gráfico detalhado de CPU"
                       loading={cpuChartLoading}
                     />
@@ -1956,7 +2190,7 @@ function App() {
                           ? `${metric(overview.memoryUsedGb, " GB")} em uso de ${metric(overview.memoryTotalGb, " GB")}`
                           : undefined
                       }
-                      color="#8da9bf"
+                            color="var(--neu-signal-secondary)"
                       ariaLabel="Gráfico detalhado de Memória RAM"
                       loading={ramChartLoading}
                     />
@@ -1968,7 +2202,12 @@ function App() {
                   </section>
                   <section className="panel focused-card">
                     <p>GPU</p>
-                    <strong>{performance?.gpu?.value || "Indisponível"}</strong>
+                    <strong
+                      className="gpu-name"
+                      title={performance?.gpu?.value ?? undefined}
+                    >
+                      {performance?.gpu?.value || "Indisponível"}
+                    </strong>
                     <HardwareGaugeBar
                       label="CONTROLADORA GRÁFICA"
                       valueText={performance?.gpu?.value ? "Detectada" : "Indisponível"}
@@ -2268,26 +2507,31 @@ function App() {
                     </label>
                   </div>
 
-                  <section className="debug-stats" aria-label="Resumo da auditoria">
-                    <article className="debug-stat"><span>EVENTOS</span><strong>{debugStats.total}</strong><small>nesta execução</small></article>
-                    <article className={`debug-stat ${debugStats.errors ? "has-error" : ""}`}><span>FALHAS</span><strong>{debugStats.errors}</strong><small>resultado técnico</small></article>
-                    <article className="debug-stat"><span>TEMPO MÉDIO</span><strong>{debugStats.average != null ? `${debugStats.average} ms` : "—"}</strong><small>operações medidas</small></article>
-                    <article className="debug-stat"><span>MAIS LENTA</span><strong>{debugStats.slowest != null ? `${debugStats.slowest} ms` : "—"}</strong><small>nesta execução</small></article>
-                  </section>
+                  <div className="debug-summary">
+                    <section className="debug-stats" aria-label="Resumo da auditoria">
+                      <article className="debug-stat"><span>EVENTOS</span><strong>{debugStats.total}</strong><small>nesta execução</small></article>
+                      <article className={`debug-stat ${debugStats.errors ? "has-error" : ""}`}><span>FALHAS</span><strong>{debugStats.errors}</strong><small>resultado técnico</small></article>
+                      <article className="debug-stat"><span>TEMPO MÉDIO</span><strong>{debugStats.average != null ? `${debugStats.average} ms` : "—"}</strong><small>operações medidas</small></article>
+                      <article className="debug-stat"><span>MAIS LENTA</span><strong>{debugStats.slowest != null ? `${debugStats.slowest} ms` : "—"}</strong><small>nesta execução</small></article>
+                    </section>
 
-                  <section className="debug-transparency" aria-label="Escopo e privacidade da auditoria">
-                    <div><span>VERSÃO / PLATAFORMA</span><strong>{debugAuditInfo ? `${debugAuditInfo.applicationVersion} · ${debugAuditInfo.platform}` : "Consultando…"}</strong></div>
-                    <div><span>RETENÇÃO</span><strong>{debugAuditInfo ? `${debugAuditInfo.entryCount} de ${debugAuditInfo.retentionLimit} eventos` : "Consultando…"}</strong></div>
-                    <div><span>PERSISTÊNCIA REAL</span><strong>{debugAuditInfo?.persistence ?? "Somente a execução atual"}</strong></div>
-                    <div><span>RESIDÊNCIA DOS DADOS</span><strong>{debugAuditInfo?.dataResidency ?? "Local neste computador"}</strong></div>
-                  </section>
+                    <section className="debug-transparency" aria-label="Escopo e privacidade da auditoria">
+                      <div><span>VERSÃO / PLATAFORMA</span><strong>{debugAuditInfo ? `${debugAuditInfo.applicationVersion} · ${debugAuditInfo.platform}` : "Consultando…"}</strong></div>
+                      <div><span>RETENÇÃO</span><strong>{debugAuditInfo ? `${debugAuditInfo.entryCount} de ${debugAuditInfo.retentionLimit} eventos` : "Consultando…"}</strong></div>
+                      <div><span>PERSISTÊNCIA REAL</span><strong>{debugAuditInfo?.persistence ?? "Somente a execução atual"}</strong></div>
+                      <div><span>RESIDÊNCIA DOS DADOS</span><strong>{debugAuditInfo?.dataResidency ?? "Local neste computador"}</strong></div>
+                    </section>
+                  </div>
                 </section>
 
                 <section className="panel debug-events-panel">
                   <div className="debug-toolbar">
                     <div>
                       <p className="eyebrow">TRILHA DE EVENTOS</p>
-                      <h3>{filteredDebugLog.length} {filteredDebugLog.length === 1 ? "evento visível" : "eventos visíveis"}</h3>
+                      <h3>
+                        {filteredDebugLog.length} {filteredDebugLog.length === 1 ? "evento visível" : "eventos visíveis"}
+                        {groupedDebugLog.length < filteredDebugLog.length && <small className="debug-group-summary"> · {groupedDebugLog.length} grupos</small>}
+                      </h3>
                     </div>
                     <div className="debug-actions">
                       <button type="button" onClick={() => void loadDebugAudit()} disabled={debugLoading}>{debugLoading ? "LENDO…" : "ATUALIZAR"}</button>
@@ -2309,26 +2553,60 @@ function App() {
                     </select>
                   </div>
                   <div className="debug-event-list" aria-live="polite">
-                    {filteredDebugLog.length ? filteredDebugLog.map((entry, index) => (
-                      <article className={`debug-event ${entry.outcome === "error" ? "is-error" : ""}`} key={`${entry.sequence ?? index}-${entry.timestampUnixMs}`}>
-                        <div className="debug-event-marker" aria-hidden="true" />
-                        <div className="debug-event-main">
-                          <div className="debug-event-heading">
-                            <span className={`debug-outcome ${entry.outcome === "error" ? "is-error" : ""}`}>{entry.outcome === "error" ? "FALHA" : "OK"}</span>
-                            <strong>{debugOperationLabel(entry.operation)}</strong>
-                            <code>{entry.operation}</code>
+                    {groupedDebugLog.length ? groupedDebugLog.map((group, index) => {
+                      const entry = group.entries[0];
+                      const oldestEntry = group.entries[group.entries.length - 1];
+                      const grouped = group.entries.length > 1;
+                      const totalDuration = group.entries.reduce(
+                        (total, occurrence) => total + (Number.isFinite(occurrence.durationMs) ? occurrence.durationMs : 0),
+                        0,
+                      );
+                      const isError = group.outcome === "error";
+                      return (
+                        <article
+                          className={`debug-event${grouped ? " is-grouped" : ""}${isError ? " is-error" : ""}`}
+                          key={`${group.key}-${entry.sequence ?? index}`}
+                          aria-label={`${debugOperationLabel(group.operation)}${grouped ? `, ${group.entries.length} ocorrências agrupadas` : ""}`}
+                        >
+                          <div className="debug-event-marker" aria-hidden="true" />
+                          <div className="debug-event-main">
+                            <div className="debug-event-heading">
+                              <span className={`debug-outcome ${isError ? "is-error" : ""}`}>{isError ? "FALHA" : "OK"}</span>
+                              <strong>{debugOperationLabel(group.operation)}</strong>
+                              <code>{group.operation}</code>
+                              {grouped && <span className="debug-group-count">{group.entries.length} ocorrências</span>}
+                            </div>
+                            <p>{entry.message}</p>
+                            <div className="debug-event-meta">
+                              {grouped ? (
+                                <>
+                                  <span>Última: {new Date(entry.timestampUnixMs).toLocaleString("pt-BR")}</span>
+                                  <span>Primeira: {new Date(oldestEntry.timestampUnixMs).toLocaleString("pt-BR")}</span>
+                                </>
+                              ) : <span>{new Date(entry.timestampUnixMs).toLocaleString("pt-BR")}</span>}
+                              <span>{debugCategoryLabel(group.category)}</span>
+                              <span>{group.source ?? "rust-backend"}</span>
+                              {!grouped && entry.sequence != null && <span>#{entry.sequence}</span>}
+                            </div>
+                            {grouped && (
+                              <div className="debug-group-grid" aria-label="Ocorrências do grupo">
+                                {group.entries.map((occurrence, occurrenceIndex) => (
+                                  <div className="debug-group-item" key={`${occurrence.sequence ?? occurrenceIndex}-${occurrence.timestampUnixMs}`}>
+                                    <div className="debug-group-item-meta">
+                                      <span>{occurrence.sequence != null ? `#${occurrence.sequence}` : `#${occurrenceIndex + 1}`}</span>
+                                      <time dateTime={new Date(occurrence.timestampUnixMs).toISOString()}>{new Date(occurrence.timestampUnixMs).toLocaleTimeString("pt-BR")}</time>
+                                      <strong>{occurrence.durationMs} ms</strong>
+                                    </div>
+                                    <p>{occurrence.message}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          <p>{entry.message}</p>
-                          <div className="debug-event-meta">
-                            <span>{new Date(entry.timestampUnixMs).toLocaleString("pt-BR")}</span>
-                            <span>{debugCategoryLabel(entry.category)}</span>
-                            <span>{entry.source ?? "rust-backend"}</span>
-                            {entry.sequence != null && <span>#{entry.sequence}</span>}
-                          </div>
-                        </div>
-                        <strong className="debug-duration">{entry.durationMs} ms</strong>
-                      </article>
-                    )) : (
+                          <strong className="debug-duration">{grouped ? `${totalDuration} ms total` : `${entry.durationMs} ms`}</strong>
+                        </article>
+                      );
+                    }) : (
                       <div className="debug-empty">
                         <strong>{debugLog.length ? "Nenhum evento corresponde aos filtros." : "Nenhum evento registrado nesta execução."}</strong>
                         <span>{debugEnabled ? "Use o Pulse normalmente e atualize esta trilha para ver as operações instrumentadas." : "Ative a auditoria para registrar as próximas operações."}</span>

@@ -12,6 +12,7 @@ import App, {
   formatFileDate,
   formatFileSize,
   getDiskCapacityHealth,
+  groupConsecutiveDebugEntries,
   metric,
 } from "./App";
 import { DiskAnalyzer, extractTopFiles, formatElapsedSince, getFileExtension } from "./DiskAnalyzer";
@@ -37,6 +38,34 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 }));
 
 describe("Formatters and Components", () => {
+  it("groups only consecutive debug entries of the same operation and outcome", () => {
+    const entry = (sequence: number, operation: string, outcome = "ok") => ({
+      sequence,
+      timestampUnixMs: sequence,
+      operation,
+      category: "telemetry",
+      source: "rust-backend",
+      durationMs: sequence,
+      outcome,
+      severity: outcome === "error" ? "error" : "info",
+      message: outcome === "error" ? "Falha" : "Concluído",
+    });
+
+    const groups = groupConsecutiveDebugEntries([
+      entry(1, "subscription_usage_claude"),
+      entry(2, "subscription_usage_claude"),
+      entry(3, "performance_details"),
+      entry(4, "subscription_usage_claude"),
+      entry(5, "subscription_usage_claude", "error"),
+    ]);
+
+    expect(groups).toHaveLength(4);
+    expect(groups[0]?.entries).toHaveLength(2);
+    expect(groups[1]?.operation).toBe("performance_details");
+    expect(groups[2]?.entries).toHaveLength(1);
+    expect(groups[3]?.outcome).toBe("error");
+  });
+
   describe("metric helper", () => {
     it("safely handles numbers, 0, null, undefined and NaN", () => {
       expect(metric(42)).toBe("42");
@@ -267,17 +296,84 @@ describe("Formatters and Components", () => {
         expect(output).toHaveValue("speaker-2");
       });
     });
+
+    it("retains cached AI quota cards during background scan without flickering", async () => {
+      const cachedProviders = [
+        {
+          id: "claude",
+          provider: "Claude Code",
+          subtitle: "Assinatura Anthropic",
+          status: "available",
+          windows: [{ id: "session", label: "Sessão", remainingPercent: 85 }],
+          source: "Claude Code",
+        },
+        {
+          id: "codex",
+          provider: "Codex",
+          subtitle: "ChatGPT",
+          status: "available",
+          windows: [{ id: "session", label: "Sessão", remainingPercent: 90 }],
+          source: "Codex",
+        },
+      ];
+      localStorage.setItem("pulse-subscription-providers", JSON.stringify(cachedProviders));
+
+      vi.mocked(invoke).mockImplementation((command: string) => {
+        if (command === "get_subscription_usage") {
+          return Promise.resolve({
+            providers: cachedProviders,
+            scanStatus: "running",
+          }) as never;
+        }
+        return Promise.resolve() as never;
+      });
+
+      render(<TrayFlyout onOpenMain={vi.fn()} />);
+
+      expect(screen.getByText("Claude Code")).toBeInTheDocument();
+      expect(screen.getByText("Codex")).toBeInTheDocument();
+      expect(screen.queryByText("Consultando fontes locais…")).not.toBeInTheDocument();
+
+      const updatedProviders = [
+        ...cachedProviders,
+        {
+          id: "openrouter",
+          provider: "OpenRouter",
+          subtitle: "Saldo em Dólares (USD)",
+          status: "available",
+          creditsRemaining: 4.5,
+          windows: [],
+          source: "OpenRouter API",
+        },
+      ];
+      await waitFor(() => {
+        expect(registeredEventListeners["pulse://subscription-usage-updated"]).toBeDefined();
+      });
+
+      act(() => {
+        registeredEventListeners["pulse://subscription-usage-updated"]?.({
+          payload: {
+            providers: updatedProviders,
+            scanStatus: "ready",
+          },
+        });
+      });
+
+      expect(await screen.findByText("OpenRouter")).toBeInTheDocument();
+      expect(screen.getAllByText("$ 4,50").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText("Claude Code")).toBeInTheDocument();
+    });
   });
 
   describe("DiskAnalyzer scan reconciliation", () => {
     it("shows loading feedback inside both disk panels while restoring cached data", async () => {
-      let resolveDrives!: (drives: unknown) => void;
+      let resolveScanState!: (state: unknown) => void;
       vi.mocked(invoke).mockImplementation((command: string) => {
         if (command === "get_system_drives") {
-          return new Promise(resolve => { resolveDrives = resolve; }) as never;
+          return Promise.resolve([{ path: "C:\\", label: "Disco Local (C:)" }]) as never;
         }
         if (command === "get_disk_scan_state") {
-          return Promise.resolve({ isScanning: false, progress: null, result: null, error: null }) as never;
+          return new Promise(resolve => { resolveScanState = resolve; }) as never;
         }
         return Promise.resolve(null) as never;
       });
@@ -287,11 +383,7 @@ describe("Formatters and Components", () => {
       expect(screen.getByText("CARREGANDO ANÁLISE LOCAL")).toBeInTheDocument();
       expect(screen.getByText("PREPARANDO MAPA DE BLOCOS")).toBeInTheDocument();
 
-      await waitFor(() => {
-        expect(screen.getByText("CARREGANDO ANÁLISE LOCAL")).toBeInTheDocument();
-      });
-
-      resolveDrives([{ path: "C:\\", label: "Disco Local (C:)" }]);
+      resolveScanState({ isScanning: false, progress: null, result: null, error: null });
       await waitFor(() => {
         expect(screen.queryByText("CARREGANDO ANÁLISE LOCAL")).not.toBeInTheDocument();
         expect(screen.getByText("Nenhuma varredura realizada")).toBeInTheDocument();
@@ -823,6 +915,11 @@ describe("Pulse application shell", () => {
     expect(
       screen.getByRole("heading", { name: "Desempenho — recursos em uso" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("NVIDIA GeForce RTX 4070")).toHaveClass("gpu-name");
+    expect(screen.getByText("NVIDIA GeForce RTX 4070")).toHaveAttribute(
+      "title",
+      "NVIDIA GeForce RTX 4070",
+    );
   });
 
   it("opens Inicialização e segurança from its telemetry card", async () => {
@@ -1228,13 +1325,35 @@ describe("Pulse application shell", () => {
             severity: "info",
             message: "Concluído",
           },
+          {
+            sequence: 13,
+            timestampUnixMs: 1725000010,
+            operation: "subscription_usage_claude",
+            category: "telemetry",
+            source: "rust-backend",
+            durationMs: 120,
+            outcome: "ok",
+            severity: "info",
+            message: "Cota confirmada · Claude Code CLI · /usage",
+          },
+          {
+            sequence: 14,
+            timestampUnixMs: 1725000020,
+            operation: "subscription_usage_claude",
+            category: "telemetry",
+            source: "rust-backend",
+            durationMs: 110,
+            outcome: "ok",
+            severity: "info",
+            message: "Cota confirmada · Claude Code CLI · /usage",
+          },
         ]) as never;
       }
       if (command === "get_debug_audit_info") {
         return Promise.resolve({
           enabled: true,
           sessionStartedUnixMs: 1725000000,
-          entryCount: 1,
+          entryCount: 3,
           retentionLimit: 500,
           applicationVersion: "0.1.0",
           platform: "windows",
@@ -1256,6 +1375,8 @@ describe("Pulse application shell", () => {
       expect(screen.getByText("Coleta da visão geral")).toBeInTheDocument();
     });
     expect(screen.getByText("system_overview")).toBeInTheDocument();
+    expect(screen.getByText("Cota do Claude Code")).toBeInTheDocument();
+    expect(screen.getByText("2 ocorrências")).toBeInTheDocument();
     expect(screen.getByText("Somente memória desta execução")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "COPIAR JSON" })).toBeEnabled();
     expect(screen.getByLabelText("Buscar na auditoria")).toBeInTheDocument();
@@ -1286,6 +1407,137 @@ describe("Pulse application shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Abrir interface completa" }));
     expect(invoke).toHaveBeenCalledWith("show_main_window");
+  });
+
+  it("renders tray-flyout with dollar balance, audio selectors and top processes", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_current_window_label") return Promise.resolve("tray-flyout") as never;
+      if (command === "get_system_overview") {
+        return Promise.resolve({
+          cpuPercent: 15,
+          memoryUsedGb: 8,
+          memoryTotalGb: 16,
+          diskUsedGb: 120,
+          diskTotalGb: 500,
+          startupItemCount: 1,
+          topProcesses: [
+            { name: "code.exe", displayName: "Visual Studio Code", id: 101, memoryMb: 1200, publisher: "Microsoft" },
+            { name: "chrome.exe", displayName: "Google Chrome", id: 102, memoryMb: 800, publisher: "Google" },
+          ],
+        }) as never;
+      }
+      if (command === "get_audio_devices") {
+        return Promise.resolve({
+          input: [{ id: "mic-1", name: "Microfone Realtek", isDefault: true }],
+          output: [{ id: "speaker-1", name: "Alto-falantes Realtek", isDefault: true }],
+          inputDefaultId: "mic-1",
+          outputDefaultId: "speaker-1",
+          unavailableReason: null,
+        }) as never;
+      }
+      if (command === "get_subscription_usage") {
+        return Promise.resolve({
+          scanStatus: "ready",
+          durationMs: 120,
+          privacyNote: "Privado",
+          sampledAtUnixMs: Date.now(),
+          providers: [
+            {
+              id: "openrouter",
+              provider: "OpenRouter",
+              subtitle: "Saldo em Dólares",
+              status: "available",
+              windows: [],
+              creditsRemaining: 0.3026,
+              source: "openrouter.ai",
+            },
+          ],
+        }) as never;
+      }
+      return Promise.resolve() as never;
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("complementary", { name: "Painel rápido do tray" })).toBeInTheDocument();
+    });
+
+    // Confirma que o header exibe o saldo com cifrão ($)
+    await waitFor(() => {
+      expect(screen.getByLabelText("Saldo OpenRouter disponível em dólares (USD)")).toBeInTheDocument();
+      expect(screen.getByLabelText("Saldo OpenRouter disponível em dólares (USD)")).toHaveTextContent("$");
+    });
+
+    // Confirma que os processos principais aparecem legíveis
+    expect(screen.getByText("Visual Studio Code")).toBeInTheDocument();
+    expect(screen.getByText("Google Chrome")).toBeInTheDocument();
+
+    // Confirma que o card de cota do OpenRouter exibe SALDO e o valor em dólares
+    expect(screen.getByText("SALDO")).toBeInTheDocument();
+    expect(screen.getAllByText(/\$ 0,30/).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("renders tray-flyout with two quota progress bars and provider icons for multi-window providers", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_current_window_label") return Promise.resolve("tray-flyout") as never;
+      if (command === "get_system_overview") {
+        return Promise.resolve({
+          cpuPercent: 12,
+          memoryUsedGb: 6,
+          memoryTotalGb: 16,
+          diskUsedGb: 100,
+          diskTotalGb: 500,
+          startupItemCount: 1,
+          topProcesses: [],
+        }) as never;
+      }
+      if (command === "get_subscription_usage") {
+        return Promise.resolve({
+          scanStatus: "ready",
+          durationMs: 80,
+          privacyNote: "Privado",
+          sampledAtUnixMs: Date.now(),
+          providers: [
+            {
+              id: "claude",
+              provider: "Claude",
+              plan: "Pro",
+              status: "available",
+              windows: [
+                { id: "session", label: "Sessão atual (5h)", remainingPercent: 80, usedPercent: 20 },
+                { id: "weekly", label: "Cota semanal (7d)", remainingPercent: 95, usedPercent: 5 },
+              ],
+              creditsRemaining: null,
+              source: "claude.ai",
+            },
+          ],
+        }) as never;
+      }
+      return Promise.resolve() as never;
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("complementary", { name: "Painel rápido do tray" })).toBeInTheDocument();
+    });
+
+    // Provedor Claude com ícone e plano PRO em linha
+    await waitFor(() => {
+      expect(screen.getByText("Claude")).toBeInTheDocument();
+      expect(screen.getByText("PRO")).toBeInTheDocument();
+    });
+
+    // Confirma presença do SVG do ícone oficial do Claude
+    const claudeIcon = document.querySelector(".provider-icon-claude");
+    expect(claudeIcon).not.toBeNull();
+
+    // Confirma que as 2 barras aparecem com os rótulos compactos 5h e 7d
+    expect(screen.getByText("5h")).toBeInTheDocument();
+    expect(screen.getByText("7d")).toBeInTheDocument();
+    expect(screen.getByText("80%")).toBeInTheDocument();
+    expect(screen.getByText("95%")).toBeInTheDocument();
   });
 
   it("renders every primary module with valid native payloads", async () => {
