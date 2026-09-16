@@ -2060,12 +2060,12 @@ h1 {
 
 /* Product information */
 .info-page {
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: flex-start;
 }
 
 .info-card {
-  width: min(100%, 720px);
+  width: 100%;
   padding: clamp(24px, 4vw, 46px);
 }
 
