@@ -1423,6 +1423,11 @@ h1 {
   min-height: 0;
   height: 100%;
   overflow-y: auto;
+  /* Reserva espaço físico para as sombras neumórficas das linhas não serem
+     recortadas pelo contêiner de scroll. As margens negativas preservam o
+     alinhamento horizontal com o restante do painel. */
+  padding: 2px 18px 20px;
+  margin: 0 -18px;
 }
 
 /* Startup Module - Enhanced */

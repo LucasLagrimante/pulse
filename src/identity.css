@@ -1041,6 +1041,36 @@ select:focus {
   box-shadow: var(--neu-shadow-raised) !important;
 }
 
+.startup-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-inset-xs);
+  border: var(--neu-border-subtle);
+  overflow: hidden;
+}
+
+.startup-icon img {
+  display: block;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.startup-icon svg {
+  width: 18px;
+  height: 18px;
+  color: var(--neu-text-muted);
+}
+
+.startup-icon-empty {
+  opacity: 0.7;
+}
+
 .startup-name {
   color: var(--neu-text-title) !important;
   font-size: 0.95rem;

@@ -1,3 +1,4 @@
+pub mod app_icons;
 pub mod audio;
 pub mod debug;
 pub mod disk_analyzer;

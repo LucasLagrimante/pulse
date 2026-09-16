@@ -237,6 +237,7 @@ export type StartupItem = {
   unavailableReason?: string;
   impact?: string;
   startupTimeMs?: number | null;
+  icon?: string | null;
 };
 export type DebugEntry = {
   sequence?: number;
@@ -2908,6 +2909,16 @@ function App() {
                             className={`startup-item ${!item.enabled ? "item-disabled" : ""} ${isHigh ? "item-high-impact" : ""}`}
                             key={`${item.origin}-${item.name}`}
                           >
+                            <span className={`startup-icon ${item.icon ? "" : "startup-icon-empty"}`} aria-hidden="true">
+                              {item.icon ? (
+                                <img src={item.icon} alt="" loading="lazy" />
+                              ) : (
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6}>
+                                  <rect x="3.75" y="3.75" width="16.5" height="16.5" rx="4.5" />
+                                  <path d="M8.25 9.25h7.5M8.25 13h4.75" strokeLinecap="round" />
+                                </svg>
+                              )}
+                            </span>
                             <div className="startup-item-content">
                               <div className="startup-item-header">
                                 <strong className="startup-name">{item.name}</strong>

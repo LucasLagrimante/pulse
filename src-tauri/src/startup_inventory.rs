@@ -31,6 +31,8 @@ pub struct StartupItem {
     pub impact: String,
     #[serde(default)]
     pub startup_time_ms: Option<u64>,
+    #[serde(default)]
+    pub icon: Option<String>,
 }
 
 fn default_impact() -> String {
@@ -139,6 +141,7 @@ pub fn parse_run_entries_with_meta(
             let key = name.to_lowercase();
             let enabled = approved_map.get(&key).copied().unwrap_or(true);
             let (impact, startup_time_ms) = determine_impact(&name, &command, durations_map);
+            let icon = crate::app_icons::icon_for_command(&command);
             let is_pulse = name.eq_ignore_ascii_case("Pulse");
             Some(StartupItem {
                 name,
@@ -153,6 +156,7 @@ pub fn parse_run_entries_with_meta(
                 },
                 impact,
                 startup_time_ms,
+                icon,
             })
         })
         .collect()
@@ -363,6 +367,7 @@ pub fn set_startup_item_enabled(
         unavailable_reason: None,
         impact: default_impact(),
         startup_time_ms: None,
+        icon: None,
     })
 }
 
