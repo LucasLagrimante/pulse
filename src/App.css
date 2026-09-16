@@ -2187,41 +2187,11 @@ h1 {
   font-size: .55rem;
 }
 
-/* Scrollbars */
-.process-list, .recent-list, .startup-list, .debug-log, .flyout-process-list, .sidebar nav {
-  scrollbar-color: #4a544c #141619;
-  scrollbar-width: thin;
+/* Scrollbars: as listas herdam o skin neumórfico temático global (identity.css).
+   Nunca fixar scrollbar-color/scrollbar-width aqui — isso desativa o
+   ::-webkit-scrollbar e faz a barra ignorar o tema claro/escuro. */
+.process-list, .recent-list, .startup-list, .debug-log, .sidebar nav {
   scrollbar-gutter: stable;
-}
-
-.process-list::-webkit-scrollbar,
-.recent-list::-webkit-scrollbar,
-.startup-list::-webkit-scrollbar,
-.debug-log::-webkit-scrollbar,
-.flyout-process-list::-webkit-scrollbar,
-nav::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.process-list::-webkit-scrollbar-track,
-.recent-list::-webkit-scrollbar-track,
-.startup-list::-webkit-scrollbar-track,
-.debug-log::-webkit-scrollbar-track,
-.flyout-process-list::-webkit-scrollbar-track,
-nav::-webkit-scrollbar-track {
-  background: #141619;
-}
-
-.process-list::-webkit-scrollbar-thumb,
-.recent-list::-webkit-scrollbar-thumb,
-.startup-list::-webkit-scrollbar-thumb,
-.debug-log::-webkit-scrollbar-thumb,
-.flyout-process-list::-webkit-scrollbar-thumb,
-nav::-webkit-scrollbar-thumb {
-  border: 2px solid #141619;
-  border-radius: 4px;
-  background: #4a544c;
 }
 
 /* Overview lists use a quiet edge rail instead of a permanent inner column. */
@@ -2229,7 +2199,6 @@ nav::-webkit-scrollbar-thumb {
 .detail-grid .recent-list {
   margin-right: -14px;
   padding-right: 14px;
-  scrollbar-color: transparent transparent;
   scrollbar-gutter: auto;
 }
 
@@ -2251,24 +2220,17 @@ nav::-webkit-scrollbar-thumb {
   background-clip: padding-box;
 }
 
-.detail-grid .panel:hover .process-list,
-.detail-grid .panel:focus-within .process-list,
-.detail-grid .panel:hover .recent-list,
-.detail-grid .panel:focus-within .recent-list {
-  scrollbar-color: #59645c transparent;
-}
-
 .detail-grid .panel:hover .process-list::-webkit-scrollbar-thumb,
 .detail-grid .panel:focus-within .process-list::-webkit-scrollbar-thumb,
 .detail-grid .panel:hover .recent-list::-webkit-scrollbar-thumb,
 .detail-grid .panel:focus-within .recent-list::-webkit-scrollbar-thumb {
-  background: #59645c;
+  background: var(--neu-scroll-thumb);
   background-clip: padding-box;
 }
 
 .detail-grid .process-list::-webkit-scrollbar-thumb:hover,
 .detail-grid .recent-list::-webkit-scrollbar-thumb:hover {
-  background: #748078;
+  background: var(--neu-accent);
   background-clip: padding-box;
 }
 
