@@ -265,7 +265,10 @@ pub fn get_system_drives() -> Vec<DriveInfo> {
                     };
 
                     let vol_name = if vol_ok != 0 {
-                        let len = vol_buf.iter().position(|&c| c == 0).unwrap_or(vol_buf.len());
+                        let len = vol_buf
+                            .iter()
+                            .position(|&c| c == 0)
+                            .unwrap_or(vol_buf.len());
                         String::from_utf16_lossy(&vol_buf[..len]).trim().to_string()
                     } else {
                         String::new()

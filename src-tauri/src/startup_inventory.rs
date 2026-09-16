@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-
 const HKCU_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const HKLM_RUN_KEY: &str = r"HKLM\Software\Microsoft\Windows\CurrentVersion\Run";
 const HKCU_APPROVED_KEY: &str =
