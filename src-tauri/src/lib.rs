@@ -1,10 +1,11 @@
-pub mod debug;
 pub mod audio;
+pub mod debug;
 pub mod disk_analyzer;
 pub mod disk_cleanup;
 pub mod domain;
 pub mod performance;
 pub mod process;
+pub mod process_usage;
 pub mod recent_files;
 pub mod single_instance;
 pub mod startup;

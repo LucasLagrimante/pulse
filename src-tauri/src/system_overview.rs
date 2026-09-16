@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -16,6 +17,10 @@ pub struct TopProcess {
     pub display_name: Option<String>,
     #[serde(default)]
     pub publisher: Option<String>,
+    #[serde(default)]
+    pub cpu_percent: Option<f64>,
+    #[serde(default)]
+    pub gpu_percent: Option<f64>,
 }
 
 fn default_process_count() -> usize {
@@ -141,6 +146,64 @@ fn now_unix_ms() -> Result<u64, String> {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .map_err(|e| format!("Relógio do sistema inválido: {e}"))
+}
+
+/// Soma o uso de CPU e GPU medido para todos os processos membros de cada
+/// grupo. Ausência de medição vira `None` (indisponível), nunca zero falso.
+fn attach_usage_metrics(processes: &mut [TopProcess]) {
+    #[cfg(windows)]
+    {
+        let pids: Vec<u32> = processes.iter().flat_map(member_ids).collect();
+        let cpu = crate::process_usage::cpu_percent_by_pid(&pids);
+        let gpu = crate::process_usage::gpu_percent_by_pid();
+
+        for process in processes.iter_mut() {
+            let (cpu_percent, gpu_percent) =
+                aggregate_usage(&member_ids(process), &cpu, gpu.as_ref());
+            process.cpu_percent = cpu_percent;
+            process.gpu_percent = gpu_percent;
+        }
+    }
+
+    #[cfg(not(windows))]
+    let _ = processes;
+}
+
+fn member_ids(process: &TopProcess) -> Vec<u32> {
+    if process.process_ids.is_empty() {
+        vec![process.id]
+    } else {
+        process.process_ids.clone()
+    }
+}
+
+/// Agrega os percentuais medidos de cada PID membro do grupo. Se nenhum membro
+/// teve CPU medida, o grupo fica indisponível; GPU indisponível é propagada
+/// quando o driver não expõe contadores.
+fn aggregate_usage(
+    process_ids: &[u32],
+    cpu: &HashMap<u32, f64>,
+    gpu: Option<&HashMap<u32, f64>>,
+) -> (Option<f64>, Option<f64>) {
+    let mut cpu_total = 0.0;
+    let mut cpu_measured = false;
+    let mut gpu_total = 0.0;
+    for pid in process_ids {
+        if let Some(value) = cpu.get(pid) {
+            cpu_total += value;
+            cpu_measured = true;
+        }
+        if let Some(map) = gpu {
+            if let Some(value) = map.get(pid) {
+                gpu_total += value;
+            }
+        }
+    }
+
+    (
+        cpu_measured.then(|| crate::process_usage::round_usage(cpu_total)),
+        gpu.map(|_| crate::process_usage::round_usage(gpu_total)),
+    )
 }
 
 pub fn parse_overview(payload: &str, sampled_at_unix_ms: u64) -> Result<SystemOverview, String> {
@@ -331,6 +394,9 @@ pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
                     if let Ok(ms) = now_unix_ms() {
                         fresh.sampled_at_unix_ms = ms;
                     }
+                    // Uso por processo é uma janela de delta: recalcular a cada
+                    // entrega mantém CPU/GPU atuais mesmo vindo do cache.
+                    attach_usage_metrics(&mut fresh.top_processes);
                     return Ok(fresh);
                 }
                 #[cfg(not(windows))]
@@ -376,6 +442,8 @@ pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
             if let Ok(items) = crate::startup_inventory::list_startup_items() {
                 overview.startup_item_count = items.len() as u32;
             }
+
+            attach_usage_metrics(&mut overview.top_processes);
 
             Ok(overview)
         }
@@ -443,7 +511,10 @@ fn terminate_process_sync(id: u32) -> Result<(), String> {
         process.process_ids.clone()
     };
 
-    if process_ids.iter().any(|process_id| *process_id == 0 || *process_id == std::process::id()) {
+    if process_ids
+        .iter()
+        .any(|process_id| *process_id == 0 || *process_id == std::process::id())
+    {
         return Err("O Pulse não pode encerrar este processo.".to_owned());
     }
 
@@ -542,9 +613,10 @@ fn command_failure_detail(output: &std::process::Output, fallback: &str) -> Stri
 #[cfg(test)]
 mod tests {
     use super::{
-        is_wsl_host_process, parse_overview, requires_forced_termination, terminate_process_sync,
-        OVERVIEW_SCRIPT,
+        aggregate_usage, is_wsl_host_process, parse_overview, requires_forced_termination,
+        terminate_process_sync, OVERVIEW_SCRIPT,
     };
+    use std::collections::HashMap;
 
     #[test]
     fn process_termination_rejects_invalid_and_own_pid() {
@@ -603,11 +675,58 @@ mod tests {
     }
 
     #[test]
+    fn overview_preserves_group_usage_metrics() {
+        let payload = r#"{"cpuPercent":1,"memoryUsedGb":1,"memoryTotalGb":2,"diskUsedGb":3,"diskTotalGb":4,"startupItemCount":0,"topProcesses":[{"name":"chrome","id":42,"processIds":[42,43],"processCount":2,"memoryMb":900.0,"cpuPercent":12.5,"gpuPercent":3.2}]}"#;
+        let process = &parse_overview(payload, 123).unwrap().top_processes[0];
+        assert_eq!(process.cpu_percent, Some(12.5));
+        assert_eq!(process.gpu_percent, Some(3.2));
+    }
+
+    #[test]
+    fn overview_marks_missing_group_usage_as_unavailable() {
+        let payload = r#"{"cpuPercent":1,"memoryUsedGb":1,"memoryTotalGb":2,"diskUsedGb":3,"diskTotalGb":4,"startupItemCount":0,"topProcesses":[{"name":"chrome","id":42,"memoryMb":900.0}]}"#;
+        let process = &parse_overview(payload, 123).unwrap().top_processes[0];
+        assert_eq!(process.cpu_percent, None);
+        assert_eq!(process.gpu_percent, None);
+    }
+
+    #[test]
+    fn aggregates_usage_across_group_members() {
+        let mut cpu = HashMap::new();
+        cpu.insert(1u32, 4.25);
+        cpu.insert(2u32, 2.04);
+        // 3 está ausente: grupo parcialmente medido ainda soma o que existe.
+        let mut gpu = HashMap::new();
+        gpu.insert(3u32, 7.5);
+
+        let (cpu_percent, gpu_percent) = aggregate_usage(&[1, 2, 3], &cpu, Some(&gpu));
+        assert_eq!(cpu_percent, Some(6.3));
+        assert_eq!(gpu_percent, Some(7.5));
+    }
+
+    #[test]
+    fn unavailable_usage_never_becomes_zero() {
+        let cpu = HashMap::new();
+        let (cpu_percent, gpu_percent) = aggregate_usage(&[1], &cpu, None);
+        assert_eq!(cpu_percent, None);
+        assert_eq!(gpu_percent, None);
+
+        // GPU medida sem uso real do grupo é zero legítimo.
+        let mut cpu_measured = HashMap::new();
+        cpu_measured.insert(1u32, 0.0);
+        let (cpu_zero, gpu_zero) = aggregate_usage(&[1], &cpu_measured, Some(&HashMap::new()));
+        assert_eq!(cpu_zero, Some(0.0));
+        assert_eq!(gpu_zero, Some(0.0));
+    }
+
+    #[test]
     fn overview_attributes_webview2_to_its_owner_process() {
         assert!(OVERVIEW_SCRIPT.contains("$parentById"));
         assert!(OVERVIEW_SCRIPT.contains("msedgewebview2"));
         assert!(OVERVIEW_SCRIPT.contains("$groupKey = $processById[$ownerId].ProcessName"));
-        assert!(OVERVIEW_SCRIPT.contains("$_.ProcessName.ToLowerInvariant() -ne \"msedgewebview2\""));
+        assert!(
+            OVERVIEW_SCRIPT.contains("$_.ProcessName.ToLowerInvariant() -ne \"msedgewebview2\"")
+        );
         assert!(!OVERVIEW_SCRIPT.contains("Group-Object { $_.ProcessName.ToLowerInvariant() }"));
     }
 }

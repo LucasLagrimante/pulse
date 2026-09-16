@@ -1074,6 +1074,124 @@ describe("Pulse application shell", () => {
     });
   });
 
+  it("shows aggregated CPU and GPU usage per process group in Atividade", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_current_window_label") return Promise.resolve("main") as never;
+      if (command === "is_current_window_foreground") return Promise.resolve(true) as never;
+      if (command === "get_system_overview") {
+        return Promise.resolve({
+          cpuPercent: 20,
+          memoryUsedGb: 6,
+          memoryTotalGb: 16,
+          diskUsedGb: 100,
+          diskTotalGb: 500,
+          startupItemCount: 1,
+          topProcesses: [
+            {
+              name: "chrome.exe",
+              displayName: "Google Chrome",
+              id: 1001,
+              memoryMb: 1024,
+              processIds: [1001, 1002],
+              processCount: 2,
+              cpuPercent: 31.4,
+              gpuPercent: 7.2,
+            },
+            { name: "code.exe", id: 1003, memoryMb: 512, cpuPercent: 4.0, gpuPercent: 0 },
+          ],
+        }) as never;
+      }
+      return Promise.resolve() as never;
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Atividade/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("31,4%")).toBeInTheDocument();
+    });
+    expect(screen.getByText("7,2%")).toBeInTheDocument();
+    expect(screen.getByText("4%")).toBeInTheDocument();
+    // Zero medido é uso real sem GPU, não indisponibilidade.
+    expect(screen.getByText("0%")).toBeInTheDocument();
+    expect(screen.getByText("CPU")).toBeInTheDocument();
+    expect(screen.getByText("GPU")).toBeInTheDocument();
+  });
+
+  it("sorts process groups by RAM, CPU and GPU from the Atividade header", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_current_window_label") return Promise.resolve("main") as never;
+      if (command === "is_current_window_foreground") return Promise.resolve(true) as never;
+      if (command === "get_system_overview") {
+        return Promise.resolve({
+          cpuPercent: 20,
+          memoryUsedGb: 6,
+          memoryTotalGb: 16,
+          diskUsedGb: 100,
+          diskTotalGb: 500,
+          startupItemCount: 1,
+          topProcesses: [
+            { name: "chrome.exe", id: 1, memoryMb: 512, cpuPercent: 8, gpuPercent: 2 },
+            { name: "code.exe", id: 2, memoryMb: 1024, cpuPercent: 4, gpuPercent: 9 },
+            { name: "explorer.exe", id: 3, memoryMb: 300, cpuPercent: 31, gpuPercent: 12 },
+          ],
+        }) as never;
+      }
+      return Promise.resolve() as never;
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Atividade/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("31%")).toBeInTheDocument();
+    });
+
+    const firstRow = () => document.querySelector(".process-list li")?.textContent ?? "";
+    // A coleta entrega o ranking por memória: code (1024 MB) primeiro.
+    expect(firstRow()).toContain("code.exe");
+
+    fireEvent.click(screen.getByRole("button", { name: /Ordenar por CPU/ }));
+    expect(firstRow()).toContain("explorer.exe");
+
+    fireEvent.click(screen.getByRole("button", { name: /Ordenar por CPU/ }));
+    expect(firstRow()).toContain("code.exe");
+    expect(screen.getByRole("button", { name: /Ordenar por CPU, crescente/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Ordenar por GPU/ }));
+    expect(firstRow()).toContain("explorer.exe");
+    expect(screen.getByText(/ordenados por GPU/)).toBeInTheDocument();
+  });
+
+  it("marks GPU as unavailable when the driver exposes no engine counters", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_current_window_label") return Promise.resolve("main") as never;
+      if (command === "is_current_window_foreground") return Promise.resolve(true) as never;
+      if (command === "get_system_overview") {
+        return Promise.resolve({
+          cpuPercent: 9,
+          memoryUsedGb: 5,
+          memoryTotalGb: 16,
+          diskUsedGb: 100,
+          diskTotalGb: 500,
+          startupItemCount: 1,
+          topProcesses: [
+            { name: "explorer.exe", id: 900, memoryMb: 300, cpuPercent: 1.5, gpuPercent: null },
+          ],
+        }) as never;
+      }
+      return Promise.resolve() as never;
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Atividade/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("GPU —")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("GPU")).not.toBeInTheDocument();
+  });
+
   it("explains the wider impact before shutting down vmmemWSL", async () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: /Atividade/ }));
@@ -1576,10 +1694,68 @@ describe("Pulse application shell", () => {
     expect(screen.getByText("95%")).toBeInTheDocument();
   });
 
+  it("keeps antigravity five-hour and weekly windows labeled by duration in the tray", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_current_window_label") return Promise.resolve("tray-flyout") as never;
+      if (command === "get_system_overview") {
+        return Promise.resolve({
+          cpuPercent: 12,
+          memoryUsedGb: 6,
+          memoryTotalGb: 16,
+          diskUsedGb: 100,
+          diskTotalGb: 500,
+          startupItemCount: 1,
+          topProcesses: [],
+        }) as never;
+      }
+      if (command === "get_subscription_usage") {
+        return Promise.resolve({
+          scanStatus: "ready",
+          durationMs: 80,
+          privacyNote: "Privado",
+          sampledAtUnixMs: Date.now(),
+          providers: [
+            {
+              id: "antigravity",
+              provider: "Antigravity",
+              plan: null,
+              status: "available",
+              windows: [
+                { id: "agy-0", label: "Gemini Models · Semanal", remainingPercent: 85, usedPercent: 15, windowMinutes: 10080 },
+                { id: "agy-1", label: "Gemini Models · 5 horas", remainingPercent: 100, usedPercent: 0, windowMinutes: 300 },
+                { id: "agy-2", label: "Claude and GPT models · Semanal", remainingPercent: 66, usedPercent: 34, windowMinutes: 10080 },
+                { id: "agy-3", label: "Claude and GPT models · 5 horas", remainingPercent: 100, usedPercent: 0, windowMinutes: 300 },
+              ],
+              creditsRemaining: null,
+              source: "Antigravity CLI · /usage",
+            },
+          ],
+        }) as never;
+      }
+      return Promise.resolve() as never;
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("complementary", { name: "Painel rápido do tray" })).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      const labels = [...document.querySelectorAll(".flyout-quota-window-label")].map(node => node.textContent);
+      expect(labels).toEqual(["5h", "7d"]);
+    });
+    expect(screen.getByTitle("Gemini Models · 5 horas")).toBeInTheDocument();
+    expect(screen.getByTitle("Claude and GPT models · Semanal")).toBeInTheDocument();
+    expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(screen.getByText("66%")).toBeInTheDocument();
+    expect(screen.queryByText("Gemi")).not.toBeInTheDocument();
+  });
+
   it("renders every primary module with valid native payloads", async () => {
     render(<App />);
     for (const [buttonName, heading] of [
-      [/Atividade/, "Até 25 grupos de aplicativos com maior consumo de memória"],
+      [/Atividade/, "Grupos de aplicativos em execução"],
       [/Desempenho/, "GPU"],
       [/Armazenamento/, "ANÁLISE DE DISCO (TREE SIZE)"],
       [/Inicialização e segurança/, "Itens de Inicialização"],

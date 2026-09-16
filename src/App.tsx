@@ -114,7 +114,49 @@ export type TopProcess = {
   processCount?: number;
   displayName?: string | null;
   publisher?: string | null;
+  cpuPercent?: number | null;
+  gpuPercent?: number | null;
 };
+
+export type ProcessSortColumn = "memory" | "cpu" | "gpu";
+export type ProcessSortDirection = "asc" | "desc";
+
+export const processSortColumnLabel: Record<ProcessSortColumn, string> = {
+  memory: "memória",
+  cpu: "CPU",
+  gpu: "GPU",
+};
+
+function processSortValue(process: TopProcess, column: ProcessSortColumn): number | null {
+  const value =
+    column === "memory"
+      ? process.memoryMb
+      : column === "cpu"
+        ? process.cpuPercent
+        : process.gpuPercent;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Ordena os grupos pela coluna escolhida. Valores indisponíveis vão para o fim
+ * e empates preservam a ordem por memória, que é o ranking padrão da coleta.
+ */
+export function sortProcesses(
+  processes: TopProcess[],
+  column: ProcessSortColumn,
+  direction: ProcessSortDirection,
+): TopProcess[] {
+  const sign = direction === "asc" ? 1 : -1;
+  return [...processes].sort((first, second) => {
+    const firstValue = processSortValue(first, column);
+    const secondValue = processSortValue(second, column);
+    if (firstValue == null && secondValue == null) return second.memoryMb - first.memoryMb;
+    if (firstValue == null) return 1;
+    if (secondValue == null) return -1;
+    if (firstValue === secondValue) return second.memoryMb - first.memoryMb;
+    return sign * (firstValue - secondValue);
+  });
+}
 
 function isWslHostProcess(process: TopProcess) {
   return process.name.replace(/\.exe$/i, "").toLowerCase() === "vmmemwsl";
@@ -197,7 +239,7 @@ const copy: Record<string, { eyebrow: string; title: string; intro: string }> = 
   Atividade: {
     eyebrow: "ATIVIDADE",
     title: "Atividade — processos em execução",
-    intro: "Leitura local dos processos que mais consomem memória neste momento.",
+    intro: "Leitura local dos grupos de aplicativos com memória, CPU e GPU agregadas neste momento.",
   },
   Desempenho: {
     eyebrow: "DESEMPENHO",
@@ -423,38 +465,112 @@ export function ProcessList({
   processes,
   onTerminate,
   terminatingId,
+  showUsage = false,
+  sortBy,
+  sortDirection = "desc",
+  onSortChange,
 }: {
   processes: TopProcess[];
   onTerminate?: (process: TopProcess) => void;
   terminatingId?: number | null;
+  showUsage?: boolean;
+  sortBy?: ProcessSortColumn;
+  sortDirection?: ProcessSortDirection;
+  onSortChange?: (column: ProcessSortColumn) => void;
 }) {
+  const gpuAvailable = showUsage && processes.some(process => process.gpuPercent != null);
+  const sortColumns: { id: ProcessSortColumn; label: string }[] = [
+    { id: "memory", label: "RAM" },
+    { id: "cpu", label: "CPU" },
+    { id: "gpu", label: "GPU" },
+  ];
+
   return (
-    <ol className="process-list">
-      {processes.slice(0, TOP_PROCESS_LIMIT).map((p, i) => (
-        <li key={`${p.id}-${p.name}`}>
-          <span className="process-rank">{String(i + 1).padStart(2, "0")}</span>
-          <span className="process-name" title={[p.displayName || p.name, p.name, p.publisher].filter(Boolean).join(" · ")}>
-            {p.displayName || p.name}
-            <small>
-              {[p.name, p.publisher].filter(Boolean).join(" · ") || `PID ${p.id}`}
-              {(p.processCount ?? 1) > 1 ? ` · ${p.processCount} processos` : ""}
-            </small>
-          </span>
-          <span className="process-memory">{metric(p.memoryMb, " MB")}</span>
-          {onTerminate && (
-            <button
-              type="button"
-              className="process-close-button"
-              aria-label={`Fechar ${p.displayName || p.name}`}
-              disabled={terminatingId === p.id || p.name.toLocaleLowerCase("pt-BR").startsWith("pulse")}
-              onClick={() => onTerminate(p)}
-            >
-              {terminatingId === p.id ? "FECHANDO…" : "FECHAR"}
-            </button>
-          )}
-        </li>
-      ))}
-    </ol>
+    <div className={`process-list-shell${showUsage ? " with-usage" : ""}`}>
+      {showUsage && (
+        <div className={`process-list-header${onTerminate ? " with-action" : ""}`}>
+          <span aria-hidden="true">#</span>
+          <span aria-hidden="true">APLICATIVO</span>
+          {sortColumns.map(({ id, label }) => {
+            const isActive = sortBy === id;
+            const unavailable = id === "gpu" && !gpuAvailable;
+            return (
+              <button
+                key={id}
+                type="button"
+                className={`process-sort-button${isActive ? " is-active" : ""}`}
+                aria-label={`Ordenar por ${processSortColumnLabel[id]}${
+                  isActive ? (sortDirection === "desc" ? ", decrescente" : ", crescente") : ""
+                }`}
+                aria-pressed={isActive}
+                disabled={unavailable}
+                title={
+                  unavailable
+                    ? "Indisponível: o driver não expôs contadores de engine gráfico (PDH)."
+                    : id === "gpu"
+                      ? "GPU agregada do grupo, somando as engines reportadas pelo Windows."
+                      : id === "cpu"
+                        ? "CPU agregada do grupo, normalizada pela máquina (100% = todos os processadores lógicos)."
+                        : "Memória residente somada do grupo."
+                }
+                onClick={() => onSortChange?.(id)}
+              >
+                {unavailable ? "GPU —" : label}
+                {isActive && (
+                  <span className="process-sort-arrow" aria-hidden="true">
+                    {sortDirection === "desc" ? "↓" : "↑"}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          {onTerminate && <span aria-hidden="true" />}
+        </div>
+      )}
+      <ol className="process-list">
+        {processes.slice(0, TOP_PROCESS_LIMIT).map((p, i) => (
+          <li key={`${p.id}-${p.name}`}>
+            <span className="process-rank">{String(i + 1).padStart(2, "0")}</span>
+            <span className="process-name" title={[p.displayName || p.name, p.name, p.publisher].filter(Boolean).join(" · ")}>
+              {p.displayName || p.name}
+              <small>
+                {[p.name, p.publisher].filter(Boolean).join(" · ") || `PID ${p.id}`}
+                {(p.processCount ?? 1) > 1 ? ` · ${p.processCount} processos` : ""}
+              </small>
+            </span>
+            <span className="process-memory">{metric(p.memoryMb, " MB")}</span>
+            {showUsage && (
+              <>
+                <span className="process-cpu" title="CPU agregada do grupo desde a coleta anterior">
+                  {metric(p.cpuPercent, "%")}
+                </span>
+                <span
+                  className="process-gpu"
+                  title={
+                    p.gpuPercent == null
+                      ? "GPU indisponível: o driver não expôs contadores de engine gráfico (PDH)."
+                      : "GPU agregada do grupo; 0% indica medição válida sem uso."
+                  }
+                >
+                  {metric(p.gpuPercent, "%")}
+                </span>
+              </>
+            )}
+            {onTerminate && (
+              <button
+                type="button"
+                className="process-close-button"
+                aria-label={`Fechar ${p.displayName || p.name}`}
+                disabled={terminatingId === p.id || p.name.toLocaleLowerCase("pt-BR").startsWith("pulse")}
+                onClick={() => onTerminate(p)}
+              >
+                {terminatingId === p.id ? "FECHANDO…" : "FECHAR"}
+              </button>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
@@ -1127,20 +1243,11 @@ export function TrayFlyout({
                       <span>SALDO</span>
                       <strong>{formatUsd(provider.creditsRemaining)}</strong>
                     </div>
-                  ) : measuredWindows.length > 0 ? (
+                  ) : trayWindows.length > 0 ? (
                     <div className="flyout-quota-bars">
-                      {measuredWindows.slice(0, 2).map((window, idx) => {
+                      {trayWindows.map((window, idx) => {
                         const remaining = safePercent(window.remainingPercent) ?? 0;
-                        const labelLower = (window.label || "").toLowerCase();
-                        const idLower = (window.id || "").toLowerCase();
-                        let shortLabel = window.label || "Cota";
-                        if (labelLower.includes("sess") || idLower.includes("sess") || labelLower.includes("5h")) {
-                          shortLabel = "5h";
-                        } else if (labelLower.includes("sem") || idLower.includes("week") || labelLower.includes("7d")) {
-                          shortLabel = "7d";
-                        } else if (shortLabel.length > 5) {
-                          shortLabel = shortLabel.slice(0, 4);
-                        }
+                        const shortLabel = shortQuotaWindowLabel(window);
 
                         return (
                           <div className="flyout-quota-row" key={window.id || `${provider.id}-${idx}`}>
@@ -1292,6 +1399,8 @@ function App() {
   const [startupSearch, setStartupSearch] = useState("");
   const [processToClose, setProcessToClose] = useState<TopProcess | null>(null);
   const [terminatingProcessId, setTerminatingProcessId] = useState<number | null>(null);
+  const [processSort, setProcessSort] = useState<ProcessSortColumn>("memory");
+  const [processSortDirection, setProcessSortDirection] = useState<ProcessSortDirection>("desc");
   const initialLoadStarted = useRef(false);
   const lastOverviewCollectionAt = useRef(0);
 
@@ -1893,6 +2002,20 @@ function App() {
       path: file.path,
     }).catch(() => setError("Não foi possível abrir esse item."));
 
+  const processes = overview?.topProcesses ?? [];
+  const sortedProcesses = useMemo(
+    () => sortProcesses(processes, processSort, processSortDirection),
+    [processes, processSort, processSortDirection],
+  );
+  const handleProcessSort = (column: ProcessSortColumn) => {
+    if (column === processSort) {
+      setProcessSortDirection(direction => (direction === "desc" ? "asc" : "desc"));
+    } else {
+      setProcessSort(column);
+      setProcessSortDirection("desc");
+    }
+  };
+
   // Se esta janela for o painel flutuante do tray icon, renderiza a barra flutuante
   if (windowLabel === "tray-flyout") {
     return (
@@ -1903,7 +2026,6 @@ function App() {
     );
   }
 
-  const processes = overview?.topProcesses ?? [];
   const module = copy[activeArea] || copy["Visão geral"];
   const rawVramBytes = performance?.vramBytes?.value;
   const rawGpuTemperature = performance?.temperatureCelsius?.value;
@@ -2146,13 +2268,23 @@ function App() {
               <section className="module-dashboard">
                 <section className="panel tall-panel">
                   <div className="panel-title">
-                    <h3>Até 25 grupos de aplicativos com maior consumo de memória</h3>
+                    <div className="panel-title-copy">
+                      <h3>Grupos de aplicativos em execução</h3>
+                      <small>
+                        Até {TOP_PROCESS_LIMIT} grupos ordenados por {processSortColumnLabel[processSort]} · RAM,
+                        CPU e GPU somadas por grupo
+                      </small>
+                    </div>
                     <span className="live-dot">AO VIVO</span>
                   </div>
                   <ProcessList
-                    processes={processes}
+                    processes={sortedProcesses}
                     onTerminate={setProcessToClose}
                     terminatingId={terminatingProcessId}
+                    showUsage
+                    sortBy={processSort}
+                    sortDirection={processSortDirection}
+                    onSortChange={handleProcessSort}
                   />
                 </section>
               </section>
