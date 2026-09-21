@@ -53,7 +53,7 @@ No PowerShell, execute:
 cd C:\Users\lucas\Projects\pulse
 npm install
 npm run verify
-npm run tauri build -- --bundles nsis
+npm run tauri:build -- --bundles nsis
 ```
 
 O instalador é criado em:
@@ -62,7 +62,16 @@ O instalador é criado em:
 src-tauri\target\release\bundle\nsis\
 ```
 
-Para gerar todos os formatos configurados no Tauri, também é possível usar `npm run tauri build`.
+Para gerar todos os formatos configurados no Tauri, também é possível usar `npm run tauri:build` sem o `-- --bundles nsis`.
+
+Para buildar e já abrir o instalador em seguida (pede elevação via UAC):
+
+```powershell
+npm run tauri:build:install
+```
+
+> [!NOTE]
+> Prefira `tauri:build` a `tauri build`: ele encerra a instância do Pulse em execução antes de compilar. O app minimizado no tray trava `src-tauri\target\release\pulse-windows.exe` e o link falha com `Access is denied (os error 5)`. O lock só aparece quando fontes Rust mudam e forçam o relink — builds só-frontend passam mesmo com o app aberto.
 
 ## Atenção ao WSL
 
@@ -75,7 +84,7 @@ failed to run 'cargo metadata': No such file or directory (os error 2)
 Esse erro significa que o Tauri tentou encontrar o `cargo` dentro do Linux. Saia do WSL e rode o build no PowerShell. Se estiver em um prompt WSL e quiser iniciar o comando no Windows sem trocar de janela, use:
 
 ```bash
-powershell.exe -NoProfile -Command "Set-Location 'C:\Users\lucas\Projects\pulse'; npm run tauri build -- --bundles nsis"
+powershell.exe -NoProfile -Command "Set-Location 'C:\Users\lucas\Projects\pulse'; npm run tauri:build -- --bundles nsis"
 ```
 
 ## Verificação
