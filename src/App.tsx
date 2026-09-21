@@ -1109,6 +1109,9 @@ export function TrayFlyout({
     if (isForeground !== true) return;
     let disposed = false;
     const readQuotas = async () => {
+      // Feedback imediato no clique do tray: o backend pode responder "ready"
+      // a partir do cache de 60s; o loop abaixo corrige para o estado real.
+      setSubscriptionScanStatus("running");
       for (let attempt = 0; attempt < 12 && !disposed; attempt += 1) {
         try {
           const result = await invoke<{ providers?: ProviderUsage[]; scanStatus?: string }>("get_subscription_usage", { forceRefresh: false });
@@ -1117,7 +1120,10 @@ export function TrayFlyout({
             if (result.scanStatus !== "running") break;
           }
           await new Promise(resolve => window.setTimeout(resolve, 700));
-        } catch { break; }
+        } catch {
+          if (!disposed) setSubscriptionScanStatus("ready");
+          break;
+        }
       }
     };
     void readQuotas();
@@ -1140,6 +1146,7 @@ export function TrayFlyout({
   );
   const openrouterCredits = visibleQuotaProviders.find(provider => provider.id === "openrouter")?.creditsRemaining;
   const hasQuotaResult = visibleQuotaProviders.length > 0;
+  const isQuotaRefreshing = subscriptionScanStatus === "running";
 
   const handleClose = async () => {
     try {
@@ -1180,7 +1187,14 @@ export function TrayFlyout({
     <aside className="tray-flyout-container" role="complementary" aria-label="Painel rápido do tray">
       <header className="flyout-header">
         <div className="flyout-brand">
-          <PulseMark />
+          <span
+            className={isQuotaRefreshing ? "flyout-brand-mark is-refreshing" : "flyout-brand-mark"}
+            role={isQuotaRefreshing ? "status" : undefined}
+            aria-label={isQuotaRefreshing ? "Atualizando cotas de IA" : undefined}
+            title={isQuotaRefreshing ? "Atualizando cotas de IA…" : undefined}
+          >
+            <PulseMark animated={isQuotaRefreshing} />
+          </span>
           <div>
             <h2>Pulse</h2>
             <p>PAINEL RÁPIDO</p>
@@ -1311,9 +1325,16 @@ export function TrayFlyout({
       <section className="flyout-quotas" aria-label="Cotas de assinaturas de IA">
         <div className="flyout-section-title">
           <span>COTAS DE IA</span>
-          <small>{visibleQuotaProviders.length || "—"} DISPONÍVEIS</small>
+          <small>
+            {visibleQuotaProviders.length || "—"} DISPONÍVEIS
+            {isQuotaRefreshing && (
+              <span className="flyout-quota-sync" role="status" aria-label="Atualizando cotas de IA">
+                <i aria-hidden="true" />ATUALIZANDO…
+              </span>
+            )}
+          </small>
         </div>
-        {subscriptionScanStatus === "running" && !hasQuotaResult ? <p className="flyout-quota-empty">Consultando fontes locais…</p> : visibleQuotaProviders.length > 0 ? (
+        {isQuotaRefreshing && !hasQuotaResult ? <p className="flyout-quota-empty">Consultando fontes locais…</p> : visibleQuotaProviders.length > 0 ? (
           <div className="flyout-quota-grid">
             {visibleQuotaProviders.map(provider => {
               const trayWindows = selectFlyoutQuotaWindows(provider.windows);

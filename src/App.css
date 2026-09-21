@@ -2385,6 +2385,53 @@ h1 {
   letter-spacing: .08em;
 }
 
+/* Indicador de atualização das cotas de IA sobre a logo do flyout.
+   Não cobre valores: ponto pulsante no canto da marca + spinner inline
+   no cabeçalho da seção, no mesmo padrão do .quota-refreshing. */
+.flyout-brand-mark {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.flyout-brand-mark.is-refreshing::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid #4f6459;
+  border-top-color: #9cc5ad;
+  border-radius: 50%;
+  background: transparent;
+  animation: quota-spin .8s linear infinite;
+}
+
+.flyout-section-title small {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.flyout-quota-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #9cc5ad;
+  font-weight: 700;
+}
+
+.flyout-quota-sync i {
+  width: 8px;
+  height: 8px;
+  border: 2px solid #4f6459;
+  border-top-color: #9cc5ad;
+  border-radius: 50%;
+  animation: quota-spin .8s linear infinite;
+}
+
 .flyout-training-credit {
   display: inline-flex;
   align-items: center;
