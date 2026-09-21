@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "tsc --noEmit && vitest run && vite build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:build": "node scripts/kill-running-app.mjs && tauri build",
+    "tauri:build:install": "node scripts/kill-running-app.mjs && tauri build && node scripts/run-installer.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.1",
