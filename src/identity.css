@@ -1375,7 +1375,9 @@ select:focus {
   padding: 8px 12px !important;
   border-radius: 10px !important;
   background: var(--neu-accent) !important;
-  color: #ffffff !important;
+  /* Texto escuro sobre âmbar: branco sobre #f59e0b (dark) tem contraste
+     ~2:1 e o hover #fbbf24 piora. #141619 passa em ambos os temas. */
+  color: #141619 !important;
   font-size: 0.64rem !important;
   font-weight: 700;
   font-family: "Cascadia Mono", Consolas, monospace;
@@ -1387,6 +1389,7 @@ select:focus {
 
 .flyout-btn-primary:hover {
   background: var(--neu-accent-hover) !important;
+  color: #141619 !important;
   transform: translateY(-1px);
 }
 
