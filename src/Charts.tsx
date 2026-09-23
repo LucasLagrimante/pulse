@@ -233,6 +233,48 @@ export const MiniCapacityBar = memo(function MiniCapacityBar({
   );
 });
 
+export type MiniUsageBarProps = {
+  percent?: number | null;
+  color?: string;
+  ariaLabel?: string;
+  leftLabel?: string;
+  rightLabel?: string;
+};
+
+/**
+ * Barra compacta de percentual com legenda própria (ex.: uso da GPU).
+ * Sem leitura, o trilho fica hachurado — nunca aparenta 0% medido.
+ */
+export const MiniUsageBar = memo(function MiniUsageBar({
+  percent,
+  color = "#8da9bf",
+  ariaLabel = "Uso em tempo real",
+  leftLabel,
+  rightLabel,
+}: MiniUsageBarProps) {
+  const measured = typeof percent === "number" && Number.isFinite(percent);
+  const safePercent = measured ? Math.max(0, Math.min(100, percent)) : 0;
+
+  return (
+    <div className="mini-capacity-wrapper" role="group" aria-label={ariaLabel}>
+      <div className={`mini-capacity-bar-track${measured ? "" : " is-unavailable"}`}>
+        {measured && (
+          <div
+            className="mini-capacity-bar-fill"
+            style={{ width: `${safePercent}%`, backgroundColor: color }}
+          />
+        )}
+      </div>
+      {(leftLabel || rightLabel) && (
+        <div className="mini-capacity-labels">
+          <span>{leftLabel}</span>
+          <span>{rightLabel}</span>
+        </div>
+      )}
+    </div>
+  );
+});
+
 export type DetailedResourceChartProps = {
   title: string;
   history: number[];

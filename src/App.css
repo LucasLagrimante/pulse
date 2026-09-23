@@ -2503,6 +2503,7 @@ h1 {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .6rem;
   letter-spacing: .06em;
+  white-space: nowrap;
 }
 
 .flyout-metric-head strong {
@@ -3714,7 +3715,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 
 .btn-primary.disk-scan-btn {
   background: #dda76d;
-  color: #fff;
+  color: #141619;
   border-color: #ef7753;
 }
 
@@ -4662,10 +4663,18 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .mini-capacity-labels {
   display: flex;
   justify-content: space-between;
+  gap: 6px;
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 0.56rem;
   color: #7b857c;
   letter-spacing: 0.05em;
+}
+
+.mini-capacity-labels span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Gráficos Detalhados no Módulo Desempenho */
@@ -4832,11 +4841,52 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   color: #949da7;
 }
 
-.focused-card-hw-split {
+.thermal-sensor-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  flex: 1;
+  gap: 4px;
+}
+
+.thermal-sensor-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.72rem;
+}
+
+.thermal-sensor-label {
+  color: #949da7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thermal-sensor-value {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  white-space: nowrap;
+}
+
+/* Linha dividida do flyout (disco + GPU), com a mesma largura da linha de cima. */
+.flyout-metrics-row.flyout-metrics-row--split {
+  grid-template-columns: 1fr 1fr;
+}
+
+.flyout-metrics-row--split > * {
+  min-width: 0;
+}
+
+.flyout-metrics-row--split .flyout-metric-head strong {
+  white-space: nowrap;
+}
+
+/* Legenda das barras em card de meia largura: garante USADO/LIVRE inteiros. */
+.flyout-metrics-row--split .mini-capacity-labels {
+  font-size: 0.5rem;
+  letter-spacing: 0.02em;
 }
 
 /* Cabeçalho dos cards de métrica com badge ao vivo */

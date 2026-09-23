@@ -239,6 +239,100 @@ describe("Formatters and Components", () => {
       expect(invoke).toHaveBeenCalledWith("exit_app");
     });
 
+    it("defers thermal collection off the open path and polls every 15 s", async () => {
+      vi.useFakeTimers();
+      try {
+        vi.mocked(invoke).mockImplementation((command: string) => {
+          if (command === "get_system_overview") {
+            return Promise.resolve({
+              cpuPercent: 18.0,
+              gpuPercent: 37.5,
+              memoryUsedGb: 6.0,
+              memoryTotalGb: 16.0,
+              diskUsedGb: 150.0,
+              diskTotalGb: 500.0,
+              startupItemCount: 2,
+              topProcesses: [],
+              sampledAtUnixMs: 1725000000,
+              source: "Native Win32",
+            }) as never;
+          }
+          return Promise.resolve() as never;
+        });
+
+        render(<TrayFlyout onOpenMain={vi.fn()} />);
+
+        // Caminho crítico limpo: overview dispara na abertura, térmica não.
+        await act(async () => {});
+        expect(invoke).toHaveBeenCalledWith("get_system_overview");
+        expect(invoke).not.toHaveBeenCalledWith("get_performance_details");
+
+        const thermalCalls = () =>
+          vi.mocked(invoke).mock.calls.filter(call => call[0] === "get_performance_details").length;
+
+        await act(async () => {
+          vi.advanceTimersByTime(1200);
+        });
+        expect(thermalCalls()).toBe(1);
+
+        await act(async () => {
+          vi.advanceTimersByTime(15000);
+        });
+        expect(thermalCalls()).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("shows CPU temperature inline and a GPU card without an extra panel", async () => {
+      vi.useFakeTimers();
+      try {
+        vi.mocked(invoke).mockImplementation((command: string) => {
+          if (command === "get_system_overview") {
+            return Promise.resolve({
+              cpuPercent: 18.0,
+              gpuPercent: 37.5,
+              memoryUsedGb: 6.0,
+              memoryTotalGb: 16.0,
+              diskUsedGb: 150.0,
+              diskTotalGb: 500.0,
+              startupItemCount: 2,
+              topProcesses: [],
+              sampledAtUnixMs: 1725000000,
+              source: "Native Win32",
+            }) as never;
+          }
+          if (command === "get_performance_details") {
+            return Promise.resolve({
+              gpu: { value: "NVIDIA GeForce RTX 4070 SUPER" },
+              temperatureCelsius: { value: 67 },
+              thermalSensors: [
+                { id: "lhm-cpu", label: "CPU Package", celsius: 54.2, source: "LibreHardwareMonitor" },
+                { id: "gpu-0", label: "NVIDIA GeForce RTX 4070 SUPER", celsius: 67, source: "nvidia-smi" },
+              ],
+            }) as never;
+          }
+          return Promise.resolve() as never;
+        });
+
+        render(<TrayFlyout onOpenMain={vi.fn()} />);
+
+        await act(async () => {
+          vi.advanceTimersByTime(1200);
+        });
+
+        expect(screen.getByTitle("CPU Package · LibreHardwareMonitor")).toHaveTextContent("18% · 54,2 °C");
+        expect(screen.getByTitle("NVIDIA GeForce RTX 4070 SUPER · nvidia-smi")).toHaveTextContent("67 °C");
+        expect(screen.getByRole("group", { name: "Uso da GPU no tray" })).toBeInTheDocument();
+        expect(screen.getByText("USO 37,5%")).toBeInTheDocument();
+        expect(screen.getByText("30%")).toBeInTheDocument();
+        expect(screen.getByText("GPU")).toBeInTheDocument();
+        expect(screen.queryByText("TEMPERATURAS")).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("renders real lucide sun/moon icons in the theme toggle instead of glyphs", async () => {
       vi.clearAllMocks();
       vi.mocked(invoke).mockResolvedValue({
@@ -768,6 +862,10 @@ describe("Pulse application shell", () => {
             gpu: { value: "NVIDIA GeForce RTX 4070" },
             vramBytes: { value: 12 * 1024 * 1024 * 1024 },
             temperatureCelsius: { value: 45.5 },
+            thermalSensors: [
+              { id: "gpu-0", label: "NVIDIA GeForce RTX 4070", celsius: 45.5, source: "nvidia-smi" },
+              { id: "acpi-tz00", label: "Zona térmica TZ00", celsius: 41.2, source: "ACPI" },
+            ],
           }) as never;
         case "get_performance_devices":
           return Promise.resolve({
@@ -948,6 +1046,7 @@ describe("Pulse application shell", () => {
         case "terminate_process":
         case "exit_app":
         case "show_main_window":
+        case "frontend_ready":
         case "hide_tray_flyout":
         case "open_recent_file":
         case "open_recent_file_location":
@@ -1087,11 +1186,10 @@ describe("Pulse application shell", () => {
     expect(
       screen.getByRole("heading", { name: "Desempenho — recursos em uso" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("NVIDIA GeForce RTX 4070")).toHaveClass("gpu-name");
-    expect(screen.getByText("NVIDIA GeForce RTX 4070")).toHaveAttribute(
-      "title",
-      "NVIDIA GeForce RTX 4070",
-    );
+    // O nome também aparece na lista de sensores térmicos; ancora no painel da GPU.
+    const gpuName = screen.getByText("NVIDIA GeForce RTX 4070", { selector: ".gpu-name" });
+    expect(gpuName).toHaveClass("gpu-name");
+    expect(gpuName).toHaveAttribute("title", "NVIDIA GeForce RTX 4070");
   });
 
   it("opens Inicialização e segurança from its telemetry card", async () => {
@@ -1162,6 +1260,49 @@ describe("Pulse application shell", () => {
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(container.querySelector(".focused-grid .meter")).not.toBeInTheDocument();
+  });
+
+  it("shows temperatures inside the CPU and GPU cards without an extra panel", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      switch (command) {
+        case "get_current_window_label":
+          return Promise.resolve("main") as never;
+        case "is_current_window_foreground":
+          return Promise.resolve(true) as never;
+        case "get_performance_details":
+          return Promise.resolve({
+            gpu: { value: "NVIDIA GeForce RTX 4070 SUPER" },
+            vramBytes: { value: null, unavailableReason: "VRAM não exposta" },
+            temperatureCelsius: { value: 67 },
+            thermalSensors: [
+              { id: "lhm-cpu", label: "CPU Package", celsius: 54.2, source: "LibreHardwareMonitor" },
+              { id: "gpu-0", label: "NVIDIA GeForce RTX 4070 SUPER", celsius: 67, source: "nvidia-smi" },
+            ],
+          }) as never;
+        case "get_system_overview":
+          return Promise.resolve({
+            cpuPercent: 10,
+            memoryUsedGb: 8,
+            memoryTotalGb: 16,
+            diskUsedGb: 100,
+            diskTotalGb: 500,
+            startupItemCount: 1,
+            topProcesses: [],
+          }) as never;
+        default:
+          return Promise.resolve() as never;
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Desempenho/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("54,2 °C · CPU Package")).toBeInTheDocument();
+      expect(screen.getByText("67 °C · NVIDIA GeForce RTX 4070 SUPER")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("TEMPERATURAS")).not.toBeInTheDocument();
+    expect(screen.queryByText("VRAM / TEMPERATURAS")).not.toBeInTheDocument();
   });
 
   it("renders live GPU utilization from engine counters when the driver exposes them", async () => {

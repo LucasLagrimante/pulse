@@ -695,6 +695,16 @@ button:disabled {
   border: var(--neu-border-subtle);
 }
 
+/* Sem leitura: trilho hachurado sobre o fundo do tema — nunca aparenta 0% medido. */
+.mini-capacity-bar-track.is-unavailable {
+  background: repeating-linear-gradient(
+      135deg,
+      rgba(148, 158, 172, 0.45) 0 3px,
+      transparent 3px 8px
+    ),
+    var(--neu-track-bg) !important;
+}
+
 .mini-capacity-bar-fill,
 .hw-gauge-bar-fill {
   height: 100%;
@@ -1015,7 +1025,9 @@ select:focus {
 
 .btn-primary.disk-scan-btn {
   background: var(--neu-accent) !important;
-  color: #ffffff !important;
+  /* Texto escuro sobre âmbar: mesma regra do .flyout-btn-primary — branco
+     sobre #f59e0b (dark) tem contraste ~2:1. #141619 passa em ambos os temas. */
+  color: #141619 !important;
   border: 0 !important;
   border-radius: 14px !important;
   box-shadow: var(--neu-accent-raised) !important;
@@ -1028,6 +1040,7 @@ select:focus {
 
 .btn-primary.disk-scan-btn:hover {
   background: var(--neu-accent-hover) !important;
+  color: #141619 !important;
   transform: translateY(-1px);
 }
 

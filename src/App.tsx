@@ -10,6 +10,7 @@ import {
   DetailedResourceChart,
   HardwareGaugeBar,
   MiniCapacityBar,
+  MiniUsageBar,
   SparklineChart,
 } from "./Charts";
 import { DiskAnalyzer } from "./DiskAnalyzer";
@@ -32,6 +33,12 @@ const INITIAL_CHART_SKELETON_MS = INITIAL_BOOT_MINIMUM_MS + 850;
 const INITIAL_CHART_SAMPLE_DELAY_MS = 3600;
 const MIN_CHART_HISTORY_SAMPLES = 2;
 const TELEMETRY_POLL_INTERVAL_MS = 5000;
+// Térmica fora do caminho crítico de abertura: o flyout pinta CPU/RAM/disco
+// primeiro e as temperaturas entram em streaming ~1,2 s depois, a cada 15 s.
+// Cada leitura gera subprocessos (nvidia-smi + 1 PowerShell), por isso nunca
+// no mesmo instante do overview.
+const THERMAL_INITIAL_DELAY_MS = 1200;
+const THERMAL_POLL_INTERVAL_MS = 15000;
 const TOP_PROCESS_LIMIT = 25;
 
 function useWindowForeground(): boolean | null {
@@ -211,10 +218,17 @@ export type RecentFile = {
   modifiedAtUnixMs: number;
 };
 export type Capability<T> = { value?: T | null; unavailableReason?: string | null };
+export type ThermalSensor = {
+  id: string;
+  label: string;
+  celsius: number;
+  source: string;
+};
 export type Performance = {
   gpu?: Capability<string>;
   vramBytes?: Capability<number>;
   temperatureCelsius?: Capability<number>;
+  thermalSensors?: ThermalSensor[];
 };
 export type NetworkAdapter = {
   name: string;
@@ -328,6 +342,20 @@ export const metric = (v: number | undefined | null, suffix = ""): string => {
   }
   return `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}${suffix}`;
 };
+
+/** Sensor de CPU, preferindo o pacote (ex.: "CPU Package" do LHM/OHM). */
+const selectCpuSensor = (sensors: ThermalSensor[]): ThermalSensor | undefined => {
+  const cpu = sensors.filter(sensor => /cpu/i.test(sensor.label));
+  return cpu.find(sensor => /package/i.test(sensor.label)) ?? cpu[0];
+};
+
+/** Sensor da GPU: nvidia-smi ou rótulos de GPU dos monitores de hardware. */
+const selectGpuSensor = (sensors: ThermalSensor[]): ThermalSensor | undefined =>
+  sensors.find(
+    sensor =>
+      sensor.id.startsWith("gpu-") ||
+      (/gpu|geforce|radeon|arc/i.test(sensor.label) && /hardwaremonitor/i.test(sensor.source)),
+  );
 
 /** Taxa de transferência legível para o card de rede (B/s, KB/s, MB/s, GB/s). */
 export function formatByteRate(value: number | null | undefined): string {
@@ -952,6 +980,7 @@ export function TrayFlyout({
   const [audioDevices, setAudioDevices] = useState<AudioDeviceInventory | null>(null);
   const [audioBusy, setAudioBusy] = useState<"input" | "output" | null>(null);
   const [audioError, setAudioError] = useState("");
+  const [thermalSensors, setThermalSensors] = useState<ThermalSensor[]>([]);
 
   const updateSubscriptionProviders = (newProviders?: ProviderUsage[], scanStatus?: string) => {
     if (Array.isArray(newProviders) && newProviders.length > 0) {
@@ -1008,6 +1037,47 @@ export function TrayFlyout({
     void loadData();
     const timer = window.setInterval(() => void loadData(), TELEMETRY_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
+  }, [isForeground]);
+
+  // Temperaturas em streaming adiado: a primeira leitura só parte 1,2 s após
+  // abrir (caminho crítico limpo: overview + áudio), depois a cada 15 s.
+  useEffect(() => {
+    if (isForeground !== true) return;
+    let disposed = false;
+    const timers: number[] = [];
+    const loadThermal = async () => {
+      try {
+        const result = await invoke<Performance>("get_performance_details");
+        if (disposed || !result || typeof result !== "object") return;
+        const sensors = Array.isArray(result.thermalSensors)
+          ? result.thermalSensors.filter(
+              (sensor): sensor is ThermalSensor =>
+                !!sensor &&
+                typeof sensor.celsius === "number" &&
+                Number.isFinite(sensor.celsius) &&
+                typeof sensor.label === "string" &&
+                sensor.label.length > 0,
+            )
+          : [];
+        setThermalSensors(sensors);
+      } catch {
+        // Continua silencioso no flyout
+      }
+    };
+    timers.push(
+      window.setTimeout(() => {
+        if (disposed) return;
+        void loadThermal();
+        timers.push(window.setInterval(() => void loadThermal(), THERMAL_POLL_INTERVAL_MS));
+      }, THERMAL_INITIAL_DELAY_MS),
+    );
+    return () => {
+      disposed = true;
+      timers.forEach(timer => {
+        window.clearTimeout(timer);
+        window.clearInterval(timer);
+      });
+    };
   }, [isForeground]);
 
   useEffect(() => {
@@ -1140,6 +1210,13 @@ export function TrayFlyout({
       ? Math.round((overview.diskUsedGb / overview.diskTotalGb) * 100)
       : undefined;
   const diskHealth = getDiskCapacityHealth(diskPercent);
+  const flyoutCpuSensor = selectCpuSensor(thermalSensors);
+  const flyoutGpuSensor = selectGpuSensor(thermalSensors);
+  const flyoutGpuUsage =
+    overview && typeof overview.gpuPercent === "number" && Number.isFinite(overview.gpuPercent)
+      ? Math.max(0, Math.min(100, overview.gpuPercent))
+      : undefined;
+  const showFlyoutGpuCard = flyoutGpuSensor !== undefined || flyoutGpuUsage !== undefined;
   const visibleQuotaProviders = useMemo(
     () => subscriptionProviders.filter(provider => provider.disabled !== true && hasMeasuredQuota(provider)),
     [subscriptionProviders],
@@ -1235,7 +1312,9 @@ export function TrayFlyout({
           <div className="flyout-metric-card">
             <div className="flyout-metric-head">
               <span>CPU</span>
-              <strong>{metric(overview?.cpuPercent, "%")}</strong>
+              <strong title={flyoutCpuSensor ? `${flyoutCpuSensor.label} · ${flyoutCpuSensor.source}` : undefined}>
+                {metric(overview?.cpuPercent, "%")}{flyoutCpuSensor ? ` · ${metric(flyoutCpuSensor.celsius, " °C")}` : ""}
+              </strong>
             </div>
             <SparklineChart
               data={cpuHistory}
@@ -1261,23 +1340,50 @@ export function TrayFlyout({
           </div>
         </div>
 
-        <div className={`flyout-metric-card disk-health-card disk-health-${diskHealth}`}>
-          <div className="flyout-metric-head">
-            <div className="disk-metric-label">
-              <span>DISCO C:</span>
-              <DiskHealthBadge health={diskHealth} />
+        <div className="flyout-metrics-row flyout-metrics-row--split">
+          <div
+            className={`flyout-metric-card disk-health-card disk-health-${diskHealth}`}
+            style={showFlyoutGpuCard ? undefined : { gridColumn: "1 / -1" }}
+          >
+            <div className="flyout-metric-head">
+              <div className="disk-metric-label">
+                <span>DISCO C:</span>
+                <DiskHealthBadge health={diskHealth} />
+              </div>
+              <strong>{metric(diskPercent, "%")}</strong>
             </div>
-            <strong>
-              {metric(overview?.diskUsedGb, " GB")} / {metric(overview?.diskTotalGb, " GB")}
-            </strong>
+            <MiniCapacityBar
+              usedGb={overview?.diskUsedGb}
+              totalGb={overview?.diskTotalGb}
+              percent={diskPercent}
+              color={diskCapacityColor(diskHealth)}
+              ariaLabel="Gráfico de alocação de disco no tray"
+            />
           </div>
-          <MiniCapacityBar
-            usedGb={overview?.diskUsedGb}
-            totalGb={overview?.diskTotalGb}
-            percent={diskPercent}
-            color={diskCapacityColor(diskHealth)}
-            ariaLabel="Gráfico de alocação de disco no tray"
-          />
+
+          {showFlyoutGpuCard && (
+            <div className="flyout-metric-card">
+              <div className="flyout-metric-head">
+                <span>GPU</span>
+                <strong
+                  title={
+                    flyoutGpuSensor
+                      ? `${flyoutGpuSensor.label} · ${flyoutGpuSensor.source}`
+                      : "Nenhum sensor de temperatura da GPU respondeu"
+                  }
+                >
+                  {flyoutGpuSensor ? `${metric(flyoutGpuSensor.celsius)} °C` : "—"}
+                </strong>
+              </div>
+              <MiniUsageBar
+                percent={flyoutGpuUsage}
+                color="var(--neu-info)"
+                ariaLabel="Uso da GPU no tray"
+                leftLabel={`USO ${metric(flyoutGpuUsage, "%")}`}
+                rightLabel={flyoutGpuSensor ? flyoutGpuSensor.source : "SEM SENSOR"}
+              />
+            </div>
+          )}
         </div>
       </section>
 
@@ -1633,6 +1739,16 @@ function App() {
       .catch(() => setWindowLabel("main"));
   }, []);
 
+  // Revela a janela nativa após a primeira pintura do React: a janela `main`
+  // nasce oculta (visible: false) para que o plugin window-state restaure o
+  // tamanho salvo e o tema seja aplicado antes de qualquer pixel aparecer,
+  // eliminando o clarão branco e o salto de resize do arranque.
+  useEffect(() => {
+    if (windowLabel === "main") {
+      void Promise.resolve(invoke("frontend_ready")).catch(() => undefined);
+    }
+  }, [windowLabel]);
+
   useEffect(() => {
     if (windowLabel === "main" && isWindowForeground === true) {
       setInitialLoadAllowed(true);
@@ -1640,8 +1756,8 @@ function App() {
   }, [isWindowForeground, windowLabel]);
 
   // Pré-carrega o estado do analisador de disco na janela principal: a última
-  // varredura fica pronta antes de o usuário abrir Armazenamento e o backend
-  // atualiza em segundo plano quando o cache estiver velho.
+  // varredura em cache fica pronta antes de o usuário abrir Armazenamento.
+  // Nunca varre automaticamente — só o botão "Escanear" inicia uma varredura.
   useEffect(() => {
     if (windowLabel === "main") void ensureDiskAnalyzerLoaded();
   }, [windowLabel]);
@@ -2210,16 +2326,23 @@ function App() {
 
   const module = copy[activeArea] || copy["Visão geral"];
   const rawVramBytes = performance?.vramBytes?.value;
-  const rawGpuTemperature = performance?.temperatureCelsius?.value;
   const vramBytes =
     typeof rawVramBytes === "number" && Number.isFinite(rawVramBytes)
       ? rawVramBytes
       : undefined;
-  const gpuTemperature =
-    typeof rawGpuTemperature === "number" && Number.isFinite(rawGpuTemperature)
-      ? rawGpuTemperature
-      : undefined;
-  const hasOptionalGpuMetrics = vramBytes !== undefined || gpuTemperature !== undefined;
+  const thermalSensors = Array.isArray(performance?.thermalSensors)
+    ? performance.thermalSensors.filter(
+        (sensor): sensor is ThermalSensor =>
+          !!sensor &&
+          typeof sensor.celsius === "number" &&
+          Number.isFinite(sensor.celsius) &&
+          typeof sensor.label === "string" &&
+          sensor.label.length > 0,
+      )
+    : [];
+  const cpuSensor = selectCpuSensor(thermalSensors);
+  const gpuSensor = selectGpuSensor(thermalSensors);
+  const otherSensors = thermalSensors.filter(sensor => sensor !== cpuSensor && sensor !== gpuSensor);
 
   const networkAdapters = Array.isArray(devices?.adapters?.value)
     ? devices.adapters.value
@@ -2519,7 +2642,11 @@ function App() {
                       ariaLabel="Gráfico detalhado de CPU"
                       loading={cpuChartLoading}
                     />
-                    <small>Carga média de processamento</small>
+                    <small>
+                      {cpuSensor
+                        ? `${metric(cpuSensor.celsius)} °C · ${cpuSensor.label}`
+                        : "Carga média de processamento"}
+                    </small>
                   </section>
                   <section className="panel focused-card">
                     <p>MEMÓRIA RAM</p>
@@ -2564,53 +2691,35 @@ function App() {
                         loading={gpuChartLoading}
                       />
                     )}
+                    {vramBytes !== undefined && (
+                      <HardwareGaugeBar
+                        label="VRAM DEDICADA"
+                        valueText={metric(vramBytes / (1024 * 1024), " MB")}
+                        percent={null}
+                        statusText="Memória dedicada"
+                        type="vram"
+                      />
+                    )}
                     <small>
-                      {performance?.gpu?.unavailableReason || "Controladora gráfica do sistema"}
+                      {gpuSensor
+                        ? `${metric(gpuSensor.celsius)} °C · ${gpuSensor.label}`
+                        : (performance?.gpu?.unavailableReason || "Controladora gráfica do sistema")}
                     </small>
+                    {otherSensors.length > 0 && (
+                      <ul className="thermal-sensor-list" aria-label="Outros sensores térmicos">
+                        {otherSensors.map(sensor => (
+                          <li key={sensor.id} className="thermal-sensor-row">
+                            <span className="thermal-sensor-label" title={sensor.source}>
+                              {sensor.label}
+                            </span>
+                            <strong className="thermal-sensor-value">
+                              {`${metric(sensor.celsius)} °C`}
+                            </strong>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </section>
-                  {hasOptionalGpuMetrics && (
-                    <section className="panel focused-card">
-                      <p>
-                        {vramBytes !== undefined && gpuTemperature !== undefined
-                          ? "VRAM / TEMPERATURA"
-                          : vramBytes !== undefined
-                            ? "VRAM DEDICADA"
-                            : "TEMPERATURA GPU"}
-                      </p>
-                      <strong>
-                        {vramBytes !== undefined
-                          ? metric(vramBytes / (1024 * 1024), " MB")
-                          : `${metric(gpuTemperature)} °C`}
-                      </strong>
-                      <div className="focused-card-hw-split">
-                        {vramBytes !== undefined && (
-                          <HardwareGaugeBar
-                            label="VRAM DEDICADA"
-                            valueText={metric(vramBytes / (1024 * 1024), " MB")}
-                            percent={null}
-                            statusText="Memória dedicada"
-                            type="vram"
-                          />
-                        )}
-                        {gpuTemperature !== undefined && (
-                          <HardwareGaugeBar
-                            label="TEMPERATURA"
-                            valueText={`${metric(gpuTemperature)} °C`}
-                            percent={Math.min(100, Math.max(0, gpuTemperature))}
-                            statusText="Sensor ativo"
-                            type="temperature"
-                          />
-                        )}
-                      </div>
-                      <small>
-                        {vramBytes !== undefined && gpuTemperature !== undefined
-                          ? "Memória dedicada e sensor térmico ativos"
-                          : vramBytes !== undefined
-                            ? "Memória dedicada reportada pelo driver"
-                            : "Sensor térmico ativo"}
-                      </small>
-                    </section>
-                  )}
                   <section className="panel focused-card network-card">
                     <p>REDE</p>
                     <strong className="network-total">
@@ -2674,7 +2783,7 @@ function App() {
                     </small>
                   </section>
                   <section
-                    className={`panel focused-card storage-device-card ${hasOptionalGpuMetrics ? "" : "span-2"}`}
+                    className="panel focused-card storage-device-card span-2"
                   >
                     <p>ARMAZENAMENTO FÍSICO</p>
                     <strong>

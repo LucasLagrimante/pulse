@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{env, fs, path::PathBuf};
+use std::{env, fs, path::PathBuf, time::Duration};
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, WebviewWindow,
@@ -361,7 +361,81 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
     builder = builder.icon(tray_icon_for_theme("light"));
 
     builder.build(app)?;
+
+    // Tooltip com as temperaturas: é a única superfície de texto do ícone
+    // no Windows (o desenho do ícone é estático). Thread dedicada a cada
+    // 60 s para não acoplar ao polling da UI nem acordar o app à toa; entre
+    // os ciclos, o comando `get_performance_details` atualiza de carona cada
+    // leitura que a UI já pediu — zero subprocesso extra.
+    let tooltip_app = handle.clone();
+    let _tooltip_thread = std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(60));
+        let details = crate::performance::get_performance_details_sync();
+        if let Some(tray) = tooltip_app.tray_by_id("main-tray") {
+            let _ = tray.set_tooltip(Some(tray_tooltip_for_sensors(&details.thermal_sensors)));
+        }
+    });
+
     Ok(())
+}
+
+/// Tooltip da bandeja: prefere o par CPU + GPU
+/// (`Pulse — CPU Package 54 °C · RTX 4070 SUPER 67 °C`); sem par
+/// identificado, cai para os dois sensores mais quentes.
+/// Sem sensores, mantém o texto estático — nunca um valor inventado.
+pub(crate) fn tray_tooltip_for_sensors(sensors: &[crate::performance::ThermalSensor]) -> String {
+    let is_cpu = |sensor: &crate::performance::ThermalSensor| {
+        sensor.label.to_lowercase().contains("cpu")
+    };
+    let is_gpu = |sensor: &crate::performance::ThermalSensor| {
+        sensor.id.starts_with("gpu-")
+            || (sensor.label.to_lowercase().contains("gpu")
+                && sensor.source.to_lowercase().contains("hardwaremonitor"))
+    };
+    let mut picks: Vec<&crate::performance::ThermalSensor> = Vec::new();
+    if let Some(cpu) = sensors.iter().find(|sensor| is_cpu(sensor)) {
+        picks.push(cpu);
+    }
+    if let Some(gpu) = sensors
+        .iter()
+        .find(|sensor| is_gpu(sensor) && !picks.iter().any(|picked| picked.id == sensor.id))
+    {
+        picks.push(gpu);
+    }
+    if picks.len() < 2 {
+        let mut hottest: Vec<&crate::performance::ThermalSensor> = sensors.iter().collect();
+        hottest.sort_by(|a, b| {
+            b.celsius
+                .partial_cmp(&a.celsius)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for sensor in hottest {
+            if picks.len() >= 2 {
+                break;
+            }
+            if !picks.iter().any(|picked| picked.id == sensor.id) {
+                picks.push(sensor);
+            }
+        }
+    }
+    if picks.is_empty() {
+        return "Pulse — Windows Observability".to_owned();
+    }
+    let readings = picks
+        .iter()
+        .map(|sensor| format!("{} {}", sensor.label, format_celsius(sensor.celsius)))
+        .collect::<Vec<_>>()
+        .join(" · ");
+    format!("Pulse — {readings}")
+}
+
+fn format_celsius(value: f64) -> String {
+    let rounded = (value * 10.0).round() / 10.0;
+    if rounded.fract() == 0.0 {
+        format!("{rounded:.0} °C")
+    } else {
+        format!("{rounded:.1} °C")
+    }
 }
 
 fn show_main_internal(app: &AppHandle) -> Result<(), String> {
@@ -444,6 +518,18 @@ pub fn show_main_window(app: AppHandle) -> Result<(), String> {
     show_main_internal(&app)
 }
 
+/// Chamado pelo frontend após a primeira pintura do React. Exibe a janela
+/// `main` já com o tamanho restaurado pelo plugin window-state e o tema
+/// aplicado, eliminando o clarão branco e o salto de resize do arranque.
+/// Respeita o arranque minimizado (inicialização com o Windows / --minimized).
+#[tauri::command]
+pub fn frontend_ready(app: AppHandle) -> Result<(), String> {
+    if crate::startup::should_start_minimized(&std::env::args().collect::<Vec<_>>()) {
+        return Ok(());
+    }
+    show_main_internal(&app)
+}
+
 #[tauri::command]
 pub fn toggle_tray_flyout(app: AppHandle) -> Result<(), String> {
     toggle_flyout_internal(&app)
@@ -465,7 +551,8 @@ pub fn exit_app(app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::tray_icon_for_theme;
+    use super::{format_celsius, tray_icon_for_theme, tray_tooltip_for_sensors};
+    use crate::performance::ThermalSensor;
 
     #[test]
     fn tray_icon_is_transparent_and_theme_aware() {
@@ -503,5 +590,40 @@ mod tests {
             latest > older,
             "a metade recente das colunas deve concentrar mais sinal"
         );
+    }
+
+    #[test]
+    fn tooltip_prefers_cpu_and_gpu_pair() {
+        let sensors = vec![
+            ThermalSensor { id: "acpi-tz00".into(), label: "Zona térmica TZ00".into(), celsius: 45.0, source: "ACPI".into() },
+            ThermalSensor { id: "gpu-0".into(), label: "RTX 4070 SUPER".into(), celsius: 67.25, source: "nvidia-smi".into() },
+            ThermalSensor { id: "lhm-cpu".into(), label: "CPU Package".into(), celsius: 54.0, source: "LibreHardwareMonitor".into() },
+        ];
+        assert_eq!(
+            tray_tooltip_for_sensors(&sensors),
+            "Pulse — CPU Package 54 °C · RTX 4070 SUPER 67.3 °C"
+        );
+        assert_eq!(
+            tray_tooltip_for_sensors(&[]),
+            "Pulse — Windows Observability"
+        );
+    }
+
+    #[test]
+    fn tooltip_falls_back_to_two_hottest_sensors() {
+        let sensors = vec![
+            ThermalSensor { id: "acpi-tz00".into(), label: "Zona térmica TZ00".into(), celsius: 45.0, source: "ACPI".into() },
+            ThermalSensor { id: "probe-0".into(), label: "Sonda térmica".into(), celsius: 41.0, source: "WMI".into() },
+        ];
+        assert_eq!(
+            tray_tooltip_for_sensors(&sensors),
+            "Pulse — Zona térmica TZ00 45 °C · Sonda térmica 41 °C"
+        );
+    }
+
+    #[test]
+    fn formats_celsius_without_trailing_zero() {
+        assert_eq!(format_celsius(67.0), "67 °C");
+        assert_eq!(format_celsius(67.25), "67.3 °C");
     }
 }
