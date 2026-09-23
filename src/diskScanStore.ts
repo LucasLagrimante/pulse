@@ -219,12 +219,17 @@ export async function reconcileDiskAnalyzer(): Promise<void> {
     }
 
     const cache = await invoke<CachedDiskScan | null>("get_cached_disk_scan");
+    // O cache é permanente: um retorno nulo (ex.: arquivo removido) nunca
+    // apaga a última análise já exibida; só uma nova varredura a substitui.
     const next: Partial<DiskAnalyzerSharedState> = {
       isScanning: false,
-      cachedScan: cache?.result ? cache : null,
     };
-    if (scanState?.result) next.scanResult = scanState.result;
-    else if (cache?.result) next.scanResult = cache.result;
+    if (cache?.result) {
+      next.cachedScan = cache;
+      next.scanResult = scanState?.result ?? cache.result;
+    } else if (scanState?.result) {
+      next.scanResult = scanState.result;
+    }
     patch(next);
     userInitiatedScan = false;
   } catch {

@@ -8,7 +8,7 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{Emitter, Manager, Window};
+use tauri::{Emitter, Window};
 
 static CANCEL_FLAG: AtomicBool = AtomicBool::new(false);
 static IS_SCANNING: AtomicBool = AtomicBool::new(false);
@@ -26,20 +26,13 @@ const STREAM_SNAPSHOT_MAX_CHILDREN: usize = 16;
 /// passa de centenas de MB e restaurar a última análise custa segundos.
 pub const MAX_TREE_NODES: usize = 40_000;
 /// Caches acima deste tamanho vieram de versões sem cota global. Lê-los custa
-/// segundos e centenas de MB de RAM; são ignorados e a próxima varredura
-/// (warm-up no startup) grava um resultado compacto por cima.
+/// segundos e centenas de MB de RAM; são ignorados até a próxima varredura
+/// explícita ("Escanear") gravar um resultado compacto por cima.
 const MAX_CACHE_FILE_BYTES: u64 = 32 * 1024 * 1024;
-/// Versão do algoritmo de poda embutida no cache. Suba este número quando a
-/// árvore persistida passar a ser construída de outra forma, para que caches
-/// antigos sejam descartados e o warm-up regenere o resultado.
+/// Versão do algoritmo de poda gravada no cache. Mantida para diagnóstico;
+/// caches de versões anteriores continuam válidos e são exibidos normalmente —
+/// o cache só é substituído por uma varredura explícita do usuário.
 const CACHE_VERSION: u32 = 2;
-/// A varredura de fundo só roda se a última análise estiver mais velha que
-/// isso: reabrir o aplicativo várias vezes não deve varrer o disco sem
-/// necessidade.
-const WARMUP_MAX_AGE_MS: i64 = 30 * 60 * 1000;
-/// Pequena espera após o startup para não competir com o carregamento inicial
-/// da interface e a primeira coleta da visão geral.
-const WARMUP_START_DELAY_MS: u64 = 4_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -167,19 +160,10 @@ fn read_cached_scan_from_disk() -> Option<CachedDiskScan> {
         return None;
     }
     let content = fs::read_to_string(path).ok()?;
-    let cache = serde_json::from_str::<CachedDiskScan>(&content).ok()?;
-    if cache.tree_version < CACHE_VERSION {
-        return None;
-    }
-    let ended_by_legacy_limit = matches!(
-        cache.stop_reason.as_deref(),
-        Some("itemLimit" | "timeout" | "batchLimit")
-    );
-    if ended_by_legacy_limit {
-        None
-    } else {
-        Some(cache)
-    }
+    // O cache é permanente: qualquer resultado parseável é exibido com seu
+    // horário, independente de versão, idade ou motivo de parada. Só uma nova
+    // varredura explícita ("Escanear") o substitui.
+    serde_json::from_str::<CachedDiskScan>(&content).ok()
 }
 
 fn store_cached_scan_in_memory(cache: &CachedDiskScan) {
@@ -984,56 +968,12 @@ fn prune_tree_recursive(node: &mut DiskItemNode, budget: usize) -> usize {
     used
 }
 
-/// Varredura completa em segundo plano disparada no startup. Reaproveita a
-/// última raiz analisada quando ainda existe; caso contrário usa o disco do
-/// sistema. Só roda se o cache estiver ausente, parcial ou mais velho que
-/// `WARMUP_MAX_AGE_MS`.
-pub fn init(app: tauri::AppHandle) {
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(WARMUP_START_DELAY_MS));
-        if IS_SCANNING.load(Ordering::Relaxed) {
-            return;
-        }
-        let cached = get_cached_disk_scan();
-        if let Some(cache) = cached.as_ref() {
-            if !scan_cache_is_stale(cache) {
-                return;
-            }
-        }
-        let Some(webview_window) = app.get_webview_window("main") else {
-            return;
-        };
-        let window: Window = webview_window.as_ref().window();
-        let path = cached
-            .as_ref()
-            .map(|cache| cache.result.path.clone())
-            .filter(|path| Path::new(path).exists())
-            .unwrap_or_else(default_scan_root);
-        tauri::async_runtime::spawn(async move {
-            if let Err(error) = run_disk_scan(window, path, Some(MAX_TREE_DEPTH)).await {
-                eprintln!("Varredura em segundo plano não concluída: {error}");
-            }
-        });
-    });
-}
-
-fn scan_cache_is_stale(cache: &CachedDiskScan) -> bool {
-    if cache.is_partial {
-        return true;
-    }
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
-        .unwrap_or(0);
-    now_ms.saturating_sub(cache.completed_at_unix_ms) >= WARMUP_MAX_AGE_MS
-}
-
-fn default_scan_root() -> String {
-    env::var("SystemDrive")
-        .ok()
-        .filter(|drive| !drive.is_empty())
-        .map(|drive| format!("{drive}\\"))
-        .unwrap_or_else(|| "C:\\".to_owned())
+/// Pré-carrega o último resultado persistido em memória. Nunca varre o disco
+/// automaticamente: a varredura só acontece no comando explícito
+/// `start_disk_scan` (botão "Escanear"). O cache é permanente e exibido com
+/// seu horário até ser substituído por uma nova varredura do usuário.
+pub fn init(_app: tauri::AppHandle) {
+    let _ = get_cached_disk_scan();
 }
 
 #[tauri::command]
