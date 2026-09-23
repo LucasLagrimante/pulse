@@ -875,6 +875,166 @@ button:disabled {
 }
 
 /* ==========================================================================
+   Limpeza de disco — grade de categorias com respiro para sombras e
+   cores 100% temáticas (Porcelain claro / Obsidian escuro).
+
+   A lista é o ÚNICO rolador do módulo: o respiro (padding) impede que a
+   sombra raised-sm seja cortada nas bordas e no fim (Lixeira), e o
+   align-items: start impede que abrir "Maiores itens" estique o card
+   vizinho da mesma linha e desloque a barra de comandos.
+   ========================================================================== */
+
+.cleanup-category-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  align-items: start;
+  gap: 10px;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: clip;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 6px 12px 26px;
+  margin: 0;
+}
+
+@container (max-width: 800px) {
+  .cleanup-category-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cleanup-category.panel {
+  border-radius: 18px !important;
+  background: var(--neu-surface) !important;
+  border: var(--neu-border) !important;
+  box-shadow: var(--neu-shadow-raised-sm) !important;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.cleanup-category.panel:hover {
+  box-shadow: var(--neu-shadow-raised) !important;
+}
+
+.cleanup-category.selected {
+  border-color: var(--neu-accent) !important;
+  background: var(--neu-accent-soft) !important;
+}
+
+.cleanup-welcome h3,
+.cleanup-dialog h3 {
+  color: var(--neu-text-title);
+}
+
+.cleanup-welcome p,
+.cleanup-dialog p {
+  color: var(--neu-text-muted);
+}
+
+.cleanup-selection-summary strong {
+  color: var(--neu-text-title);
+}
+
+.cleanup-selection-summary small,
+.cleanup-category small,
+.cleanup-item small {
+  color: var(--neu-text-muted);
+}
+
+.cleanup-category-choice strong {
+  color: var(--neu-text-title);
+}
+
+.cleanup-category-size strong {
+  color: var(--neu-accent);
+}
+
+.cleanup-category-size small {
+  color: var(--neu-text-muted);
+}
+
+.cleanup-secondary-btn {
+  background: var(--neu-surface) !important;
+  border-color: var(--neu-divider) !important;
+  color: var(--neu-text-secondary) !important;
+  box-shadow: var(--neu-shadow-raised-xs) !important;
+}
+
+.cleanup-secondary-btn:hover:not(:disabled) {
+  background: var(--neu-surface-hover) !important;
+  border-color: var(--neu-accent) !important;
+  color: var(--neu-text-title) !important;
+}
+
+.cleanup-message {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--neu-success) 12%, var(--neu-surface));
+  border: 1px solid color-mix(in srgb, var(--neu-success) 32%, var(--neu-divider));
+  color: var(--neu-text-primary);
+}
+
+.cleanup-message.error {
+  background: color-mix(in srgb, var(--neu-danger) 12%, var(--neu-surface));
+  border-color: color-mix(in srgb, var(--neu-danger) 36%, var(--neu-divider));
+  color: var(--neu-text-primary);
+}
+
+.cleanup-checkmark {
+  border: var(--neu-border-subtle);
+  border-radius: 5px;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-inset-xs);
+}
+
+.cleanup-category-choice input:checked + .cleanup-checkmark {
+  border-color: var(--neu-accent);
+  background: var(--neu-accent);
+  box-shadow: inset 0 0 0 3px var(--neu-surface);
+}
+
+.cleanup-category-choice input:focus-visible + .cleanup-checkmark {
+  outline: 2px solid var(--neu-accent);
+  outline-offset: 2px;
+}
+
+.cleanup-category-choice input:disabled + .cleanup-checkmark {
+  opacity: 0.4;
+}
+
+.cleanup-largest {
+  border-top-color: var(--neu-divider);
+}
+
+.cleanup-largest summary {
+  color: var(--neu-text-muted);
+}
+
+.cleanup-item strong {
+  color: var(--neu-text-primary);
+}
+
+.cleanup-item b {
+  color: var(--neu-text-secondary);
+}
+
+.cleanup-item .file {
+  background: var(--neu-signal-secondary);
+}
+
+.cleanup-item .folder {
+  background: var(--neu-accent);
+}
+
+.disk-toolbar-label {
+  color: var(--neu-text-muted);
+}
+
+/* ==========================================================================
    Tabelas e Listas de Processos (Soft UI Table)
    ========================================================================== */
 
@@ -889,8 +1049,7 @@ button:disabled {
 }
 
 .process-list,
-.recent-list,
-.cleanup-category-list {
+.recent-list {
   display: flex;
   flex-direction: column;
   gap: 8px;

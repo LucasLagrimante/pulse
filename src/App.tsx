@@ -2927,7 +2927,8 @@ function App() {
                     flexDirection: "column",
                     flex: 1,
                     minHeight: 0,
-                    height: "100%",
+                    height: "auto",
+                    overflow: "hidden",
                   }}
                 >
                   <DiskAnalyzer
@@ -2942,7 +2943,8 @@ function App() {
                     flexDirection: "column",
                     flex: 1,
                     minHeight: 0,
-                    height: "100%",
+                    height: "auto",
+                    overflow: "hidden",
                   }}
                 >
                   <ScanFoldersBar
@@ -2973,7 +2975,8 @@ function App() {
                     flexDirection: "column",
                     flex: 1,
                     minHeight: 0,
-                    height: "100%",
+                    height: "auto",
+                    overflow: "hidden",
                   }}
                 >
                   <DiskCleanup />
