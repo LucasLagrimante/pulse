@@ -827,6 +827,52 @@ describe("Formatters and Components", () => {
         });
       });
     });
+
+    it("never selects unavailable (0-byte) categories such as an empty recycle bin", async () => {
+      vi.mocked(invoke).mockImplementation((command: string) => {
+        if (command === "analyze_disk_cleanup") {
+          return Promise.resolve({
+            scannedAtUnixMs: Date.now(),
+            categories: [
+              {
+                id: "user-temp",
+                name: "Arquivos temporários do usuário",
+                description: "Temporários seguros",
+                recommended: true,
+                availableBytes: 2 * 1024 * 1024,
+                itemCount: 3,
+                isPartial: false,
+                largestItems: [],
+              },
+              {
+                id: "recycle-bin",
+                name: "Lixeira do Windows",
+                description: "Exclusão permanente para revisão",
+                recommended: false,
+                availableBytes: 0,
+                itemCount: 0,
+                isPartial: false,
+                largestItems: [],
+              },
+            ],
+          }) as never;
+        }
+        return Promise.resolve() as never;
+      });
+
+      render(<DiskCleanup />);
+      fireEvent.click(screen.getByRole("button", { name: "ANALISAR AGORA" }));
+
+      const recycleCheckbox = await screen.findByRole("checkbox", { name: /Lixeira do Windows/ });
+      expect(recycleCheckbox).toBeDisabled();
+      expect(recycleCheckbox).not.toBeChecked();
+
+      // Nem pelo checkbox nem pelo rótulo a categoria vazia pode entrar na seleção.
+      fireEvent.click(recycleCheckbox);
+      fireEvent.click(screen.getByText("Lixeira do Windows"));
+      expect(recycleCheckbox).not.toBeChecked();
+      expect(screen.getByText("1 categoria selecionada")).toBeInTheDocument();
+    });
   });
 });
 

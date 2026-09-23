@@ -66,7 +66,8 @@ export function DiskCleanup() {
     }
   };
 
-  const toggle = (id: string) => {
+  const toggle = (id: string, disabled: boolean) => {
+    if (disabled) return;
     setSelected(current => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
@@ -143,7 +144,7 @@ export function DiskCleanup() {
                 type="checkbox"
                 checked={selected.has(category.id)}
                 disabled={category.availableBytes <= 0}
-                onChange={() => toggle(category.id)}
+                onChange={() => toggle(category.id, category.availableBytes <= 0)}
               />
               <span className="cleanup-checkmark" aria-hidden="true" />
               <span>
