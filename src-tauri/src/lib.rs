@@ -103,6 +103,7 @@ pub fn run() {
             tray::minimize_to_tray_and_remember,
             tray::get_minimize_on_close,
             tray::show_main_window,
+            tray::frontend_ready,
             tray::toggle_tray_flyout,
             tray::hide_tray_flyout,
             tray::set_tray_icon_theme,
