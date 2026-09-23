@@ -11,7 +11,7 @@
     "test:watch": "vitest",
     "verify": "tsc --noEmit && vitest run && vite build",
     "tauri": "tauri",
-    "tauri:build": "node scripts/kill-running-app.mjs && tauri build",
+    "tauri:build": "node scripts/kill-running-app.mjs && tauri build && node scripts/run-installer.mjs",
     "tauri:build:install": "node scripts/kill-running-app.mjs && tauri build && node scripts/run-installer.mjs"
   },
   "dependencies": {
