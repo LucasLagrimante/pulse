@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DragEventHandler } from "react";
 import { ModuleIcon } from "./Identity";
 import { ProviderIcon } from "./ProviderIcon";
+import { CREDITS_WINDOW_ID, QuotaHistoryButton } from "./QuotaHistory";
 
 export type QuotaWindow = {
   id: string;
@@ -143,6 +144,11 @@ export function formatUsd(value: number | null | undefined): string {
     : `$ ${measured.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
 }
 
+function formatHistoryCredits(providerId: string): (value: number) => string {
+  if (providerId === "openrouter") return value => formatUsd(value);
+  return value => `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} créditos`;
+}
+
 function PowerIcon() {
   return (
     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -186,15 +192,22 @@ export function reorderIds(ids: string[], fromId: string, toId: string): string[
   return next;
 }
 
-function QuotaMeter({ quota, providerId }: { quota: QuotaWindow; providerId: string }) {
+function QuotaMeter({ quota, providerId, providerName }: { quota: QuotaWindow; providerId: string; providerName: string }) {
   const remaining = safePercent(quota.remainingPercent);
   const used = safePercent(quota.usedPercent);
   const available = remaining != null && !quota.unavailableReason;
   const reset = quota.resetDescription?.trim() || formatReset(quota.resetsAtUnixSeconds);
+  const windowId = quota.id?.trim() || quota.label?.trim() || "cota";
+  const windowLabel = quota.label?.trim() || "Janela sem nome";
   return (
     <div className={`quota-meter${available ? "" : " is-unavailable"}`}>
       <div className="quota-meter-heading">
-        <strong>{quota.label || "Janela sem nome"}</strong>
+        <span className="quota-meter-title">
+          <strong>{windowLabel}</strong>
+          {available && (
+            <QuotaHistoryButton providerId={providerId} windowId={windowId} windowLabel={windowLabel} mode="percent" />
+          )}
+        </span>
         <span>{available ? reset : "Indisponível"}</span>
       </div>
       {available ? (
@@ -214,7 +227,7 @@ function QuotaMeter({ quota, providerId }: { quota: QuotaWindow; providerId: str
             <small>{used == null ? "Uso indisponível" : `${Math.round(used)}% usado`}</small>
           </div>
         </>
-      ) : <p>{quota.unavailableReason || `O ${providerId} não informou esta cota.`}</p>}
+      ) : <p>{quota.unavailableReason || `O ${providerName} não informou esta cota.`}</p>}
     </div>
   );
 }
@@ -315,10 +328,19 @@ function ProviderCard({
         </div>
       ) : available ? (
         <div className="quota-window-list">
-          {windows.length > 0 ? windows.map((quota, index) => <QuotaMeter key={quota.id || `${provider.id}-${index}`} quota={quota} providerId={provider.provider} />) : (
+          {windows.length > 0 ? windows.map((quota, index) => <QuotaMeter key={quota.id || `${provider.id}-${index}`} quota={quota} providerId={provider.id} providerName={provider.provider} />) : (
             <div className="quota-credit-summary">
               <strong>{provider.id === "openrouter" ? "Saldo disponível" : "Créditos disponíveis"}</strong>
               <b>{credits != null ? (provider.id === "openrouter" ? formatUsd(credits) : credits.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })) : "Indisponível"}</b>
+              {credits != null && (
+                <QuotaHistoryButton
+                  providerId={provider.id}
+                  windowId={CREDITS_WINDOW_ID}
+                  windowLabel={provider.id === "openrouter" ? "Saldo (USD)" : "Créditos"}
+                  mode="credits"
+                  formatValue={formatHistoryCredits(provider.id)}
+                />
+              )}
             </div>
           )}
         </div>

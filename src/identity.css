@@ -1955,6 +1955,56 @@ select:focus {
   box-shadow: var(--neu-shadow-raised-sm);
 }
 
+[data-theme] .quota-history-btn {
+  color: var(--neu-text-primary) !important;
+  background: var(--neu-surface) !important;
+  border-color: var(--neu-divider) !important;
+  box-shadow: var(--neu-shadow-raised-sm);
+}
+
+[data-theme] .quota-history-popover {
+  background: var(--neu-surface) !important;
+  border-color: var(--neu-divider) !important;
+  box-shadow: var(--neu-shadow-raised-sm);
+}
+
+[data-theme] .quota-history-popover-title,
+[data-theme] .quota-history-stats b,
+[data-theme] .quota-history-tooltip strong {
+  color: var(--neu-text-primary) !important;
+}
+
+[data-theme] .quota-history-popover-title span,
+[data-theme] .quota-history-stats span,
+[data-theme] .quota-history-tooltip span,
+[data-theme] .quota-history-empty,
+[data-theme] .quota-history-loading {
+  color: var(--neu-text-muted) !important;
+}
+
+[data-theme] .quota-history-tooltip {
+  background: var(--neu-surface) !important;
+  border-color: var(--neu-divider) !important;
+}
+
+[data-theme] .quota-history-stats {
+  border-top-color: var(--neu-divider) !important;
+}
+
+[data-theme] .quota-history-svg line {
+  stroke: var(--neu-divider);
+}
+
+[data-theme] .quota-history-tick {
+  fill: var(--neu-text-muted);
+}
+
+[data-theme] .quota-history-btn:hover {
+  background: var(--neu-surface-hover) !important;
+  border-color: var(--neu-accent) !important;
+  color: var(--neu-text-title) !important;
+}
+
 [data-theme] .quota-icon-btn.is-danger {
   color: #b4574a !important;
   border-color: color-mix(in srgb, #b4574a 42%, var(--neu-divider)) !important;

@@ -1991,6 +1991,9 @@ fn start_background_scan() {
             });
         }
         save_persisted_cache(&report);
+        // Ponto único de gravação do histórico: cobre o app, o painel rápido
+        // e o tray, que passam pelo mesmo ciclo de atualização de cotas.
+        crate::quota_history::record_report(&report.providers);
         SCAN_RUNNING.store(false, Ordering::Release);
         notify_subscription_updated(&report);
     });

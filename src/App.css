@@ -977,6 +977,71 @@ h1 {
 .quota-track i.is-critical { background: #ef6873; }
 .quota-meter-value b { color: #edf0eb; font: 600 .72rem "Cascadia Mono", Consolas, monospace; }
 .quota-meter.is-unavailable p { margin: 0; color: #aab1b8; font-size: .7rem; line-height: 1.45; }
+.quota-meter-title { display: flex; align-items: center; gap: 6px; min-width: 0; text-align: left; }
+.quota-meter-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Histórico de consumo por janela — botão + popover com gráfico de 30 dias */
+.quota-history-wrap { position: relative; display: inline-flex; flex: 0 0 auto; }
+.quota-history-btn {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #3d4a43;
+  border-radius: 6px;
+  color: #a3c4b1;
+  background: #19241e;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+.quota-history-btn:hover { border-color: #66b88e; background: #23352b; color: #ddede2; }
+.quota-history-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 320px;
+  padding: 12px;
+  border: 1px solid #41464d;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #22252a, #1c1e21 70%);
+  box-shadow: 0 18px 36px rgb(0 0 0 / 45%);
+}
+.quota-history-popover-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: #edf0eb;
+  font-size: .7rem;
+  font-weight: 700;
+}
+.quota-history-popover-title span { color: #8f969d; font: .55rem "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; }
+.quota-history-plot { position: relative; }
+.quota-history-svg { display: block; width: 100%; height: auto; }
+.quota-history-tick { fill: #777e84; font: .55rem "Cascadia Mono", Consolas, monospace; }
+.quota-history-tooltip {
+  position: absolute;
+  top: 0;
+  padding: 5px 8px;
+  border: 1px solid #4a5158;
+  border-radius: 6px;
+  background: #141619;
+  pointer-events: none;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.quota-history-tooltip strong { display: block; color: #edf0eb; font: 700 .72rem "Cascadia Mono", Consolas, monospace; }
+.quota-history-tooltip span { color: #8f969d; font: .6rem "Cascadia Mono", Consolas, monospace; }
+.quota-history-stats { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #303339; }
+.quota-history-stats span { color: #949aa1; font: .58rem "Cascadia Mono", Consolas, monospace; }
+.quota-history-stats b { color: #dce7df; }
+.quota-history-empty { margin: 0; padding: 14px 4px; color: #969da3; font-size: .7rem; line-height: 1.5; text-align: center; }
+.quota-history-loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 22px 4px; color: #8f969d; font: .6rem "Cascadia Mono", Consolas, monospace; }
+.quota-history-loading i { width: 10px; height: 10px; border: 2px solid #4f6459; border-top-color: #9cc5ad; border-radius: 50%; animation: quota-spin .8s linear infinite; }
+.quota-credit-summary .quota-history-wrap { margin-left: auto; }
 
 .quota-provider-empty { padding: 13px; border: 1px dashed #41454a; border-radius: 8px; background: #1a1c1f; }
 .quota-provider-empty strong { color: #c6c9c5; font-size: .72rem; }

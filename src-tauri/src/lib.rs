@@ -8,6 +8,7 @@ pub mod performance;
 pub mod performance_devices;
 pub mod process;
 pub mod process_usage;
+pub mod quota_history;
 pub mod recent_files;
 pub mod single_instance;
 pub mod startup;
@@ -124,7 +125,8 @@ pub fn run() {
             subscription_usage::set_opencode_go_api_key,
             subscription_usage::clear_opencode_go_api_key,
             subscription_usage::set_provider_enabled,
-            subscription_usage::set_provider_order
+            subscription_usage::set_provider_order,
+            quota_history::get_quota_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running Pulse");
