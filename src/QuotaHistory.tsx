@@ -1,8 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 export const QUOTA_HISTORY_DAYS = 30;
 export const CREDITS_WINDOW_ID = "__credits__";
+const POPOVER_WIDTH = 320;
+const POPOVER_HEIGHT = 280;
+const POPOVER_MARGIN = 8;
 const HISTORY_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_RENDER_POINTS = 90;
 
@@ -352,6 +355,7 @@ export function QuotaHistoryButton({
   formatValue?: (value: number) => string;
 }) {
   const [open, setOpen] = useState(false);
+  const [placement, setPlacement] = useState("is-down-left");
   const closeTimer = useRef<number | undefined>(undefined);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
 
@@ -372,6 +376,26 @@ export function QuotaHistoryButton({
     },
     [],
   );
+
+  // Vira o popover para o lado com espaço (nunca fixo à direita): mede a
+  // âncora contra o viewport e escolhe abrir abaixo/acima × esquerda/direita.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const update = () => {
+      const anchor = wrapRef.current?.getBoundingClientRect();
+      if (!anchor) return;
+      const alignRight =
+        window.innerWidth - anchor.left < POPOVER_WIDTH + POPOVER_MARGIN &&
+        anchor.right >= POPOVER_WIDTH + POPOVER_MARGIN;
+      const openUp =
+        window.innerHeight - anchor.bottom < POPOVER_HEIGHT + POPOVER_MARGIN &&
+        anchor.top >= POPOVER_HEIGHT + POPOVER_MARGIN;
+      setPlacement(`is-${openUp ? "up" : "down"}-${alignRight ? "right" : "left"}`);
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [open]);
 
   const dialogId = `quota-history-${providerId}-${windowId}`;
   const label = `Ver histórico de uso de ${windowLabel} — últimos ${QUOTA_HISTORY_DAYS} dias`;
@@ -405,7 +429,12 @@ export function QuotaHistoryButton({
         <ChartIcon />
       </button>
       {open && (
-        <div id={dialogId} className="quota-history-popover" role="dialog" aria-label={`Histórico de uso — ${windowLabel}`}>
+        <div
+          id={dialogId}
+          className={`quota-history-popover ${placement}`}
+          role="dialog"
+          aria-label={`Histórico de uso — ${windowLabel}`}
+        >
           <p className="quota-history-popover-title">
             {windowLabel} <span>ÚLTIMOS {QUOTA_HISTORY_DAYS} DIAS</span>
           </p>

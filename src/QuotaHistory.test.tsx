@@ -155,4 +155,46 @@ describe("QuotaHistoryButton", () => {
     fireEvent.click(screen.getByRole("button", { name: /Ver histórico de uso de Sessão/ }));
     expect(await screen.findByRole("dialog", { name: "Histórico de uso — Sessão" })).toBeInTheDocument();
   });
+
+  it("vira para a esquerda quando não há espaço à direita", async () => {
+    vi.mocked(invoke).mockResolvedValue({ points: [], retainedDays: 35 } as never);
+    Element.prototype.getBoundingClientRect = vi.fn(() => ({
+      x: 900,
+      y: 100,
+      left: 900,
+      top: 100,
+      right: 922,
+      bottom: 122,
+      width: 22,
+      height: 22,
+      toJSON: () => {},
+    }));
+    render(
+      <QuotaHistoryButton providerId="claude" windowId="session" windowLabel="Sessão" mode="percent" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Ver histórico de uso de Sessão/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Histórico de uso — Sessão" });
+    expect(dialog.className).toContain("is-down-right");
+  });
+
+  it("abre para baixo e para a direita com espaço livre", async () => {
+    vi.mocked(invoke).mockResolvedValue({ points: [], retainedDays: 35 } as never);
+    Element.prototype.getBoundingClientRect = vi.fn(() => ({
+      x: 80,
+      y: 100,
+      left: 80,
+      top: 100,
+      right: 102,
+      bottom: 122,
+      width: 22,
+      height: 22,
+      toJSON: () => {},
+    }));
+    render(
+      <QuotaHistoryButton providerId="claude" windowId="session" windowLabel="Sessão" mode="percent" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Ver histórico de uso de Sessão/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Histórico de uso — Sessão" });
+    expect(dialog.className).toContain("is-down-left");
+  });
 });
