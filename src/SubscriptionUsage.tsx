@@ -99,10 +99,14 @@ export function selectFlyoutQuotaWindows(windows: QuotaWindow[], limit = 2): Quo
     .slice(0, limit);
 }
 
+export function isWindowChartEligible(window: QuotaWindow): boolean {
+  return safePercent(window.remainingPercent) != null && !window.unavailableReason;
+}
+
 export function formatReset(timestampSeconds: number | null | undefined, nowMs = Date.now()): string {
   if (typeof timestampSeconds !== "number" || !Number.isFinite(timestampSeconds)) return "Reset não informado";
   const difference = timestampSeconds * 1000 - nowMs;
-  if (difference <= 0) return "Leitura vencida";
+  if (difference <= 0) return "Ciclo renovado";
   const totalMinutes = Math.max(1, Math.ceil(difference / 60_000));
   const days = Math.floor(totalMinutes / 1440);
   const hours = Math.floor((totalMinutes % 1440) / 60);
@@ -193,19 +197,27 @@ export function reorderIds(ids: string[], fromId: string, toId: string): string[
 }
 
 function QuotaMeter({ quota, providerId, providerName }: { quota: QuotaWindow; providerId: string; providerName: string }) {
-  const remaining = safePercent(quota.remainingPercent);
-  const used = safePercent(quota.usedPercent);
+  const isExpired = typeof quota.resetsAtUnixSeconds === "number" && quota.resetsAtUnixSeconds * 1000 <= Date.now();
+  const remaining = isExpired ? 100 : safePercent(quota.remainingPercent);
+  const used = isExpired ? 0 : safePercent(quota.usedPercent);
   const available = remaining != null && !quota.unavailableReason;
-  const reset = quota.resetDescription?.trim() || formatReset(quota.resetsAtUnixSeconds);
+  const reset = isExpired ? "Ciclo renovado" : (quota.resetDescription?.trim() || formatReset(quota.resetsAtUnixSeconds));
   const windowId = quota.id?.trim() || quota.label?.trim() || "cota";
   const windowLabel = quota.label?.trim() || "Janela sem nome";
+  const canShowChart = available && isWindowChartEligible(quota);
   return (
     <div className={`quota-meter${available ? "" : " is-unavailable"}`}>
       <div className="quota-meter-heading">
         <span className="quota-meter-title">
           <strong>{windowLabel}</strong>
-          {available && (
-            <QuotaHistoryButton providerId={providerId} windowId={windowId} windowLabel={windowLabel} mode="percent" />
+          {canShowChart && (
+            <QuotaHistoryButton
+              providerId={providerId}
+              windowId={windowId}
+              windowLabel={windowLabel}
+              quota={quota}
+              mode="percent"
+            />
           )}
         </span>
         <span>{available ? reset : "Indisponível"}</span>

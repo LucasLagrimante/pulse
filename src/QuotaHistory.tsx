@@ -110,24 +110,133 @@ export function downsampleValues(values: TimedValue[], maxPoints: number): Timed
   return sampled;
 }
 
+export type QuotaWindowInfo = {
+  id?: string;
+  label?: string;
+  windowMinutes?: number | null;
+  resetsAtUnixSeconds?: number | null;
+};
+
+export type QuotaCycleInfo = {
+  cycleStartMs: number;
+  cycleLabel: string;
+  popoverBadge: string;
+};
+
+export function computeCycleInfo(
+  quota?: QuotaWindowInfo | null,
+  mode: QuotaHistoryMode = "percent",
+  nowMs = Date.now(),
+): QuotaCycleInfo {
+  if (mode === "credits" || !quota) {
+    return {
+      cycleStartMs: nowMs - QUOTA_HISTORY_DAYS * 86_400_000,
+      cycleLabel: `últimos ${QUOTA_HISTORY_DAYS} dias`,
+      popoverBadge: `ÚLTIMOS ${QUOTA_HISTORY_DAYS} DIAS`,
+    };
+  }
+
+  const rawMinutes = typeof quota.windowMinutes === "number" && quota.windowMinutes > 0
+    ? quota.windowMinutes
+    : null;
+  const resetsAtSeconds = typeof quota.resetsAtUnixSeconds === "number" && Number.isFinite(quota.resetsAtUnixSeconds)
+    ? quota.resetsAtUnixSeconds
+    : null;
+
+  const labelLower = (quota.label || "").toLowerCase();
+  const idLower = (quota.id || "").toLowerCase();
+
+  const isWeekly = rawMinutes === 10080 ||
+    labelLower.includes("sem") ||
+    idLower.includes("week") ||
+    labelLower.includes("7d") ||
+    labelLower.includes("7 dia");
+
+  const isMonthly = rawMinutes === 43200 ||
+    labelLower.includes("mens") ||
+    idLower.includes("month") ||
+    labelLower.includes("30d");
+
+  const isFiveHours = (rawMinutes != null && rawMinutes <= 300) ||
+    labelLower.includes("5h") ||
+    labelLower.includes("5 hora") ||
+    labelLower.includes("sess") ||
+    idLower.includes("sess");
+
+  const minutes = rawMinutes ?? (isFiveHours ? 300 : isWeekly ? 10080 : isMonthly ? 43200 : null);
+
+  // Se a janela já expirou pelo timestamp de reset, o novo ciclo começou exatamente no reset
+  if (resetsAtSeconds != null && resetsAtSeconds * 1000 <= nowMs) {
+    return {
+      cycleStartMs: resetsAtSeconds * 1000,
+      cycleLabel: isFiveHours ? "janela atual (5h)" : isWeekly ? "ciclo semanal renovado" : isMonthly ? "ciclo mensal renovado" : "ciclo renovado",
+      popoverBadge: isFiveHours ? "JANELA ATUAL (5H)" : isWeekly ? "CICLO SEMANAL (RENOVADO)" : isMonthly ? "CICLO MENSAL (RENOVADO)" : "CICLO RENOVADO",
+    };
+  }
+
+  if (resetsAtSeconds != null && minutes != null) {
+    const periodDurationMs = minutes * 60_000;
+    const periodStartMs = resetsAtSeconds * 1000 - periodDurationMs;
+    const label = isFiveHours ? "janela atual (5h)" : isWeekly ? "ciclo semanal" : isMonthly ? "ciclo mensal" : "ciclo atual";
+    const badge = isFiveHours ? "JANELA ATUAL (5H)" : isWeekly ? "CICLO SEMANAL (7 DIAS)" : isMonthly ? "CICLO MENSAL" : "CICLO ATUAL";
+    return {
+      cycleStartMs: Math.max(0, periodStartMs),
+      cycleLabel: label,
+      popoverBadge: badge,
+    };
+  }
+
+  if (isFiveHours) {
+    return {
+      cycleStartMs: nowMs - (minutes ?? 300) * 60_000,
+      cycleLabel: "janela atual (5h)",
+      popoverBadge: "JANELA ATUAL (5H)",
+    };
+  }
+
+  if (isWeekly) {
+    return {
+      cycleStartMs: nowMs - 7 * 86_400_000,
+      cycleLabel: "ciclo semanal",
+      popoverBadge: "CICLO SEMANAL (7 DIAS)",
+    };
+  }
+
+  if (isMonthly) {
+    return {
+      cycleStartMs: nowMs - 30 * 86_400_000,
+      cycleLabel: "ciclo mensal",
+      popoverBadge: "CICLO MENSAL",
+    };
+  }
+
+  return {
+    cycleStartMs: nowMs - QUOTA_HISTORY_DAYS * 86_400_000,
+    cycleLabel: `últimos ${QUOTA_HISTORY_DAYS} dias`,
+    popoverBadge: `ÚLTIMOS ${QUOTA_HISTORY_DAYS} DIAS`,
+  };
+}
+
 const historyCache = new Map<string, { at: number; points: QuotaHistoryPoint[] }>();
 
-export function quotaHistoryCacheKey(providerId: string, windowId: string): string {
-  return `${providerId}|${windowId}`;
+export function quotaHistoryCacheKey(providerId: string, windowId: string, sinceUnixMs?: number | null): string {
+  return `${providerId}|${windowId}|${sinceUnixMs ?? 0}`;
 }
 
 export async function fetchQuotaHistory(
   providerId: string,
   windowId: string,
   days = QUOTA_HISTORY_DAYS,
+  sinceUnixMs?: number | null,
 ): Promise<QuotaHistoryPoint[]> {
-  const key = quotaHistoryCacheKey(providerId, windowId);
+  const key = quotaHistoryCacheKey(providerId, windowId, sinceUnixMs);
   const cached = historyCache.get(key);
   if (cached && Date.now() - cached.at < HISTORY_CACHE_TTL_MS) return cached.points;
   const response = await invoke<QuotaHistoryResponse>("get_quota_history", {
     providerId,
     windowId,
     days,
+    sinceUnixMs: sinceUnixMs ?? null,
   });
   const points = Array.isArray(response?.points) ? response.points : [];
   historyCache.set(key, { at: Date.now(), points });
@@ -165,25 +274,28 @@ export function QuotaHistoryChart({
   windowId,
   windowLabel,
   mode,
+  quota,
   formatValue = defaultPercentFormat,
 }: {
   providerId: string;
   windowId: string;
   windowLabel: string;
   mode: QuotaHistoryMode;
+  quota?: QuotaWindowInfo | null;
   formatValue?: (value: number) => string;
 }) {
   const [points, setPoints] = useState<QuotaHistoryPoint[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const plotRef = useRef<HTMLDivElement | null>(null);
+  const cycleInfo = useMemo(() => computeCycleInfo(quota, mode), [quota, mode]);
 
   useEffect(() => {
     let disposed = false;
     setPoints(null);
     setFailure(null);
     setHoverIndex(null);
-    fetchQuotaHistory(providerId, windowId)
+    fetchQuotaHistory(providerId, windowId, QUOTA_HISTORY_DAYS, cycleInfo.cycleStartMs)
       .then(result => {
         if (!disposed) setPoints(result);
       })
@@ -193,11 +305,20 @@ export function QuotaHistoryChart({
     return () => {
       disposed = true;
     };
-  }, [providerId, windowId]);
+  }, [providerId, windowId, cycleInfo.cycleStartMs]);
 
   const values = useMemo(
-    () => (points ? downsampleValues(toTimedValues(points, mode), MAX_RENDER_POINTS) : []),
-    [points, mode],
+    () =>
+      points
+        ? downsampleValues(
+            toTimedValues(
+              points.filter(point => point.sampledAtUnixMs >= cycleInfo.cycleStartMs),
+              mode,
+            ),
+            MAX_RENDER_POINTS,
+          )
+        : [],
+    [points, mode, cycleInfo.cycleStartMs],
   );
 
   const buckets = useMemo(() => groupValuesByDay(values), [values]);
@@ -228,7 +349,7 @@ export function QuotaHistoryChart({
   if (values.length === 0 || stats == null) {
     return (
       <p className="quota-history-empty" role="status">
-        Sem histórico ainda. Cada atualização de cotas registra um ponto — volte após as próximas leituras.
+        Sem histórico ainda no ciclo atual. Cada atualização de cotas registra um ponto — volte após as próximas leituras.
       </p>
     );
   }
@@ -300,7 +421,7 @@ export function QuotaHistoryChart({
           <path d={area} fill={accent} opacity="0.18" />
           <path d={line} fill="none" stroke={accent} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
           <circle cx={x(values[peakIndex].at)} cy={y(values[peakIndex].value)} r="3.5" fill={accent} stroke="#141619" strokeWidth="1.5">
-            <title>{`Pico: ${formatValue(values[peakIndex].value)} em ${formatDayMonth(values[peakIndex].at)}`}</title>
+            <title>{`Pico: ${formatValue(values[peakIndex].value)} em ${formatDayMonth(values[peakIndex].at)} · ${formatHour(values[peakIndex].at)}`}</title>
           </circle>
           {hovered && (
             <g>
@@ -316,10 +437,21 @@ export function QuotaHistoryChart({
               <circle cx={x(hovered.at)} cy={y(hovered.value)} r="3" fill="#fff" stroke={accent} strokeWidth="2" />
             </g>
           )}
-          <text x={padLeft} y={height - 3} className="quota-history-tick">{formatDayMonth(first)}</text>
-          <text x={width - padRight} y={height - 3} textAnchor="end" className="quota-history-tick">
-            {values.length > 1 ? formatDayMonth(last) : "hoje"}
-          </text>
+          {(() => {
+            const isShortSpan = span <= 24 * 3600 * 1000 || formatDayMonth(first) === formatDayMonth(last);
+            const startLabel = isShortSpan ? formatHour(first) : formatDayMonth(first);
+            const endLabel = values.length > 1
+              ? (isShortSpan ? formatHour(last) : formatDayMonth(last))
+              : (isShortSpan ? formatHour(first) : "hoje");
+            return (
+              <>
+                <text x={padLeft} y={height - 3} className="quota-history-tick">{startLabel}</text>
+                <text x={width - padRight} y={height - 3} textAnchor="end" className="quota-history-tick">
+                  {endLabel}
+                </text>
+              </>
+            );
+          })()}
         </svg>
         {hovered && (
           <div
@@ -346,18 +478,21 @@ export function QuotaHistoryButton({
   windowId,
   windowLabel,
   mode,
+  quota,
   formatValue,
 }: {
   providerId: string;
   windowId: string;
   windowLabel: string;
   mode: QuotaHistoryMode;
+  quota?: QuotaWindowInfo | null;
   formatValue?: (value: number) => string;
 }) {
   const [open, setOpen] = useState(false);
   const [placement, setPlacement] = useState("is-down-left");
   const closeTimer = useRef<number | undefined>(undefined);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
+  const cycleInfo = useMemo(() => computeCycleInfo(quota, mode), [quota, mode]);
 
   const cancelClose = () => {
     if (closeTimer.current !== undefined) {
@@ -398,7 +533,7 @@ export function QuotaHistoryButton({
   }, [open]);
 
   const dialogId = `quota-history-${providerId}-${windowId}`;
-  const label = `Ver histórico de uso de ${windowLabel} — últimos ${QUOTA_HISTORY_DAYS} dias`;
+  const label = `Ver histórico de uso de ${windowLabel} — ${cycleInfo.cycleLabel}`;
 
   return (
     <span
@@ -436,13 +571,14 @@ export function QuotaHistoryButton({
           aria-label={`Histórico de uso — ${windowLabel}`}
         >
           <p className="quota-history-popover-title">
-            {windowLabel} <span>ÚLTIMOS {QUOTA_HISTORY_DAYS} DIAS</span>
+            {windowLabel} <span>{cycleInfo.popoverBadge}</span>
           </p>
           <QuotaHistoryChart
             providerId={providerId}
             windowId={windowId}
             windowLabel={windowLabel}
             mode={mode}
+            quota={quota}
             formatValue={formatValue}
           />
         </div>

@@ -264,18 +264,24 @@ fn quota_from_used(id: &str, label: &str, value: Option<&Value>) -> Option<Quota
     let used_percent = percent(pick(value, &["used_percent", "usedPercent"]))?;
     let resets_at = reset_from_window(value);
     let expired = resets_at.is_some_and(|reset| reset * 1000 <= now_unix_ms());
+    let (used, remaining, desc) = if expired {
+        (Some(0.0), Some(100.0), Some("Ciclo renovado".into()))
+    } else {
+        (
+            Some(used_percent),
+            Some((100.0 - used_percent).clamp(0.0, 100.0)),
+            None,
+        )
+    };
     Some(QuotaWindow {
         id: id.into(),
         label: label.into(),
-        used_percent: (!expired).then_some(used_percent),
-        remaining_percent: (!expired).then_some((100.0 - used_percent).clamp(0.0, 100.0)),
+        used_percent: used,
+        remaining_percent: remaining,
         window_minutes: window_minutes_from(value),
         resets_at_unix_seconds: resets_at,
-        reset_description: None,
-        unavailable_reason: expired.then(|| {
-            "A janela foi reiniciada depois desta leitura; abra a ferramenta e atualize a cota."
-                .into()
-        }),
+        reset_description: desc,
+        unavailable_reason: None,
     })
 }
 
@@ -968,14 +974,20 @@ fn parse_antigravity_cli_usage(raw: &str) -> Vec<QuotaWindow> {
             .get(remaining_index + 2)
             .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
             .map(|date| date.timestamp());
+        let expired = reset.is_some_and(|reset| reset * 1000 <= now_unix_ms());
+        let (used, rem, desc) = if expired {
+            (Some(0.0), Some(100.0), Some("Ciclo renovado".into()))
+        } else {
+            (Some(100.0 - remaining), Some(remaining), None)
+        };
         windows.push(QuotaWindow {
             id: format!("agy-{}", windows.len()),
             label: format!("{model} · {label}"),
-            used_percent: Some(100.0 - remaining),
-            remaining_percent: Some(remaining),
+            used_percent: used,
+            remaining_percent: rem,
             window_minutes: Some(minutes),
             resets_at_unix_seconds: reset,
-            reset_description: None,
+            reset_description: desc,
             unavailable_reason: None,
         });
     }
@@ -1111,14 +1123,25 @@ fn query_claude() -> ProviderUsage {
     ] {
         if let Some(value) = body.get(key).and_then(Value::as_object) {
             if let Some(used) = number(value.get("utilization")) {
+                let resets_at = parse_reset(value.get("resets_at"));
+                let expired = resets_at.is_some_and(|reset| reset * 1000 <= now_unix_ms());
+                let (used, rem, desc) = if expired {
+                    (Some(0.0), Some(100.0), Some("Ciclo renovado".into()))
+                } else {
+                    (
+                        Some(used.clamp(0.0, 100.0)),
+                        Some((100.0 - used).clamp(0.0, 100.0)),
+                        None,
+                    )
+                };
                 windows.push(QuotaWindow {
                     id: id.into(),
                     label: label.into(),
-                    used_percent: Some(used.clamp(0.0, 100.0)),
-                    remaining_percent: Some((100.0 - used).clamp(0.0, 100.0)),
+                    used_percent: used,
+                    remaining_percent: rem,
                     window_minutes: Some(minutes),
-                    resets_at_unix_seconds: parse_reset(value.get("resets_at")),
-                    reset_description: None,
+                    resets_at_unix_seconds: resets_at,
+                    reset_description: desc,
                     unavailable_reason: None,
                 });
             }
@@ -1562,14 +1585,20 @@ fn query_opencode_go() -> ProviderUsage {
         let used = percent(window.get("percent"));
         let Some(used) = used else { continue };
         let resets_at = parse_reset(window.get("resetsAt"));
+        let expired = resets_at.is_some_and(|reset| reset * 1000 <= now_unix_ms());
+        let (used, remaining, desc) = if expired {
+            (Some(0.0), Some(100.0), Some("Ciclo renovado".into()))
+        } else {
+            (Some(used), Some((100.0 - used).clamp(0.0, 100.0)), None)
+        };
         windows.push(QuotaWindow {
             id: format!("{key}-{order}"),
             label: label.into(),
-            used_percent: Some(used),
-            remaining_percent: Some((100.0 - used).clamp(0.0, 100.0)),
+            used_percent: used,
+            remaining_percent: remaining,
             window_minutes: Some(minutes),
             resets_at_unix_seconds: resets_at,
-            reset_description: None,
+            reset_description: desc,
             unavailable_reason: None,
         });
     }
@@ -2349,6 +2378,19 @@ mod tests {
         assert_eq!(window.remaining_percent, Some(90.0));
         assert!(window.resets_at_unix_seconds.is_some());
         assert!(window.resets_at_unix_seconds.unwrap() * 1000 > now_unix_ms());
+    }
+    #[test]
+    fn resets_expired_quota_to_full_remaining_and_indicates_renewal() {
+        let expired_window = quota_from_used(
+            "weekly",
+            "Semanal",
+            Some(&json!({"used_percent": 80, "window_minutes": 10080, "resets_at": 1_000_000_000_i64})),
+        )
+        .unwrap();
+        assert_eq!(expired_window.used_percent, Some(0.0));
+        assert_eq!(expired_window.remaining_percent, Some(100.0));
+        assert_eq!(expired_window.reset_description.as_deref(), Some("Ciclo renovado"));
+        assert!(expired_window.unavailable_reason.is_none());
     }
     #[test]
     fn terminal_escape_sequences_are_removed_before_parsing() {

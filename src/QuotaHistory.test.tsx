@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  computeCycleInfo,
   downsampleValues,
   groupValuesByDay,
   historyPointValue,
@@ -80,6 +81,63 @@ describe("downsampleValues", () => {
   });
 });
 
+describe("computeCycleInfo", () => {
+  it("calcula ciclo semanal de 7 dias ancorado no reset futuro", () => {
+    const now = 1_790_000_000_000;
+    const resetsAt = Math.floor(now / 1000) + 2 * 86400; // Daqui a 2 dias
+    const cycle = computeCycleInfo(
+      { windowMinutes: 10080, resetsAtUnixSeconds: resetsAt, label: "Semanal" },
+      "percent",
+      now,
+    );
+    expect(cycle.popoverBadge).toBe("CICLO SEMANAL (7 DIAS)");
+    expect(cycle.cycleLabel).toBe("ciclo semanal");
+    expect(cycle.cycleStartMs).toBe(resetsAt * 1000 - 10080 * 60_000);
+  });
+
+  it("reinicia ciclo quando resetsAt já passou", () => {
+    const now = 1_790_000_000_000;
+    const resetsAt = Math.floor(now / 1000) - 3600; // 1 hora atrás
+    const cycle = computeCycleInfo(
+      { windowMinutes: 10080, resetsAtUnixSeconds: resetsAt, label: "Semanal" },
+      "percent",
+      now,
+    );
+    expect(cycle.popoverBadge).toBe("CICLO SEMANAL (RENOVADO)");
+    expect(cycle.cycleStartMs).toBe(resetsAt * 1000);
+  });
+
+  it("calcula ciclo mensal ancorado no reset", () => {
+    const now = 1_790_000_000_000;
+    const resetsAt = Math.floor(now / 1000) + 15 * 86400;
+    const cycle = computeCycleInfo(
+      { windowMinutes: 43200, resetsAtUnixSeconds: resetsAt, label: "Mensal" },
+      "percent",
+      now,
+    );
+    expect(cycle.popoverBadge).toBe("CICLO MENSAL");
+    expect(cycle.cycleLabel).toBe("ciclo mensal");
+  });
+
+  it("calcula janela de 5 horas ancorada no reset", () => {
+    const now = 1_790_000_000_000;
+    const resetsAt = Math.floor(now / 1000) + 7200; // Daqui a 2 horas
+    const cycle = computeCycleInfo(
+      { windowMinutes: 300, resetsAtUnixSeconds: resetsAt, label: "Sessão" },
+      "percent",
+      now,
+    );
+    expect(cycle.popoverBadge).toBe("JANELA ATUAL (5H)");
+    expect(cycle.cycleLabel).toBe("janela atual (5h)");
+    expect(cycle.cycleStartMs).toBe(resetsAt * 1000 - 300 * 60_000);
+  });
+
+  it("mantém 30 dias para créditos", () => {
+    const cycle = computeCycleInfo(null, "credits", 1_790_000_000_000);
+    expect(cycle.popoverBadge).toBe("ÚLTIMOS 30 DIAS");
+  });
+});
+
 describe("QuotaHistoryChart", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -103,7 +161,7 @@ describe("QuotaHistoryChart", () => {
     point(day2026(8, 12, 10), 35),
   ];
 
-  it("exibe máximo, média e dia de maior consumo dos últimos 30 dias", async () => {
+  it("exibe máximo, média e dia de maior consumo do ciclo", async () => {
     vi.mocked(invoke).mockResolvedValue({ points: history, retainedDays: 35 } as never);
     render(
       <QuotaHistoryChart providerId="claude" windowId="session" windowLabel="Sessão" mode="percent" />,
@@ -117,6 +175,7 @@ describe("QuotaHistoryChart", () => {
       providerId: "claude",
       windowId: "session",
       days: 30,
+      sinceUnixMs: expect.any(Number),
     });
   });
 
@@ -133,12 +192,37 @@ describe("QuotaHistoryChart", () => {
     });
   });
 
-  it("informa quando ainda não há histórico registrado", async () => {
+  it("informa quando ainda não há histórico registrado no ciclo", async () => {
     vi.mocked(invoke).mockResolvedValue({ points: [], retainedDays: 35 } as never);
     render(
       <QuotaHistoryChart providerId="codex" windowId="weekly" windowLabel="Semanal" mode="percent" />,
     );
-    expect(await screen.findByText(/Sem histórico ainda/)).toBeInTheDocument();
+    expect(await screen.findByText(/Sem histórico ainda no ciclo atual/)).toBeInTheDocument();
+  });
+
+  it("exibe horários no eixo X quando o intervalo é de até 24 horas", async () => {
+    const now = Date.now();
+    const start = now - 4 * 3600 * 1000;
+    const end = now;
+    const resetsAt = Math.floor((now + 3600 * 1000) / 1000); // 1h no futuro
+    const shortHistory = [
+      point(start, 10),
+      point(end, 50),
+    ];
+    vi.mocked(invoke).mockResolvedValue({ points: shortHistory, retainedDays: 35 } as never);
+    render(
+      <QuotaHistoryChart
+        providerId="claude"
+        windowId="session"
+        windowLabel="Sessão"
+        mode="percent"
+        quota={{ windowMinutes: 300, resetsAtUnixSeconds: resetsAt }}
+      />,
+    );
+    const startHour = new Date(start).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const endHour = new Date(end).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    expect(await screen.findByText(startHour)).toBeInTheDocument();
+    expect(screen.getByText(endHour)).toBeInTheDocument();
   });
 });
 

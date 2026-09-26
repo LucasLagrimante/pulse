@@ -168,7 +168,7 @@ fn read_all_points() -> Vec<QuotaHistoryPoint> {
     content
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str(line).ok())
+        .filter_map(|line| serde_json::from_str::<QuotaHistoryPoint>(line).ok())
         .collect()
 }
 
@@ -247,11 +247,15 @@ fn get_quota_history_sync(
     provider_id: Option<String>,
     window_id: Option<String>,
     days: Option<u32>,
+    since_unix_ms: Option<i64>,
 ) -> QuotaHistoryResponse {
     let days = days
         .unwrap_or(DEFAULT_QUERY_DAYS)
         .clamp(1, MAX_QUERY_DAYS);
-    let cutoff = now_unix_ms() - i64::from(days) * 86_400_000;
+    let cutoff_by_days = now_unix_ms() - i64::from(days) * 86_400_000;
+    let cutoff = since_unix_ms
+        .map(|since| since.max(cutoff_by_days))
+        .unwrap_or(cutoff_by_days);
     let mut points: Vec<QuotaHistoryPoint> = read_all_points()
         .into_iter()
         .filter(|point| point.sampled_at_unix_ms >= cutoff)
@@ -282,9 +286,10 @@ pub async fn get_quota_history(
     provider_id: Option<String>,
     window_id: Option<String>,
     days: Option<u32>,
+    since_unix_ms: Option<i64>,
 ) -> QuotaHistoryResponse {
     tauri::async_runtime::spawn_blocking(move || {
-        get_quota_history_sync(provider_id, window_id, days)
+        get_quota_history_sync(provider_id, window_id, days, since_unix_ms)
     })
     .await
     .unwrap_or_else(|_| QuotaHistoryResponse {
@@ -304,10 +309,10 @@ mod tests {
     fn window(id: &str, used: Option<f64>) -> QuotaWindow {
         QuotaWindow {
             id: id.into(),
-            label: id.into(),
+            label: "Semanal".into(),
             used_percent: used,
             remaining_percent: used.map(|value| 100.0 - value),
-            window_minutes: Some(300),
+            window_minutes: Some(10080),
             resets_at_unix_seconds: None,
             reset_description: None,
             unavailable_reason: None,
@@ -337,8 +342,8 @@ mod tests {
     fn point(used: Option<f64>, sampled: i64) -> QuotaHistoryPoint {
         QuotaHistoryPoint {
             provider_id: "claude".into(),
-            window_id: "session".into(),
-            label: "Sessão".into(),
+            window_id: "weekly".into(),
+            label: "Semanal".into(),
             used_percent: used,
             remaining_percent: used.map(|value| 100.0 - value),
             credits_remaining: None,
@@ -350,16 +355,37 @@ mod tests {
     fn skips_disabled_unavailable_and_unmeasured() {
         let points = points_from_providers(
             &[
-                provider("claude", false, "available", vec![window("session", Some(20.0))]),
-                provider("codex", true, "available", vec![window("session", Some(10.0))]),
-                provider("agy", false, "unavailable", vec![window("session", Some(10.0))]),
-                provider("empty", false, "available", vec![window("session", None)]),
+                provider("claude", false, "available", vec![window("weekly", Some(20.0))]),
+                provider("codex", true, "available", vec![window("weekly", Some(10.0))]),
+                provider("agy", false, "unavailable", vec![window("weekly", Some(10.0))]),
+                provider("empty", false, "available", vec![window("weekly", None)]),
             ],
             1_700_000_000_000,
         );
         assert_eq!(points.len(), 1);
         assert_eq!(points[0].provider_id, "claude");
         assert_eq!(points[0].used_percent, Some(20.0));
+    }
+
+    #[test]
+    fn records_five_hour_windows_for_window_scoped_history() {
+        let short_window_300 = QuotaWindow {
+            id: "rolling-0".into(),
+            label: "Janela atual (5h)".into(),
+            used_percent: Some(15.0),
+            remaining_percent: Some(85.0),
+            window_minutes: Some(300),
+            resets_at_unix_seconds: None,
+            reset_description: None,
+            unavailable_reason: None,
+        };
+        let points = points_from_providers(
+            &[provider("opencode-go", false, "available", vec![short_window_300])],
+            1_700_000_000_000,
+        );
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].window_id, "rolling-0");
+        assert_eq!(points[0].used_percent, Some(15.0));
     }
 
     #[test]
@@ -375,7 +401,7 @@ mod tests {
     #[test]
     fn never_records_fake_zero_for_missing_reading() {
         let points = points_from_providers(
-            &[provider("claude", false, "available", vec![window("session", None)])],
+            &[provider("claude", false, "available", vec![window("weekly", None)])],
             1_700_000_000_000,
         );
         assert!(points.is_empty());
@@ -406,11 +432,12 @@ mod tests {
     }
 
     #[test]
-    fn query_filters_by_series() {
+    fn query_filters_by_series_and_since() {
         let response = get_quota_history_sync(
             Some("no-such-provider".into()),
             None,
             Some(30),
+            None,
         );
         assert!(response.points.iter().all(|point| point.provider_id == "no-such-provider"));
         assert_eq!(response.retained_days, super::RETENTION_DAYS as u32);

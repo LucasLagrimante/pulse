@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { formatReset, formatUsd, hasMeasuredQuota, isProviderDisabled, reorderIds, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, SubscriptionUsage, type SubscriptionUsageReport } from "./SubscriptionUsage";
+import { formatReset, formatUsd, hasMeasuredQuota, isProviderDisabled, isWindowChartEligible, reorderIds, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, SubscriptionUsage, type SubscriptionUsageReport } from "./SubscriptionUsage";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({
@@ -48,8 +48,16 @@ describe("SubscriptionUsage", () => {
     expect(safePercent(null)).toBeNull();
     expect(safePercent(Number.NaN)).toBeNull();
     expect(safePercent(110)).toBe(100);
-    expect(formatReset(1_000, 1_000_000)).toBe("Leitura vencida");
+    expect(formatReset(1_000, 1_000_000)).toBe("Ciclo renovado");
     expect(formatReset(1_000 + 90 * 60, 1_000_000)).toBe("Reseta em 1h 30min");
+  });
+
+  it("determines chart eligibility correctly for measured windows", () => {
+    expect(isWindowChartEligible({ id: "rolling-0", label: "Janela atual (5h)", remainingPercent: 90 })).toBe(true);
+    expect(isWindowChartEligible({ id: "agy-1", label: "Gemini Models · 5 horas", remainingPercent: 100 })).toBe(true);
+    expect(isWindowChartEligible({ id: "session", label: "Sessão", remainingPercent: 50 })).toBe(true);
+    expect(isWindowChartEligible({ id: "weekly", label: "Semanal", remainingPercent: 80 })).toBe(true);
+    expect(isWindowChartEligible({ id: "unavail", label: "Indisponível", remainingPercent: null, unavailableReason: "Sem leitura" })).toBe(false);
   });
 
   it("renders measured providers and preserves a real zero balance", async () => {
@@ -285,5 +293,59 @@ describe("SubscriptionUsage", () => {
     fireEvent.drop(cards[1], { dataTransfer });
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_provider_order", { order: ["codex", "claude", "openrouter"] }));
+  });
+
+  it("includes the history chart button for both 5-hour and weekly windows", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_subscription_settings") {
+        return Promise.resolve({ openrouterConfigured: false, opencodeGoConfigured: false }) as never;
+      }
+      return Promise.resolve(report) as never;
+    });
+
+    render(<SubscriptionUsage />);
+    await screen.findByText("Claude Code");
+
+    // Tanto "Sessão" (5h) quanto "Semanal" (7d) devem ter botão de histórico para os provedores medidos
+    expect(screen.getAllByRole("button", { name: /Ver histórico de uso de Sessão/ })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /Ver histórico de uso de Semanal/ })).toHaveLength(2);
+  });
+
+  it("resets quota meter to 100% and displays Ciclo renovado when the period has passed", async () => {
+    const expiredReport: SubscriptionUsageReport = {
+      ...report,
+      providers: [
+        {
+          id: "opencode-go",
+          provider: "OpenCode Go",
+          subtitle: "Assinatura",
+          status: "available",
+          source: "API",
+          windows: [
+            {
+              id: "weekly-1",
+              label: "Semanal",
+              usedPercent: 75,
+              remainingPercent: 25,
+              windowMinutes: 10080,
+              resetsAtUnixSeconds: 1_000, // No passado
+            },
+          ],
+        },
+      ],
+    };
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_subscription_settings") {
+        return Promise.resolve({ openrouterConfigured: false, opencodeGoConfigured: false }) as never;
+      }
+      return Promise.resolve(expiredReport) as never;
+    });
+
+    render(<SubscriptionUsage />);
+    await screen.findByText("OpenCode Go");
+
+    expect(screen.getByText("100% restante")).toBeInTheDocument();
+    expect(screen.getByText("0% usado")).toBeInTheDocument();
+    expect(screen.getByText("Ciclo renovado")).toBeInTheDocument();
   });
 });

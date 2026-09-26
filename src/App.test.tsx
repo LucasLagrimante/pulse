@@ -2154,6 +2154,7 @@ describe("Pulse application shell", () => {
   });
 
   it("keeps antigravity five-hour and weekly windows labeled by duration in the tray", async () => {
+    localStorage.clear();
     vi.mocked(invoke).mockImplementation((command: string) => {
       if (command === "get_current_window_label") return Promise.resolve("tray-flyout") as never;
       if (command === "get_system_overview") {
@@ -2203,9 +2204,9 @@ describe("Pulse application shell", () => {
     await waitFor(() => {
       const labels = [...document.querySelectorAll(".flyout-quota-window-label")].map(node => node.textContent);
       expect(labels).toEqual(["5h", "7d"]);
+      expect(screen.getByTitle("Gemini Models · 5 horas")).toBeInTheDocument();
+      expect(screen.getByTitle("Claude and GPT models · Semanal")).toBeInTheDocument();
     });
-    expect(screen.getByTitle("Gemini Models · 5 horas")).toBeInTheDocument();
-    expect(screen.getByTitle("Claude and GPT models · Semanal")).toBeInTheDocument();
     expect(screen.getByText("100%")).toBeInTheDocument();
     expect(screen.getByText("66%")).toBeInTheDocument();
     expect(screen.queryByText("Gemi")).not.toBeInTheDocument();
