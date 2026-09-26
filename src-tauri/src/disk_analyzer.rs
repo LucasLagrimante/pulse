@@ -409,34 +409,39 @@ pub struct ScanContext<'a> {
 }
 
 impl<'a> ScanContext<'a> {
-    pub fn maybe_emit_progress(&self, current_path: &str) {
+    pub fn maybe_emit_progress_lazy<F>(&self, get_path: F)
+    where
+        F: FnOnce() -> String,
+    {
         let count = self.items_scanned.fetch_add(1, Ordering::Relaxed) + 1;
-        if count.is_multiple_of(15) {
+        // Cede a CPU de forma cooperativa sem tempestade de context switches
+        if count.is_multiple_of(2048) {
             std::thread::yield_now();
         }
-        if count.is_multiple_of(250) {
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        if !count.is_multiple_of(15) && !count.is_multiple_of(200) {
+        if !count.is_multiple_of(64) {
             return;
         }
-        let progress = DiskScanProgress {
-            items_scanned: count,
-            total_bytes_scanned: self.bytes_scanned.load(Ordering::Relaxed),
-            current_path: current_path.to_owned(),
-            partial_result: None,
+        let Ok(mut guard) = self.last_progress_emit.lock() else {
+            return;
         };
-        set_scan_progress(progress.clone());
-        if count.is_multiple_of(200) {
-            if let Ok(mut guard) = self.last_progress_emit.lock() {
-                if guard.elapsed().as_millis() >= PROGRESS_INTERVAL_MS {
-                    *guard = Instant::now();
-                    if let Some(win) = self.window {
-                        let _ = win.emit("pulse://disk-scan-progress", progress);
-                    }
-                }
+        if guard.elapsed().as_millis() >= PROGRESS_INTERVAL_MS {
+            *guard = Instant::now();
+            let current_path = get_path();
+            let progress = DiskScanProgress {
+                items_scanned: count,
+                total_bytes_scanned: self.bytes_scanned.load(Ordering::Relaxed),
+                current_path,
+                partial_result: None,
+            };
+            set_scan_progress(progress.clone());
+            if let Some(win) = self.window {
+                let _ = win.emit("pulse://disk-scan-progress", progress);
             }
         }
+    }
+
+    pub fn maybe_emit_progress(&self, current_path: &str) {
+        self.maybe_emit_progress_lazy(|| current_path.to_owned());
     }
 
     fn should_stop(&self) -> bool {
@@ -736,6 +741,107 @@ fn scan_path_recursive_stream(
         if ctx.should_stop() {
             break;
         }
+
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+
+        if file_type.is_symlink() {
+            let meta = entry.metadata().ok();
+            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+            let modified_ms = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_millis().min(i64::MAX as u128) as i64);
+
+            let child_path = entry.path();
+            let child_path_str = child_path.to_string_lossy().into_owned();
+            let child_name = entry.file_name().to_string_lossy().into_owned();
+
+            let child_node = DiskItemNode {
+                id: child_path_str.clone(),
+                name: child_name,
+                path: child_path_str,
+                size_bytes: size,
+                file_count: 1,
+                dir_count: 0,
+                is_dir: false,
+                modified_at_unix_ms: modified_ms,
+                children: Vec::new(),
+            };
+            total_size = total_size.saturating_add(size);
+            total_files = total_files.saturating_add(1);
+            if stream_children.len() < STREAM_SNAPSHOT_MAX_CHILDREN {
+                stream_children.push(child_node.clone());
+            }
+            direct_children.push(child_node);
+            ctx.maybe_emit_progress_lazy(|| child_path.to_string_lossy().into_owned());
+            if ctx.snapshot_is_due() {
+                on_partial(directory_snapshot(
+                    &path_str,
+                    &name,
+                    &path_str,
+                    modified_ms,
+                    total_size,
+                    total_files,
+                    total_dirs,
+                    &stream_children,
+                    STREAM_SNAPSHOT_MAX_CHILDREN,
+                ));
+            }
+            continue;
+        }
+
+        if !file_type.is_dir() {
+            let meta = entry.metadata().ok();
+            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+            let modified_ms = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_millis().min(i64::MAX as u128) as i64);
+
+            ctx.bytes_scanned.fetch_add(size, Ordering::Relaxed);
+            let child_path = entry.path();
+            let child_path_str = child_path.to_string_lossy().into_owned();
+            let child_name = entry.file_name().to_string_lossy().into_owned();
+
+            let child_node = DiskItemNode {
+                id: child_path_str.clone(),
+                name: child_name,
+                path: child_path_str,
+                size_bytes: size,
+                file_count: 1,
+                dir_count: 0,
+                is_dir: false,
+                modified_at_unix_ms: modified_ms,
+                children: Vec::new(),
+            };
+
+            total_size = total_size.saturating_add(size);
+            total_files = total_files.saturating_add(1);
+            if stream_children.len() < STREAM_SNAPSHOT_MAX_CHILDREN {
+                stream_children.push(child_node.clone());
+            }
+            direct_children.push(child_node);
+            ctx.maybe_emit_progress_lazy(|| child_path.to_string_lossy().into_owned());
+            if ctx.snapshot_is_due() {
+                on_partial(directory_snapshot(
+                    &path_str,
+                    &name,
+                    &path_str,
+                    modified_ms,
+                    total_size,
+                    total_files,
+                    total_dirs,
+                    &stream_children,
+                    STREAM_SNAPSHOT_MAX_CHILDREN,
+                ));
+            }
+            continue;
+        }
+
         let child_path = entry.path();
         if current_depth < ctx.max_depth {
             let child_node = {
@@ -866,37 +972,39 @@ fn scan_path_aggregate_stream(
         return;
     }
 
-    let path_str = path.to_string_lossy();
-    ctx.maybe_emit_progress(&path_str);
-    let Ok(meta) = fs::symlink_metadata(path) else {
-        return;
-    };
-    if meta.file_type().is_symlink() {
-        return;
-    }
-    if !meta.is_dir() {
-        let size = meta.len();
-        ctx.bytes_scanned.fetch_add(size, Ordering::Relaxed);
-        totals.size_bytes = totals.size_bytes.saturating_add(size);
-        totals.file_count = totals.file_count.saturating_add(1);
-        if ctx.snapshot_is_due() {
-            on_partial(*totals);
-        }
-        return;
-    }
-
+    ctx.maybe_emit_progress_lazy(|| path.to_string_lossy().into_owned());
     totals.dir_count = totals.dir_count.saturating_add(1);
+
     let Ok(entries) = fs::read_dir(path) else {
         if ctx.snapshot_is_due() {
             on_partial(*totals);
         }
         return;
     };
+
     for entry in entries.flatten() {
         if ctx.should_stop() {
             break;
         }
-        scan_path_aggregate_stream(&entry.path(), ctx, totals, on_partial);
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
+            let child_path = entry.path();
+            scan_path_aggregate_stream(&child_path, ctx, totals, on_partial);
+        } else {
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            ctx.bytes_scanned.fetch_add(size, Ordering::Relaxed);
+            totals.size_bytes = totals.size_bytes.saturating_add(size);
+            totals.file_count = totals.file_count.saturating_add(1);
+            ctx.maybe_emit_progress_lazy(|| entry.path().to_string_lossy().into_owned());
+            if ctx.snapshot_is_due() {
+                on_partial(*totals);
+            }
+        }
     }
 }
 
@@ -985,6 +1093,40 @@ pub async fn start_disk_scan(
     run_disk_scan(window, path, max_depth).await
 }
 
+#[cfg(windows)]
+struct ScopedBackgroundPriority;
+
+#[cfg(windows)]
+impl ScopedBackgroundPriority {
+    fn enter() -> Self {
+        extern "system" {
+            fn GetCurrentThread() -> *mut std::ffi::c_void;
+            fn SetThreadPriority(h_thread: *mut std::ffi::c_void, n_priority: i32) -> i32;
+        }
+        // Ativa prioridade de I/O muito baixa e prioridade ociosa no Windows,
+        // garantindo que a varredura não afete jogos, trabalho ou uso do disco.
+        const THREAD_MODE_BACKGROUND_BEGIN: i32 = 0x00010000;
+        unsafe {
+            SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+        }
+        Self
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ScopedBackgroundPriority {
+    fn drop(&mut self) {
+        extern "system" {
+            fn GetCurrentThread() -> *mut std::ffi::c_void;
+            fn SetThreadPriority(h_thread: *mut std::ffi::c_void, n_priority: i32) -> i32;
+        }
+        const THREAD_MODE_BACKGROUND_END: i32 = 0x00020000;
+        unsafe {
+            SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_END);
+        }
+    }
+}
+
 async fn run_disk_scan(
     window: Window,
     path: String,
@@ -1023,6 +1165,9 @@ async fn run_disk_scan(
     let depth_limit = max_depth.unwrap_or(MAX_TREE_DEPTH).min(MAX_TREE_DEPTH);
     let scan_started = Instant::now();
     let result = tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(windows)]
+        let _bg_priority = ScopedBackgroundPriority::enter();
+
         let items_scanned = AtomicU64::new(0);
         let bytes_scanned = AtomicU64::new(0);
         let last_progress_emit = Mutex::new(Instant::now() - Duration::from_millis(250));
