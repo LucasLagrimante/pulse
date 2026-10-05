@@ -2423,6 +2423,65 @@ body:has(.tray-flyout-container),
   color: var(--neu-text-secondary) !important;
 }
 
+[data-theme] .flyout-mixer-toggle {
+  background: var(--neu-surface) !important;
+  border: var(--neu-border) !important;
+  border-radius: 8px !important;
+  color: var(--neu-text-muted) !important;
+  box-shadow: var(--neu-shadow-raised-xs) !important;
+}
+
+[data-theme] .flyout-mixer-toggle:hover {
+  color: var(--neu-text-primary) !important;
+  box-shadow: var(--neu-shadow-raised-sm) !important;
+}
+
+[data-theme] .flyout-mixer-name {
+  color: var(--neu-text-primary) !important;
+}
+
+[data-theme] .flyout-mixer-icon {
+  background: var(--neu-surface) !important;
+  border: var(--neu-border-subtle) !important;
+  border-radius: 7px !important;
+  box-shadow: var(--neu-shadow-inset-xs) !important;
+}
+
+[data-theme] .flyout-mixer-icon svg {
+  color: var(--neu-text-muted) !important;
+}
+
+[data-theme] .flyout-mixer-pct {
+  color: var(--neu-signal-secondary) !important;
+}
+
+[data-theme] .flyout-mixer-master {
+  border-bottom-color: var(--neu-divider) !important;
+}
+
+[data-theme] .flyout-mixer-mute {
+  background: var(--neu-surface) !important;
+  border: var(--neu-border) !important;
+  border-radius: 50% !important;
+  color: var(--neu-signal-secondary) !important;
+  box-shadow: var(--neu-shadow-raised-xs) !important;
+}
+
+[data-theme] .flyout-mixer-mute[aria-pressed="true"] {
+  color: var(--neu-danger) !important;
+}
+
+[data-theme] .flyout-mixer-controls input[type="range"] {
+  accent-color: var(--neu-accent) !important;
+}
+
+[data-theme] .flyout-mixer-refresh {
+  background: var(--neu-surface) !important;
+  border: var(--neu-border) !important;
+  border-radius: 8px !important;
+  color: var(--neu-text-muted) !important;
+}
+
 /* Armazenamento: todos os subpainéis precisam acompanhar o tema do painel
    externo. Os blocos do treemap continuam usando as cores de profundidade
    definidas inline, pois elas carregam informação da visualização. */

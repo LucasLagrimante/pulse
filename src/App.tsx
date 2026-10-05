@@ -39,6 +39,10 @@ const TELEMETRY_POLL_INTERVAL_MS = 5000;
 // no mesmo instante do overview.
 const THERMAL_INITIAL_DELAY_MS = 1200;
 const THERMAL_POLL_INTERVAL_MS = 15000;
+// Mixer recolhido por padrão; quando aberto, atualiza a lista de apps a
+// cada 5 s (leitura COM rápida, sem subprocessos) e pausa durante ajustes.
+const MIXER_POLL_INTERVAL_MS = 5000;
+const MIXER_VOLUME_DEBOUNCE_MS = 250;
 const TOP_PROCESS_LIMIT = 25;
 
 function useWindowForeground(): boolean | null {
@@ -208,6 +212,26 @@ export type AudioDeviceInventory = {
   output: AudioDevice[];
   inputDefaultId?: string | null;
   outputDefaultId?: string | null;
+  unavailableReason?: string | null;
+};
+export type AudioMixerApp = {
+  appName: string;
+  displayName: string;
+  processIds: number[];
+  sessionCount: number;
+  /** Nível 0..1 vindo do Core Audio (ISimpleAudioVolume). */
+  volume: number;
+  muted: boolean;
+  isSystemSounds: boolean;
+  /** Data URI PNG do ícone do executável, quando o shell fornece. */
+  icon?: string | null;
+};
+export type AudioMixerInventory = {
+  deviceId?: string | null;
+  deviceName?: string | null;
+  masterVolume?: number | null;
+  masterMuted?: boolean | null;
+  apps: AudioMixerApp[];
   unavailableReason?: string | null;
 };
 export type RecentFile = {
@@ -952,6 +976,19 @@ export function FileList({
   );
 }
 
+function MixerSpeakerIcon({ muted }: { muted: boolean }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2 6v4h3l4 3V3L5 6H2z" fill="currentColor" />
+      {muted ? (
+        <path d="M11 6l4 4M15 6l-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      ) : (
+        <path d="M11.5 5.5a3.5 3.5 0 010 5M13.2 3.8a6 6 0 010 8.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      )}
+    </svg>
+  );
+}
+
 export function TrayFlyout({
   onOpenMain,
   isForeground = true,
@@ -980,6 +1017,15 @@ export function TrayFlyout({
   const [audioDevices, setAudioDevices] = useState<AudioDeviceInventory | null>(null);
   const [audioBusy, setAudioBusy] = useState<"input" | "output" | null>(null);
   const [audioError, setAudioError] = useState("");
+  // Volume Mixer: sempre recolhido por padrão; expande sob demanda e mostra
+  // os apps com sessão ativa na saída padrão atual.
+  const [mixerOpen, setMixerOpen] = useState(false);
+  const [mixer, setMixer] = useState<AudioMixerInventory | null>(null);
+  const [mixerLoading, setMixerLoading] = useState(false);
+  const [mixerError, setMixerError] = useState("");
+  const [mixerBusy, setMixerBusy] = useState<string | null>(null);
+  const mixerTimers = useRef(new Map<string, number>());
+  const mixerAdjusting = useRef(false);
   const [thermalSensors, setThermalSensors] = useState<ThermalSensor[]>([]);
 
   const updateSubscriptionProviders = (newProviders?: ProviderUsage[], scanStatus?: string) => {
@@ -1126,6 +1172,166 @@ export function TrayFlyout({
       setAudioBusy(null);
     }
   };
+
+  const sanitizeMixerLevel = (value: unknown): number | undefined =>
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.max(0, Math.min(1, value))
+      : undefined;
+
+  const loadMixer = useCallback(async (deviceId: string | null, silent = false) => {
+    if (!silent) {
+      setMixerLoading(true);
+      setMixerError("");
+    }
+    try {
+      const result = await invoke<AudioMixerInventory>("get_audio_mixer", {
+        deviceId,
+      });
+      if (result && Array.isArray(result.apps)) {
+        setMixer(result);
+        if (!silent) setMixerError("");
+      } else if (!silent) {
+        setMixerError("O Windows não retornou as sessões de áudio.");
+      }
+    } catch (error) {
+      if (!silent) {
+        setMixerError(typeof error === "string" ? error : "Não foi possível consultar o mixer de volume.");
+      }
+    } finally {
+      if (!silent) setMixerLoading(false);
+    }
+  }, []);
+
+  const mixerOutputId = audioDevices?.outputDefaultId ?? null;
+
+  const toggleMixer = () => {
+    const next = !mixerOpen;
+    setMixerOpen(next);
+    if (next) void loadMixer(mixerOutputId);
+  };
+
+  // Acompanha a saída padrão atual: trocou a saída com o mixer aberto,
+  // o mixer passa a controlar a nova saída.
+  useEffect(() => {
+    if (!mixerOpen || isForeground !== true) return;
+    void loadMixer(mixerOutputId, true);
+  }, [mixerOpen, isForeground, mixerOutputId, loadMixer]);
+
+  // Polling leve enquanto aberto; pausa durante ajustes e comandos para
+  // não brigar com o slider arrastado.
+  useEffect(() => {
+    if (!mixerOpen || isForeground !== true) return;
+    const timer = window.setInterval(() => {
+      if (mixerAdjusting.current || mixerBusy) return;
+      void loadMixer(mixerOutputId, true);
+    }, MIXER_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [mixerOpen, isForeground, mixerOutputId, mixerBusy, loadMixer]);
+
+  useEffect(() => () => {
+    mixerTimers.current.forEach(timer => window.clearTimeout(timer));
+    mixerTimers.current.clear();
+  }, []);
+
+  const scheduleMixerCommit = (key: string, commit: () => void) => {
+    const previous = mixerTimers.current.get(key);
+    if (previous) window.clearTimeout(previous);
+    mixerTimers.current.set(key, window.setTimeout(() => {
+      mixerTimers.current.delete(key);
+      mixerAdjusting.current = false;
+      commit();
+    }, MIXER_VOLUME_DEBOUNCE_MS));
+  };
+
+  const handleAppVolumeSlider = (appName: string, percent: number) => {
+    if (!Number.isFinite(percent)) return;
+    const level = Math.max(0, Math.min(1, percent / 100));
+    mixerAdjusting.current = true;
+    setMixer(previous => previous
+      ? { ...previous, apps: previous.apps.map(app => app.appName === appName ? { ...app, volume: level } : app) }
+      : previous);
+    scheduleMixerCommit(`vol:${appName}`, () => {
+      setMixerBusy(`vol:${appName}`);
+      void invoke<AudioMixerInventory>("set_audio_mixer_app_volume", {
+        deviceId: mixerOutputId,
+        appName,
+        volume: level,
+      }).then(result => {
+        if (result && Array.isArray(result.apps)) {
+          setMixer(result);
+          setMixerError("");
+        }
+      }).catch(error => {
+        setMixerError(typeof error === "string" ? error : "O Windows não permitiu ajustar o volume.");
+        void loadMixer(mixerOutputId, true);
+      }).finally(() => setMixerBusy(null));
+    });
+  };
+
+  const handleAppMuteToggle = (app: AudioMixerApp) => {
+    const next = !app.muted;
+    const key = `mute:${app.appName}`;
+    setMixer(previous => previous
+      ? { ...previous, apps: previous.apps.map(entry => entry.appName === app.appName ? { ...entry, muted: next } : entry) }
+      : previous);
+    setMixerBusy(key);
+    void invoke<AudioMixerInventory>("set_audio_mixer_app_muted", {
+      deviceId: mixerOutputId,
+      appName: app.appName,
+      muted: next,
+    }).then(result => {
+      if (result && Array.isArray(result.apps)) {
+        setMixer(result);
+        setMixerError("");
+      }
+    }).catch(error => {
+      setMixerError(typeof error === "string" ? error : "O Windows não permitiu silenciar o app.");
+      void loadMixer(mixerOutputId, true);
+    }).finally(() => setMixerBusy(null));
+  };
+
+  const handleMasterVolumeSlider = (percent: number) => {
+    if (!Number.isFinite(percent)) return;
+    const level = Math.max(0, Math.min(1, percent / 100));
+    mixerAdjusting.current = true;
+    setMixer(previous => previous ? { ...previous, masterVolume: level } : previous);
+    scheduleMixerCommit("__master_vol", () => {
+      setMixerBusy("__master_vol");
+      void invoke<AudioMixerInventory>("set_audio_mixer_master", {
+        deviceId: mixerOutputId,
+        volume: level,
+      }).then(result => {
+        if (result && Array.isArray(result.apps)) {
+          setMixer(result);
+          setMixerError("");
+        }
+      }).catch(error => {
+        setMixerError(typeof error === "string" ? error : "O Windows não permitiu ajustar o volume geral.");
+        void loadMixer(mixerOutputId, true);
+      }).finally(() => setMixerBusy(null));
+    });
+  };
+
+  const handleMasterMuteToggle = () => {
+    const next = !(mixer?.masterMuted ?? false);
+    setMixer(previous => previous ? { ...previous, masterMuted: next } : previous);
+    setMixerBusy("__master_mute");
+    void invoke<AudioMixerInventory>("set_audio_mixer_master", {
+      deviceId: mixerOutputId,
+      muted: next,
+    }).then(result => {
+      if (result && Array.isArray(result.apps)) {
+        setMixer(result);
+        setMixerError("");
+      }
+    }).catch(error => {
+      setMixerError(typeof error === "string" ? error : "O Windows não permitiu ajustar o volume geral.");
+      void loadMixer(mixerOutputId, true);
+    }).finally(() => setMixerBusy(null));
+  };
+
+  const masterLevel = sanitizeMixerLevel(mixer?.masterVolume);
+  const mixerAppCount = mixer && Array.isArray(mixer.apps) ? mixer.apps.length : 0;
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -1426,6 +1632,125 @@ export function TrayFlyout({
         )}
         {audioBusy && <p className="flyout-audio-status" role="status">Aplicando dispositivo de {audioBusy === "input" ? "entrada" : "saída"}…</p>}
         {audioError && <p className="flyout-audio-error" role="alert">{audioError}</p>}
+        <div className="flyout-mixer">
+          <button
+            type="button"
+            className="flyout-mixer-toggle"
+            aria-expanded={mixerOpen}
+            aria-controls="flyout-volume-mixer"
+            onClick={toggleMixer}
+          >
+            <span className="flyout-mixer-chevron" aria-hidden="true">{mixerOpen ? "▾" : "▸"}</span>
+            VOLUME MIXER
+            {mixerOpen && mixerAppCount > 0 && (
+              <small>{mixerAppCount} {mixerAppCount === 1 ? "APP" : "APPS"}</small>
+            )}
+          </button>
+          {mixerOpen && (
+            <div className="flyout-mixer-body" id="flyout-volume-mixer">
+              {mixerLoading && !mixer ? (
+                <p className="flyout-audio-status" role="status">Consultando apps com áudio…</p>
+              ) : mixerError ? (
+                <p className="flyout-audio-error" role="alert">{mixerError}</p>
+              ) : mixer?.unavailableReason ? (
+                <p className="flyout-audio-unavailable" role="status">{mixer.unavailableReason}</p>
+              ) : (
+                <>
+                  {masterLevel != null && (
+                    <div className="flyout-mixer-row flyout-mixer-master">
+                      <div className="flyout-mixer-head">
+                        <span className="flyout-mixer-name" title={mixer?.deviceName ?? "Saída atual"}>VOLUME GERAL</span>
+                        <span className="flyout-mixer-pct">{Math.round(masterLevel * 100)}%</span>
+                      </div>
+                      <div className="flyout-mixer-controls">
+                        <button
+                          type="button"
+                          className="flyout-mixer-mute"
+                          aria-pressed={mixer?.masterMuted ?? false}
+                          aria-label={`${mixer?.masterMuted ? "Ativar som da saída " : "Silenciar saída "}${mixer?.deviceName ?? "atual"}`}
+                          disabled={mixerBusy != null}
+                          onClick={handleMasterMuteToggle}
+                        >
+                          <MixerSpeakerIcon muted={mixer?.masterMuted ?? false} />
+                        </button>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={1}
+                          value={Math.round(masterLevel * 100)}
+                          aria-label={`Volume geral da saída ${mixer?.deviceName ?? "atual"}`}
+                          disabled={mixerBusy != null}
+                          onChange={event => handleMasterVolumeSlider(Number(event.target.value))}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {mixer && mixerAppCount > 0 ? (
+                    <ul className="flyout-mixer-list">
+                      {mixer.apps.map(app => {
+                        const level = sanitizeMixerLevel(app.volume) ?? 0;
+                        const label = app.displayName || app.appName;
+                        return (
+                          <li key={app.appName} className="flyout-mixer-row">
+                            <div className="flyout-mixer-head">
+                              <span className="flyout-mixer-icon" aria-hidden="true">
+                                {app.icon ? (
+                                  <img src={app.icon} alt="" loading="lazy" />
+                                ) : (
+                                  <MixerSpeakerIcon muted={app.muted} />
+                                )}
+                              </span>
+                              <span
+                                className="flyout-mixer-name"
+                                title={`${label}${app.sessionCount > 1 ? ` · ${app.sessionCount} sessões` : ""}`}
+                              >
+                                {label}
+                              </span>
+                              <span className="flyout-mixer-pct">{app.muted ? "MUDO" : `${Math.round(level * 100)}%`}</span>
+                            </div>
+                            <div className="flyout-mixer-controls">
+                              <button
+                                type="button"
+                                className="flyout-mixer-mute"
+                                aria-pressed={app.muted}
+                                aria-label={app.muted ? `Ativar som de ${label}` : `Silenciar ${label}`}
+                                disabled={mixerBusy != null}
+                                onClick={() => handleAppMuteToggle(app)}
+                              >
+                                <MixerSpeakerIcon muted={app.muted} />
+                              </button>
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                step={1}
+                                value={Math.round(level * 100)}
+                                aria-label={`Volume de ${label}`}
+                                disabled={mixerBusy != null}
+                                onChange={event => handleAppVolumeSlider(app.appName, Number(event.target.value))}
+                              />
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <p className="flyout-audio-unavailable" role="status">Nenhum app com áudio ativo nesta saída.</p>
+                  )}
+                  <button
+                    type="button"
+                    className="flyout-mixer-refresh"
+                    disabled={mixerLoading}
+                    onClick={() => void loadMixer(mixerOutputId)}
+                  >
+                    ⟳ ATUALIZAR
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="flyout-quotas" aria-label="Cotas de assinaturas de IA">

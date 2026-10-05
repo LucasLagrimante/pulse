@@ -442,6 +442,129 @@ describe("Formatters and Components", () => {
       });
     });
 
+    it("keeps the volume mixer collapsed by default and never queries sessions", async () => {
+      vi.clearAllMocks();
+      vi.mocked(invoke).mockImplementation((command: string) => {
+        if (command === "get_audio_devices") {
+          return Promise.resolve({
+            input: [],
+            output: [{ id: "speaker-1", name: "Alto-falantes", isDefault: true }],
+            inputDefaultId: null,
+            outputDefaultId: "speaker-1",
+          }) as never;
+        }
+        if (command === "get_system_overview") {
+          return Promise.resolve({
+            cpuPercent: 10,
+            memoryUsedGb: 4,
+            memoryTotalGb: 16,
+            diskUsedGb: 100,
+            diskTotalGb: 500,
+            topProcesses: [],
+          }) as never;
+        }
+        return Promise.resolve() as never;
+      });
+
+      render(<TrayFlyout onOpenMain={vi.fn()} />);
+      const toggle = await screen.findByRole("button", { name: /VOLUME MIXER/ });
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("slider", { name: /Volume de / })).not.toBeInTheDocument();
+      expect(screen.queryByRole("slider", { name: /Volume geral/ })).not.toBeInTheDocument();
+      expect(invoke).not.toHaveBeenCalledWith("get_audio_mixer", expect.anything());
+    });
+
+    it("expands the volume mixer and adjusts per-app volume on the current output", async () => {
+      vi.clearAllMocks();
+      const mixerInventory = {
+        deviceId: "speaker-1",
+        deviceName: "Alto-falantes",
+        masterVolume: 0.8,
+        masterMuted: false,
+        apps: [
+          { appName: "chrome.exe", displayName: "Google Chrome", processIds: [1234], sessionCount: 1, volume: 0.5, muted: false, isSystemSounds: false, icon: "data:image/png;base64,iVBORw0KGgo=" },
+          { appName: "spotify.exe", displayName: "Spotify", processIds: [5678, 5679], sessionCount: 2, volume: 1, muted: true, isSystemSounds: false },
+        ],
+        unavailableReason: null,
+      };
+      vi.mocked(invoke).mockImplementation((command: string, args?: unknown) => {
+        if (command === "get_audio_devices") {
+          return Promise.resolve({
+            input: [],
+            output: [{ id: "speaker-1", name: "Alto-falantes", isDefault: true }],
+            inputDefaultId: null,
+            outputDefaultId: "speaker-1",
+          }) as never;
+        }
+        if (command === "get_audio_mixer") {
+          expect(args).toEqual({ deviceId: "speaker-1" });
+          return Promise.resolve(mixerInventory) as never;
+        }
+        if (command === "set_audio_mixer_app_volume") {
+          expect(args).toEqual({ deviceId: "speaker-1", appName: "chrome.exe", volume: 0.75 });
+          return Promise.resolve({
+            ...mixerInventory,
+            apps: mixerInventory.apps.map(app => app.appName === "chrome.exe" ? { ...app, volume: 0.75 } : app),
+          }) as never;
+        }
+        if (command === "set_audio_mixer_app_muted") {
+          expect(args).toEqual({ deviceId: "speaker-1", appName: "spotify.exe", muted: false });
+          return Promise.resolve({
+            ...mixerInventory,
+            apps: mixerInventory.apps.map(app => app.appName === "spotify.exe" ? { ...app, muted: false } : app),
+          }) as never;
+        }
+        if (command === "get_system_overview") {
+          return Promise.resolve({
+            cpuPercent: 10,
+            memoryUsedGb: 4,
+            memoryTotalGb: 16,
+            diskUsedGb: 100,
+            diskTotalGb: 500,
+            topProcesses: [],
+          }) as never;
+        }
+        return Promise.resolve() as never;
+      });
+
+      render(<TrayFlyout onOpenMain={vi.fn()} />);
+      await waitFor(() => {
+        expect(screen.getByRole("combobox", { name: "Dispositivo de saída padrão" })).toHaveValue("speaker-1");
+      });
+
+      const toggle = await screen.findByRole("button", { name: /VOLUME MIXER/ });
+      fireEvent.click(toggle);
+      expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+      const chromeSlider = await screen.findByRole("slider", { name: "Volume de Google Chrome" });
+      expect(chromeSlider).toHaveValue("50");
+      expect(screen.getByRole("slider", { name: "Volume de Spotify" })).toHaveValue("100");
+      expect(screen.getByRole("slider", { name: "Volume geral da saída Alto-falantes" })).toHaveValue("80");
+      expect(screen.getByText("MUDO")).toBeInTheDocument();
+      // Ícone real do Chrome; Spotify sem ícone usa o fallback de alto-falante.
+      const mixerIcons = document.querySelectorAll(".flyout-mixer-icon img");
+      expect(mixerIcons).toHaveLength(1);
+      expect(mixerIcons[0]?.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
+
+      fireEvent.change(chromeSlider, { target: { value: "75" } });
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith("set_audio_mixer_app_volume", {
+          deviceId: "speaker-1",
+          appName: "chrome.exe",
+          volume: 0.75,
+        });
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Ativar som de Spotify" }));
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith("set_audio_mixer_app_muted", {
+          deviceId: "speaker-1",
+          appName: "spotify.exe",
+          muted: false,
+        });
+      });
+    });
+
     it("retains cached AI quota cards during background scan without flickering", async () => {
       const cachedProviders = [
         {

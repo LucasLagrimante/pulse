@@ -2646,6 +2646,198 @@ h1 {
 .flyout-audio-error { margin-top: 4px; color: #ff9274; }
 .flyout-audio-status { margin-top: 4px; color: #9fc6d8; }
 
+.flyout-mixer {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.flyout-mixer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid #3b464d;
+  border-radius: 4px;
+  background: transparent;
+  color: #9099a3;
+  font: .6rem "Cascadia Mono", Consolas, monospace;
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+
+.flyout-mixer-toggle:hover {
+  border-color: #8da9bf;
+  color: #e0e4df;
+}
+
+.flyout-mixer-toggle:focus-visible {
+  outline: 2px solid #8da9bf;
+  outline-offset: 1px;
+}
+
+.flyout-mixer-chevron {
+  font-size: .62rem;
+  line-height: 1;
+}
+
+.flyout-mixer-toggle small {
+  margin-left: auto;
+  font-size: .54rem;
+  opacity: .85;
+}
+
+.flyout-mixer-body {
+  display: grid;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.flyout-mixer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 168px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.flyout-mixer-row {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.flyout-mixer-master {
+  padding-bottom: 6px;
+  border-bottom: 1px solid #272d29;
+}
+
+.flyout-mixer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.flyout-mixer-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid #3b464d;
+  border-radius: 6px;
+  background: #171b19;
+  overflow: hidden;
+}
+
+.flyout-mixer-icon img {
+  display: block;
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.flyout-mixer-icon svg {
+  width: 12px;
+  height: 12px;
+  color: #9fc6d8;
+}
+
+.flyout-mixer-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #dfe4db;
+  font-size: .62rem;
+}
+
+.flyout-mixer-pct {
+  flex-shrink: 0;
+  color: #8da9bf;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .62rem;
+  font-weight: 600;
+}
+
+.flyout-mixer-controls {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.flyout-mixer-mute {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #3b464d;
+  border-radius: 3px;
+  background: transparent;
+  color: #9fc6d8;
+  cursor: pointer;
+}
+
+.flyout-mixer-mute:hover:not(:disabled) {
+  border-color: #8da9bf;
+  color: #e0e4df;
+}
+
+.flyout-mixer-mute[aria-pressed="true"] {
+  border-color: #b7614b;
+  color: #ff9274;
+}
+
+.flyout-mixer-mute:disabled {
+  opacity: .4;
+  cursor: wait;
+}
+
+.flyout-mixer-controls input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: #e8a33d;
+  cursor: pointer;
+}
+
+.flyout-mixer-controls input[type="range"]:disabled {
+  opacity: .4;
+  cursor: wait;
+}
+
+.flyout-mixer-refresh {
+  justify-self: end;
+  padding: 2px 8px;
+  border: 1px solid #3b464d;
+  border-radius: 4px;
+  background: transparent;
+  color: #9099a3;
+  font: .56rem "Cascadia Mono", Consolas, monospace;
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+
+.flyout-mixer-refresh:hover:not(:disabled) {
+  border-color: #8da9bf;
+  color: #e0e4df;
+}
+
+.flyout-mixer-refresh:disabled {
+  opacity: .5;
+  cursor: wait;
+}
+
 .flyout-quotas {
   flex-shrink: 0;
   padding: 4px 0;

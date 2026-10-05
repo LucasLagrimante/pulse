@@ -26,6 +26,21 @@ fn icon_cache() -> &'static Mutex<HashMap<String, Option<String>>> {
 /// forneceu um ícone — nunca um ícone fictício.
 pub fn icon_for_command(command: &str) -> Option<String> {
     let path = resolve_executable(command)?;
+    icon_for_resolved_path(&path)
+}
+
+/// Retorna um data URI PNG com o ícone do executável em `path`.
+///
+/// `None` = sem ícone disponível (nunca fictício). Compartilha o cache de
+/// `icon_for_command`, então é barato chamar em polling (ex: mixer).
+pub fn icon_for_path(path: &Path) -> Option<String> {
+    if !path.is_file() {
+        return None;
+    }
+    icon_for_resolved_path(path)
+}
+
+fn icon_for_resolved_path(path: &Path) -> Option<String> {
     let key = path.to_string_lossy().to_lowercase();
 
     #[cfg(windows)]
@@ -36,7 +51,7 @@ pub fn icon_for_command(command: &str) -> Option<String> {
             }
         }
 
-        let icon = extract_icon_data_uri(&path);
+        let icon = extract_icon_data_uri(path);
 
         if let Ok(mut cache) = icon_cache().lock() {
             cache.insert(key, icon.clone());
