@@ -2460,7 +2460,10 @@ mod tests {
     #[test]
     fn parses_antigravity_usage_from_the_local_cli() {
         let windows = parse_antigravity_cli_usage(
-            "Gemini Models\tWeekly Limit Remaining\t52%\t2026-09-18T01:08:10Z\nGemini Models\tFive Hour Limit Remaining\t100%\t2026-09-15T20:22:49Z\nClaude and GPT models\tWeekly Limit Remaining\t66%\t2026-09-18T03:29:34Z",
+            // Datas no futuro de propósito: o parser marca janela expirada
+            // como 100% restante, e um carimbo no passado faria o teste passar
+            // pelo motivo errado (ou falhar todo dia).
+            "Gemini Models\tWeekly Limit Remaining\t52%\t2099-09-18T01:08:10Z\nGemini Models\tFive Hour Limit Remaining\t100%\t2099-09-15T20:22:49Z\nClaude and GPT models\tWeekly Limit Remaining\t66%\t2099-09-18T03:29:34Z",
         );
         assert_eq!(windows.len(), 3);
         assert_eq!(windows[0].remaining_percent, Some(52.0));
