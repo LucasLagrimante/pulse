@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Component, type ErrorInfo, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Component, type ErrorInfo, lazy, type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import "./App.css";
 import "./identity.css";
@@ -13,11 +13,15 @@ import {
   MiniUsageBar,
   SparklineChart,
 } from "./Charts";
-import { DiskAnalyzer } from "./DiskAnalyzer";
-import { DiskCleanup } from "./DiskCleanup";
+// Módulos pesados em chunks lazy: o flyout do tray e a primeira pintura nunca
+// os baixam/executam — só carregam ao abrir a aba correspondente. Sem perda
+// funcional: o fallback reutiliza o loading padrão do app.
+const DiskAnalyzer = lazy(() => import("./DiskAnalyzer").then(module => ({ default: module.DiskAnalyzer })));
+const DiskCleanup = lazy(() => import("./DiskCleanup").then(module => ({ default: module.DiskCleanup })));
+const SubscriptionUsage = lazy(() => import("./SubscriptionUsage").then(module => ({ default: module.SubscriptionUsage })));
+const ServicesHub = lazy(() => import("./ServicesHub").then(module => ({ default: module.ServicesHub })));
+const UninstallHub = lazy(() => import("./UninstallHub").then(module => ({ default: module.UninstallHub })));
 import { ensureDiskAnalyzerLoaded } from "./diskScanStore";
-import { ServicesHub } from "./ServicesHub";
-import { UninstallHub } from "./UninstallHub";
 import { formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, type ProviderUsage } from "./subscriptionHelpers";
 import { ProviderIcon } from "./ProviderIcon";
 
@@ -3272,10 +3276,12 @@ function App() {
                     overflow: "hidden",
                   }}
                 >
-                  <DiskAnalyzer
-                    overviewDiskUsedGb={overview?.diskUsedGb}
-                    overviewDiskTotalGb={overview?.diskTotalGb}
-                  />
+                  <Suspense fallback={<PulseLoading compact />}>
+                    <DiskAnalyzer
+                      overviewDiskUsedGb={overview?.diskUsedGb}
+                      overviewDiskTotalGb={overview?.diskTotalGb}
+                    />
+                  </Suspense>
                 </div>
 
                 <div
@@ -3320,7 +3326,9 @@ function App() {
                     overflow: "hidden",
                   }}
                 >
-                  <DiskCleanup />
+                  <Suspense fallback={<PulseLoading compact />}>
+                    <DiskCleanup />
+                  </Suspense>
                 </div>
               </section>
             )}
@@ -3461,11 +3469,23 @@ function App() {
               </section>
             )}
 
-            {activeArea === "Serviços e atualizações" && <ServicesHub />}
+            {activeArea === "Serviços e atualizações" && (
+              <Suspense fallback={<PulseLoading compact />}>
+                <ServicesHub />
+              </Suspense>
+            )}
 
-            {activeArea === "Cotas de IA" && <SubscriptionUsage />}
+            {activeArea === "Cotas de IA" && (
+              <Suspense fallback={<PulseLoading compact />}>
+                <SubscriptionUsage />
+              </Suspense>
+            )}
 
-            {activeArea === "Desinstalar programas" && <UninstallHub />}
+            {activeArea === "Desinstalar programas" && (
+              <Suspense fallback={<PulseLoading compact />}>
+                <UninstallHub />
+              </Suspense>
+            )}
 
             {activeArea === "Debug" && (
               <section className="module-dashboard debug-dashboard">
