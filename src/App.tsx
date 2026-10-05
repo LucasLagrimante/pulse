@@ -17,6 +17,7 @@ import { DiskAnalyzer } from "./DiskAnalyzer";
 import { DiskCleanup } from "./DiskCleanup";
 import { ensureDiskAnalyzerLoaded } from "./diskScanStore";
 import { ServicesHub } from "./ServicesHub";
+import { UninstallHub } from "./UninstallHub";
 import { formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, SubscriptionUsage, type ProviderUsage } from "./SubscriptionUsage";
 import { ProviderIcon } from "./ProviderIcon";
 
@@ -29,6 +30,9 @@ const navigationItems = [
   "Serviços e atualizações",
   "Cotas de IA",
   "Debug",
+  // Inserido ao final de propósito: `ModuleIcon` é posicional, e adicionar no
+  // meio trocaria o ícone de todos os itens seguintes.
+  "Desinstalar programas",
 ];
 const INITIAL_BOOT_MINIMUM_MS = 2200;
 const INITIAL_CHART_SKELETON_MS = INITIAL_BOOT_MINIMUM_MS + 850;
@@ -349,6 +353,11 @@ const copy: Record<string, { eyebrow: string; title: string; intro: string }> = 
     eyebrow: "SERVIÇOS E ATUALIZAÇÕES",
     title: "Serviços ativos e aplicativos desatualizados",
     intro: "Serviços do Windows lidos direto do gerenciador do sistema e atualizações pendentes pela fonte oficial do Windows.",
+  },
+  "Desinstalar programas": {
+    eyebrow: "DESINSTALAR PROGRAMAS",
+    title: "Remoção com rastreamento de resíduos",
+    intro: "Desinstalador padrão do fabricante, com varredura conservadora do registro e das pastas que sobraram.",
   },
   "Cotas de IA": {
     eyebrow: "COTAS DE IA",
@@ -3455,6 +3464,8 @@ function App() {
             {activeArea === "Serviços e atualizações" && <ServicesHub />}
 
             {activeArea === "Cotas de IA" && <SubscriptionUsage />}
+
+            {activeArea === "Desinstalar programas" && <UninstallHub />}
 
             {activeArea === "Debug" && (
               <section className="module-dashboard debug-dashboard">

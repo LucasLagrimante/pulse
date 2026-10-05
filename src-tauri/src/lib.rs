@@ -19,6 +19,7 @@ pub mod storage;
 pub mod subscription_usage;
 pub mod system_overview;
 pub mod tray;
+pub mod uninstall;
 
 use tauri::{Emitter, Manager};
 
@@ -137,7 +138,18 @@ pub fn run() {
             subscription_usage::clear_opencode_go_api_key,
             subscription_usage::set_provider_enabled,
             subscription_usage::set_provider_order,
-            quota_history::get_quota_history
+            quota_history::get_quota_history,
+            // Comandos reexportados em `uninstall::mod` nao podem ser
+            // registrados: o `#[tauri::command]` gera itens ocultos
+            // (`__cmd__*`) no modulo de origem, e o handler so os encontra no
+            // caminho completo.
+            uninstall::installed::list_installed_apps,
+            uninstall::get_uninstall_capabilities,
+            uninstall::create_system_restore_point,
+            uninstall::session::start_uninstall_session,
+            uninstall::session::run_app_uninstaller,
+            uninstall::session::cleanup_uninstall_residue,
+            uninstall::session::cancel_uninstall_session
         ])
         .run(tauri::generate_context!())
         .expect("error while running Pulse");
