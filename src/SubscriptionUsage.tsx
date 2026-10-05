@@ -1,47 +1,50 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEventHandler } from "react";
 import { ModuleIcon } from "./Identity";
 import { ProviderIcon } from "./ProviderIcon";
 import { CREDITS_WINDOW_ID, QuotaHistoryButton } from "./QuotaHistory";
-
-export type QuotaWindow = {
-  id: string;
-  label: string;
-  usedPercent?: number | null;
-  remainingPercent?: number | null;
-  windowMinutes?: number | null;
-  resetsAtUnixSeconds?: number | null;
-  resetDescription?: string | null;
-  unavailableReason?: string | null;
-};
-
-export type ProviderUsage = {
-  id: "claude" | "codex" | "antigravity" | string;
-  provider: string;
-  subtitle: string;
-  plan?: string | null;
-  environment?: string | null;
-  status: "available" | "unavailable" | string;
-  windows: QuotaWindow[];
-  creditsRemaining?: number | null;
-  creditsTotal?: number | null;
-  creditsUsed?: number | null;
-  resetCreditsAvailable?: number | null;
-  sampledAtUnixMs?: number | null;
-  source: string;
-  unavailableReason?: string | null;
-  disabled?: boolean;
-};
-
-export type SubscriptionUsageReport = {
-  providers: ProviderUsage[];
-  sampledAtUnixMs: number;
-  durationMs: number;
-  privacyNote: string;
-  scanStatus?: "running" | "ready" | "error" | string;
-};
+import {
+  formatReset,
+  formatUsd,
+  hasMeasuredQuota,
+  isProviderDisabled,
+  isWindowChartEligible,
+  keyManagedProvider,
+  measuredNumber,
+  planLabel,
+  reorderIds,
+  safePercent,
+} from "./subscriptionHelpers";
+import type {
+  ProviderUsage,
+  QuotaWindow,
+  SubscriptionUsageReport,
+} from "./subscriptionHelpers";
+// Re-exporta os helpers puros para compatibilidade com importadores
+// existentes (testes e módulos que ainda referenciam este arquivo).
+export {
+  formatReset,
+  formatUsd,
+  hasMeasuredQuota,
+  isProviderDisabled,
+  isWindowChartEligible,
+  keyManagedProvider,
+  measuredNumber,
+  measuredWindowMinutes,
+  planLabel,
+  reorderIds,
+  safePercent,
+  selectFlyoutQuotaWindows,
+  shortQuotaWindowLabel,
+} from "./subscriptionHelpers";
+export type {
+  KeyManagedProvider,
+  ProviderUsage,
+  QuotaWindow,
+  SubscriptionUsageReport,
+} from "./subscriptionHelpers";
 
 type SubscriptionSettings = {
   openrouterConfigured: boolean;
@@ -51,102 +54,6 @@ type SubscriptionSettings = {
   disabledProviders?: string[];
   providerOrder?: string[];
 };
-
-export function safePercent(value: number | null | undefined): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  return Math.max(0, Math.min(100, value));
-}
-
-export function measuredWindowMinutes(window: QuotaWindow): number | null {
-  return typeof window.windowMinutes === "number" && Number.isFinite(window.windowMinutes) && window.windowMinutes > 0
-    ? window.windowMinutes
-    : null;
-}
-
-export function shortQuotaWindowLabel(window: QuotaWindow): string {
-  const minutes = measuredWindowMinutes(window);
-  if (minutes != null) {
-    if (minutes % 1440 === 0) return `${Math.round(minutes / 1440)}d`;
-    if (minutes % 60 === 0) return `${Math.round(minutes / 60)}h`;
-    return `${Math.round(minutes)}min`;
-  }
-  const label = (window.label || "").toLowerCase();
-  const id = (window.id || "").toLowerCase();
-  if (label.includes("sess") || id.includes("sess") || label.includes("5h") || label.includes("5 hora")) return "5h";
-  if (label.includes("sem") || id.includes("week") || label.includes("7d") || label.includes("7 dia")) return "7d";
-  if (label.includes("mensal") || id.includes("month") || label.includes("30d")) return "30d";
-  const fallback = window.label?.trim() || "Cota";
-  return fallback.length > 6 ? `${fallback.slice(0, 4)}…` : fallback;
-}
-
-export function selectFlyoutQuotaWindows(windows: QuotaWindow[], limit = 2): QuotaWindow[] {
-  const measured = (Array.isArray(windows) ? windows : []).filter(
-    window => safePercent(window.remainingPercent) != null && !window.unavailableReason,
-  );
-  const byWindow = new Map<string, QuotaWindow>();
-  for (const window of measured) {
-    const minutes = measuredWindowMinutes(window);
-    const key = minutes != null ? `m${minutes}` : `l${window.label || window.id || "cota"}`;
-    const current = byWindow.get(key);
-    const remaining = safePercent(window.remainingPercent) ?? 100;
-    const currentRemaining = current ? safePercent(current.remainingPercent) ?? 100 : null;
-    if (currentRemaining == null || remaining < currentRemaining) {
-      byWindow.set(key, window);
-    }
-  }
-  return [...byWindow.values()]
-    .sort((a, b) => (measuredWindowMinutes(a) ?? Number.MAX_SAFE_INTEGER) - (measuredWindowMinutes(b) ?? Number.MAX_SAFE_INTEGER))
-    .slice(0, limit);
-}
-
-export function isWindowChartEligible(window: QuotaWindow): boolean {
-  return safePercent(window.remainingPercent) != null && !window.unavailableReason;
-}
-
-export function formatReset(timestampSeconds: number | null | undefined, nowMs = Date.now()): string {
-  if (typeof timestampSeconds !== "number" || !Number.isFinite(timestampSeconds)) return "Reset não informado";
-  const difference = timestampSeconds * 1000 - nowMs;
-  if (difference <= 0) return "Ciclo renovado";
-  const totalMinutes = Math.max(1, Math.ceil(difference / 60_000));
-  const days = Math.floor(totalMinutes / 1440);
-  const hours = Math.floor((totalMinutes % 1440) / 60);
-  const minutes = totalMinutes % 60;
-  if (days > 0) return `Reseta em ${days}d ${hours}h`;
-  if (hours > 0) return `Reseta em ${hours}h ${minutes}min`;
-  return `Reseta em ${minutes}min`;
-}
-
-function planLabel(plan: string | null | undefined) {
-  if (!plan?.trim()) return null;
-  return plan.split("_").map(part => part.charAt(0).toLocaleUpperCase("pt-BR") + part.slice(1)).join(" ");
-}
-
-function measuredNumber(value: number | null | undefined): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
-}
-
-export function hasMeasuredQuota(provider: ProviderUsage): boolean {
-  const windows = Array.isArray(provider.windows) ? provider.windows : [];
-  const hasWindow = windows.some(window => safePercent(window.remainingPercent) != null && !window.unavailableReason);
-  return provider.status === "available" && (hasWindow || measuredNumber(provider.creditsRemaining) != null);
-}
-
-export type KeyManagedProvider = "openrouter" | "opencode-go";
-
-export function keyManagedProvider(provider: ProviderUsage): KeyManagedProvider | null {
-  return provider.id === "openrouter" || provider.id === "opencode-go" ? provider.id : null;
-}
-
-export function isProviderDisabled(provider: ProviderUsage, disabledIds?: Set<string>): boolean {
-  return provider.disabled === true || (disabledIds?.has(provider.id) ?? false);
-}
-
-export function formatUsd(value: number | null | undefined): string {
-  const measured = measuredNumber(value);
-  return measured == null
-    ? "Indisponível"
-    : `$ ${measured.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
-}
 
 function formatHistoryCredits(providerId: string): (value: number) => string {
   if (providerId === "openrouter") return value => formatUsd(value);
@@ -184,16 +91,6 @@ function GripIcon() {
       <circle cx="15" cy="18" r="1.5" />
     </svg>
   );
-}
-
-export function reorderIds(ids: string[], fromId: string, toId: string): string[] | null {
-  const from = ids.indexOf(fromId);
-  const to = ids.indexOf(toId);
-  if (from < 0 || to < 0 || from === to) return null;
-  const next = [...ids];
-  next.splice(from, 1);
-  next.splice(to, 0, fromId);
-  return next;
 }
 
 function QuotaMeter({ quota, providerId, providerName }: { quota: QuotaWindow; providerId: string; providerName: string }) {
@@ -405,7 +302,7 @@ function QuotaLoading() {
   return (
     <div className="quota-loading-region">
       <div className="disk-panel-loading" role="status" aria-live="polite" aria-label="Consultando cotas locais">
-        <span className="disk-panel-loading-mark"><ModuleIcon index={5} /></span>
+        <span className="disk-panel-loading-mark"><ModuleIcon index={6} /></span>
         <div>
           <strong>CARREGANDO COTAS LOCAIS</strong>
           <span>Consultando fontes oficiais e credenciais locais…</span>
@@ -440,14 +337,19 @@ export function SubscriptionUsage() {
   const [order, setOrder] = useState<string[]>([]);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [orderBusy, setOrderBusy] = useState(false);
+  // O componente é lazy e desmonta ao trocar de aba: o loop de polling abaixo
+  // (até ~12 s) não deve continuar invocando o backend nem setar estado morto.
+  const disposedRef = useRef(false);
+  useEffect(() => () => { disposedRef.current = true; }, []);
 
   const load = useCallback(async (forceRefresh: boolean) => {
     setLoading(true);
     setFailure(null);
     try {
       let result: SubscriptionUsageReport | null = null;
-      for (let attempt = 0; attempt < 18; attempt += 1) {
+      for (let attempt = 0; attempt < 18 && !disposedRef.current; attempt += 1) {
         const next = await invoke<SubscriptionUsageReport>("get_subscription_usage", { forceRefresh: forceRefresh && attempt === 0 });
+        if (disposedRef.current) return;
         if (!next || !Array.isArray(next.providers)) throw new Error("Resposta local inválida");
         result = next;
         setReport(next);
@@ -457,11 +359,12 @@ export function SubscriptionUsage() {
         if (next.scanStatus !== "running") break;
         await new Promise(resolve => window.setTimeout(resolve, 700));
       }
+      if (disposedRef.current) return;
       if (!result) throw new Error("Resposta local inválida");
     } catch {
-      setFailure("O backend local não conseguiu consultar as assinaturas.");
+      if (!disposedRef.current) setFailure("O backend local não conseguiu consultar as assinaturas.");
     } finally {
-      setLoading(false);
+      if (!disposedRef.current) setLoading(false);
     }
   }, []);
 

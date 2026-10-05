@@ -18,7 +18,7 @@ import { DiskCleanup } from "./DiskCleanup";
 import { ensureDiskAnalyzerLoaded } from "./diskScanStore";
 import { ServicesHub } from "./ServicesHub";
 import { UninstallHub } from "./UninstallHub";
-import { formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, SubscriptionUsage, type ProviderUsage } from "./SubscriptionUsage";
+import { formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, type ProviderUsage } from "./subscriptionHelpers";
 import { ProviderIcon } from "./ProviderIcon";
 
 const navigationItems = [
