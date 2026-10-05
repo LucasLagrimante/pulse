@@ -1206,13 +1206,39 @@ async fn run_disk_scan(
             } else {
                 "Varredura concluída".to_owned()
             },
-            partial_result: Some(result.clone()),
+            // Single-copy: o progresso final não carrega a árvore. O último
+            // snapshot do streaming já está na tela e o resultado final chega
+            // via SCAN_STATE/cache + reconciliação do frontend.
+            partial_result: None,
         };
+        // Persiste e publica em memória ANTES de emitir o progresso final, para
+        // que a reconciliação disparada pelo evento já leia o cache novo.
+        // (Roda na thread blocking: serializar o JSON aqui não trava o executor.)
+        let cache = CachedDiskScan {
+            result: result.clone(),
+            completed_at_unix_ms: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+                .unwrap_or(0),
+            duration_ms: scan_started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+            is_partial,
+            items_scanned: items_scanned.load(Ordering::Relaxed),
+            stop_reason: stop_reason.clone(),
+            tree_version: CACHE_VERSION,
+        };
+        // Uma falha ao salvar não invalida a análise recém-concluída: nesse
+        // caso raro o resultado final continua disponível via SCAN_STATE.
+        let persisted = persist_disk_scan(&cache).is_ok();
+        store_cached_scan_in_memory(&cache);
+        drop(cache);
+        let final_items_scanned = items_scanned.load(Ordering::Relaxed);
         set_scan_progress(final_progress.clone());
         set_scan_state(DiskScanState {
             is_scanning: false,
             progress: Some(final_progress.clone()),
-            result: Some(result.clone()),
+            // Single-copy: o resultado final vive no PERSISTED_CACHE (e no
+            // disco). Evita a terceira cópia permanente da árvore em RAM.
+            result: if persisted { None } else { Some(result.clone()) },
             error: None,
         });
         IS_SCANNING.store(false, Ordering::SeqCst);
@@ -1222,7 +1248,7 @@ async fn run_disk_scan(
         (
             result,
             is_partial,
-            items_scanned.load(Ordering::Relaxed),
+            final_items_scanned,
             stop_reason,
         )
     })
@@ -1239,24 +1265,11 @@ async fn run_disk_scan(
         message
     })?;
 
-    let (result, is_partial, items_scanned, stop_reason) = result;
-    let completed_at_unix_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
-        .unwrap_or(0);
-    let cache = CachedDiskScan {
-        result: result.clone(),
-        completed_at_unix_ms,
-        duration_ms: scan_started.elapsed().as_millis().min(u64::MAX as u128) as u64,
-        is_partial,
-        items_scanned,
-        stop_reason,
-        tree_version: CACHE_VERSION,
-    };
-    // Uma falha ao salvar não invalida a análise recém-concluída.
-    let _ = persist_disk_scan(&cache);
-    store_cached_scan_in_memory(&cache);
+    let (result, _is_partial, _items_scanned, _stop_reason) = result;
 
+    // O resultado já foi persistido em disco e publicado em PERSISTED_CACHE
+    // dentro da thread blocking antes do progresso final; aqui só devolve a
+    // árvore ao chamador do comando, sem clones adicionais.
     Ok(result)
 }
 
