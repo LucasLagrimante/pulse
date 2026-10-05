@@ -262,12 +262,12 @@ fn get_quota_history_sync(
         .filter(|point| {
             provider_id
                 .as_deref()
-                .map_or(true, |id| point.provider_id == id)
+                .is_none_or(|id| point.provider_id == id)
         })
         .filter(|point| {
             window_id
                 .as_deref()
-                .map_or(true, |id| point.window_id == id)
+                .is_none_or(|id| point.window_id == id)
         })
         .collect();
     points.sort_by_key(|point| point.sampled_at_unix_ms);
