@@ -1051,11 +1051,20 @@ fn query_antigravity_from_wsl_cli() -> Option<ProviderUsage> {
 }
 
 fn http_client() -> Result<Client, String> {
-    Client::builder()
+    // Single-client: reqwest::Client já é um pool Arc internamente; construir
+    // um por chamada recriava pools de conexão e TLS a cada scan. O clone aqui
+    // é barato (Arc) e preserva os mesmos timeouts em todas as chamadas.
+    static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
+    if let Some(client) = HTTP_CLIENT.get() {
+        return Ok(client.clone());
+    }
+    let client = Client::builder()
         .connect_timeout(Duration::from_secs(2))
         .timeout(HTTP_TIMEOUT)
         .build()
-        .map_err(|_| "cliente HTTP indisponível".into())
+        .map_err(|_| "cliente HTTP indisponível".to_owned())?;
+    let _ = HTTP_CLIENT.set(client.clone());
+    Ok(client)
 }
 
 fn query_claude() -> ProviderUsage {
