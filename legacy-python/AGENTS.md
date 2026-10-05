@@ -1,6 +1,14 @@
-# CLAUDE.md
+# AGENTS.md
 
 Guia para quem (humano ou IA) for mexer neste projeto.
+
+## Arquivo canônico (leia antes de criar qualquer outro)
+
+Este `AGENTS.md` é o único arquivo de instrução de agente **desta pasta**. O do repositório
+está na raiz (`../AGENTS.md`).
+
+Proibido criar `CLAUDE.md`, `GEMINI.md` aqui, e **proibido symlink** para o `AGENTS.md`.
+As ferramentas leem `AGENTS.md` nativamente, então o alias só gerava edição no arquivo errado.
 
 ## O que é
 
