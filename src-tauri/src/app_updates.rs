@@ -1,0 +1,810 @@
+//! Atualizações pendentes de aplicativos via Gerenciador de Pacotes do Windows.
+//!
+//! O `winget list --upgrade-available` devolve uma tabela cujas colunas são
+//! **localizadas** e cujas larguras variam com o conteúdo, então a leitura é
+//! feita pelas posições dos cabeçalhos da própria saída — nunca por índice
+//! fixo de coluna nem por posição de caractere presumida.
+//!
+//! O comando leva ~5 s e consulta a fonte remota, então:
+//! - roda em `spawn_blocking` (nunca bloqueia a thread de UI);
+//! - usa subprocesso sem janela (`crate::process::hidden_command`);
+//! - só é acionado sob demanda, nunca no ciclo de polling da Visão geral;
+//! - mantém cache longo (30 min) — atualização de app não muda por minuto.
+
+use serde::{Deserialize, Serialize};
+use std::io::BufRead;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter};
+
+/// Evento emitido durante a instalação, uma vez por linha de saída do winget.
+pub const UPGRADE_PROGRESS_EVENT: &str = "winget-upgrade-progress";
+
+/// Id reservado para a atualização em lote (`winget upgrade --all`): o
+/// progresso pertence à operação inteira, não a um pacote específico.
+pub const ALL_PACKAGES_ID: &str = "*";
+
+/// Progresso de uma atualização. `phase` é `started`, `log`, `finished`,
+/// `failed` ou `timeout`; `line` traz o texto literal do winget.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpgradeProgress {
+    pub id: String,
+    pub phase: String,
+    pub line: String,
+}
+
+/// TTL generoso: `winget` consome rede e ~5 s de CPU.
+const UPDATES_CACHE_TTL: Duration = Duration::from_secs(30 * 60);
+/// Tempo máximo para o `winget` responder. Acima disso a lista é declarada
+/// indisponível em vez de deixar a UI esperando para sempre.
+const WINGET_TIMEOUT: Duration = Duration::from_secs(90);
+/// Colunas da tabela do winget: Nome, ID, Versão, Disponível, Origem.
+const EXPECTED_COLUMNS: usize = 5;
+/// Valores aceitos na coluna `Origem`. Uma linha de rodapé do winget nunca
+/// produz um desses tokens na última coluna, então isso filtra o texto de nota.
+const KNOWN_SOURCES: [&str; 3] = ["winget", "msstore", "source"];
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingUpdate {
+    pub id: String,
+    pub name: String,
+    pub current_version: String,
+    pub available_version: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatesSnapshot {
+    pub updates: Vec<PendingUpdate>,
+    pub total_count: usize,
+    /// Preenchido quando o winget não existe, falha ou excede o tempo limite.
+    /// Uma lista vazia com `None` significa "nenhuma atualização pendente".
+    pub unavailable_reason: Option<String>,
+    pub collected_at_unix_ms: u64,
+}
+
+struct UpdatesCache {
+    snapshot: UpdatesSnapshot,
+    fetched_at: Instant,
+}
+
+static UPDATES_CACHE: Mutex<Option<UpdatesCache>> = Mutex::new(None);
+
+fn now_unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn unavailable(reason: impl Into<String>) -> UpdatesSnapshot {
+    UpdatesSnapshot {
+        updates: Vec::new(),
+        total_count: 0,
+        unavailable_reason: Some(reason.into()),
+        collected_at_unix_ms: now_unix_ms(),
+    }
+}
+
+/// Localiza o executável do winget.
+///
+/// A instalação moderna usa o alias em `%LOCALAPPDATA%\Microsoft\WindowsApps`, que
+/// é um **App Execution Alias**: existe como link, mas o arquivo real é
+/// `winget.exe` dentro do pacote. Verificamos os dois caminhos.
+fn winget_path() -> Option<std::path::PathBuf> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(path) = std::env::var("LOCALAPPDATA") {
+        candidates.push(
+            std::path::PathBuf::from(path)
+                .join("Microsoft")
+                .join("WindowsApps")
+                .join("winget.exe"),
+        );
+    }
+    if let Ok(program_files) = std::env::var("ProgramFiles") {
+        candidates.push(
+            std::path::PathBuf::from(program_files)
+                .join("WindowsApps")
+                .join("winget.exe"),
+        );
+    }
+    candidates.into_iter().find(|path| path.is_file())
+}
+
+/// Interpreta a saída tabular do winget.
+///
+/// A tabela tem 5 colunas (Nome, ID, Versão, Disponível, Origem) alinhadas por
+/// posição. Descobrimos os limites lendo os **tokens do cabeçalho**, então
+/// funciona em pt-BR, en-US ou qualquer outro idioma instalado — o texto muda,
+/// as colunas não.
+///
+/// Detalhe crítico: os limites são contados em **caracteres**, não em bytes.
+/// O cabeçalho pt-BR contém `Versão` e `Disponível` (2 bytes por letra
+/// acentuada); usar offsets de byte nas linhas de dados — que são ASCII — desloca
+/// todas as colunas a partir da terceira e corrompe as versões. Por isso o
+/// corte é feito com `char_indices`.
+///
+/// A linha de notas do rodapé (`57 atualizações disponíveis.`) e avisos de
+/// versão indeterminada são ignorados: só linhas com ID no formato
+/// `Publicador.Pacote` e `Origem` conhecida viram atualizações.
+pub fn parse_winget_upgrades(output: &str) -> Vec<PendingUpdate> {
+    let lines: Vec<&str> = output.lines().collect();
+
+    // 1. Localiza a linha de cabeçalho: a única com exatamente 5 tokens, o
+    //    que descreve as colunas usadas nas linhas de dados.
+    let header_index = lines.iter().position(|line| {
+        column_offsets(line)
+            .map(|offsets| offsets.len() == EXPECTED_COLUMNS)
+            .unwrap_or(false)
+    });
+
+    let Some(header_index) = header_index else {
+        return Vec::new();
+    };
+    let Some(offsets) = column_offsets(lines[header_index]) else {
+        return Vec::new();
+    };
+
+    let mut updates = Vec::new();
+    for line in lines.iter().skip(header_index + 1) {
+        let trimmed = line.trim();
+        // Linha vazia, separador `-----` ou nota de rodapé/aviso.
+        if trimmed.is_empty() || trimmed.starts_with('-') {
+            continue;
+        }
+
+        let fields = slice_columns(line, &offsets);
+        let [name, id, version, available, source] = fields[..] else {
+            continue;
+        };
+
+        // `id` de pacote do winget é sempre Publicador.Pacote, sem espaços.
+        // Isso descarta linhas de nota sem depender do idioma instalado.
+        if !id.contains('.') || id.contains(char::is_whitespace) {
+            continue;
+        }
+        if name.is_empty() || available.is_empty() {
+            continue;
+        }
+        // A última coluna é a origem do pacote (winget, msstore, ...). Uma
+        // linha de rodapé nunca chega até aqui com esse valor preenchido.
+        if !KNOWN_SOURCES.contains(&source) {
+            continue;
+        }
+
+        updates.push(PendingUpdate {
+            id: id.to_string(),
+            name: name.to_string(),
+            // Versões ausentes ficam vazias de propósito: a UI mostra
+            // "Indisponível" em vez de um número inventado.
+            current_version: version.to_string(),
+            available_version: available.to_string(),
+            source: if source.is_empty() {
+                "Origem desconhecida".to_string()
+            } else {
+                source.to_string()
+            },
+        });
+    }
+
+    updates
+}
+
+/// Posições de início de cada coluna, em **caracteres**, derivadas dos tokens
+/// do cabeçalho. Retorna `None` quando a linha não tem exatamente 5 colunas.
+fn column_offsets(line: &str) -> Option<Vec<usize>> {
+    let mut offsets = Vec::new();
+    for (index, ch) in line.chars().enumerate() {
+        if ch != ' ' {
+            // Só conta o início de token (anterior era espaço ou início da linha).
+            if index == 0 || line.chars().nth(index - 1) == Some(' ') {
+                offsets.push(index);
+            }
+        }
+    }
+    if offsets.len() == EXPECTED_COLUMNS {
+        Some(offsets)
+    } else {
+        None
+    }
+}
+
+/// Recorta as colunas de uma linha de dados pelos offsets do cabeçalho.
+///
+/// O corte respeita fronteiras de caractere UTF-8 (`char_indices`), então uma
+/// linha acentuada nunca é cortada no meio de um caractere — o `str` retornado
+/// seria inválido e o `get()` cairia no `unwrap_or("")` silenciosamente.
+fn slice_columns<'a>(line: &'a str, offsets: &[usize]) -> [&'a str; EXPECTED_COLUMNS] {
+    let mut bounds: Vec<usize> = offsets.to_vec();
+    bounds.push(line.chars().count());
+
+    let starts: Vec<usize> = line.char_indices().map(|(index, _)| index).collect();
+    let mut fields = [""; EXPECTED_COLUMNS];
+    for (index, start) in bounds.iter().enumerate().take(EXPECTED_COLUMNS) {
+        let from = starts.get(*start).copied().unwrap_or(line.len());
+        let to = bounds
+            .get(index + 1)
+            .and_then(|next| starts.get(*next).copied())
+            .unwrap_or(line.len());
+        fields[index] = line.get(from..to).unwrap_or("").trim();
+    }
+    fields
+}
+
+/// Extrai o número de atualizações do rodapé, quando presente.
+/// Usado apenas para conferência: a métrica exibida vem da lista real.
+pub fn parse_footer_total(output: &str) -> Option<usize> {
+    for line in output.lines().rev() {
+        let trimmed = line.trim();
+        let mut digits = String::new();
+        for ch in trimmed.chars() {
+            if ch.is_ascii_digit() {
+                digits.push(ch);
+            } else {
+                break;
+            }
+        }
+        if digits.is_empty() {
+            continue;
+        }
+        if trimmed.contains("atualiza") || trimmed.contains("upgrade") || trimmed.contains("actualiza")
+        {
+            return digits.parse().ok();
+        }
+    }
+    None
+}
+
+/// Tempo máximo de um upgrade real. Um pacote grande (SDK, driver, jogo)
+/// baixa e instala em minutos, então o limite é bem acima do de `list`.
+const UPGRADE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+/// Teto de caracteres devolvidos ao front. A saída do `winget upgrade` é
+/// curta; truncar evita inflar o JSON do Tauri sem perder informação útil.
+const UPGRADE_OUTPUT_LIMIT: usize = 4000;
+/// Comprimento máximo aceitável para o ID de pacote.
+const MAX_PACKAGE_ID_LEN: usize = 200;
+
+/// Valida o identificador do pacote antes de virá-lo argumento de subprocesso.
+///
+/// O ID vem da lista de atualizações (confiável), mas é validado mesmo assim
+/// porque é repassado como argumento do `winget`: aspas ou aspas duplas
+/// permitiriam reescrever a linha de comando. Números também são aceitos
+/// porque pacotes do Microsoft Store são referenciados por ProductId.
+fn validate_package_id(id: &str) -> Result<(), String> {
+    let trimmed = id.trim();
+    if trimmed.is_empty() {
+        return Err("O identificador do pacote está vazio".to_string());
+    }
+    if trimmed.chars().count() > MAX_PACKAGE_ID_LEN {
+        return Err(format!(
+            "O identificador do pacote excede {MAX_PACKAGE_ID_LEN} caracteres"
+        ));
+    }
+    if trimmed.contains('"') || trimmed.contains('\'') {
+        return Err("O identificador do pacote contém aspas, que não são permitidas".to_string());
+    }
+    Ok(())
+}
+
+/// Instala/atualiza um pacote via `winget upgrade`.
+///
+/// Diferente da listagem, isto é uma ação do usuário: roda sob demanda, sem
+/// cache, com timeout longo (upgrade é lento) e propaga a mensagem de erro do
+/// Windows — como "Acesso negado" — para a UI, em vez de engoli-la.
+#[tauri::command]
+pub async fn upgrade_winget_package(id: String, app: AppHandle) -> Result<String, String> {
+    validate_package_id(&id)?;
+    let package_id = id.trim().to_string();
+
+    tauri::async_runtime::spawn_blocking(move || run_upgrade(package_id, app))
+        .await
+        .map_err(|_| "A atualização foi interrompida".to_string())?
+}
+
+fn run_upgrade(id: String, app: AppHandle) -> Result<String, String> {
+    run_winget_upgrade(
+        vec![
+            "upgrade".to_string(),
+            "--id".to_string(),
+            id.clone(),
+            "--exact".to_string(),
+        ],
+        (app, id),
+    )
+}
+
+/// Atualiza **todos** os pacotes desatualizados de uma vez (`winget upgrade --all`).
+///
+/// Ação explícita do usuário, como `upgrade_winget_package`: sem cache, timeout
+/// longo (instalações em série podem passar de minutos) e erro do Windows
+/// propagado para a UI. A lista é reconsultada pelo front após o retorno.
+#[tauri::command]
+pub async fn upgrade_all_winget_packages(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        // O progresso em lote é emitido sob o id reservado `*`: o front mostra
+        // uma barra geral, sem ambiguidade sobre qual pacote está em curso.
+        run_winget_upgrade(
+            vec!["upgrade".to_string(), "--all".to_string()],
+            (app, ALL_PACKAGES_ID.to_string()),
+        )
+    })
+    .await
+    .map_err(|_| "A atualização foi interrompida".to_string())?
+}
+
+/// Executa `winget upgrade` com os argumentos informados e devolve a saída.
+///
+/// Com `progress` o comando emite `UPGRADE_PROGRESS_EVENT` a cada linha de
+/// saída do winget: o front precisa mostrar o que está rodando, porque several
+/// upgrades podem ficar em paralelo. O `winget` **não expõe porcentagem** de
+/// progresso, então a barra é indeterminada e o texto da saída é o feedback
+/// honesto disponível — nada de porcentagem fictícia.
+fn run_winget_upgrade(
+    mut args: Vec<String>,
+    progress: (AppHandle, String),
+) -> Result<String, String> {
+    let Some(path) = winget_path() else {
+        return Err(
+            "Gerenciador de Pacotes do Windows (winget) não encontrado neste sistema".to_string(),
+        );
+    };
+
+    args.extend([
+        "--accept-source-agreements".to_string(),
+        "--accept-package-agreements".to_string(),
+        "--disable-interactivity".to_string(),
+    ]);
+
+    let mut child = crate::process::hidden_command(&path)
+        .args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Não foi possível executar o winget: {error}"))?;
+
+    let (app, id) = progress;
+    emit_progress(&app, &id, "started", "Instalação iniciada pelo winget");
+
+    // Os pipes são drenados em threads próprias: sem isso o buffer do OS
+    // enche, o winget trava escrevendo e o `try_wait` só veria um processo morto
+    // de verdade — não um travamento de pipe.
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let mut readers = Vec::new();
+    if let Some(pipe) = stdout {
+        readers.push(spawn_output_reader(pipe, app.clone(), id.clone()));
+    }
+    if let Some(pipe) = stderr {
+        readers.push(spawn_output_reader(pipe, app.clone(), id.clone()));
+    }
+
+    let deadline = Instant::now() + UPGRADE_TIMEOUT;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    for reader in readers {
+                        let _ = reader.join();
+                    }
+                    emit_progress(&app, &id, "timeout", "Tempo limite de 15 minutos excedido");
+                    return Err(
+                        "A atualização excedeu o tempo limite de 15 minutos e foi cancelada"
+                            .to_string(),
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(120));
+            }
+            Err(error) => {
+                for reader in readers {
+                    let _ = reader.join();
+                }
+                return Err(format!("Falha ao ler a saída do winget: {error}"));
+            }
+        }
+    };
+
+    let mut output_text = String::new();
+    for reader in readers {
+        if let Ok(text) = reader.join() {
+            output_text.push_str(&text);
+        }
+    }
+
+    if !status.success() {
+        let detail = output_text.trim();
+        emit_progress(
+            &app,
+            &id,
+            "failed",
+            if detail.is_empty() {
+                format!("O winget falhou (código {:?})", status.code())
+            } else {
+                detail.lines().last().unwrap_or(detail).to_string()
+            }
+            .as_str(),
+        );
+        return Err(if detail.is_empty() {
+            format!("O winget falhou ao atualizar o pacote (código {:?})", status.code())
+        } else {
+            detail.to_string()
+        });
+    }
+
+    emit_progress(&app, &id, "finished", "Concluído");
+    Ok(truncate_chars(&output_text, UPGRADE_OUTPUT_LIMIT))
+}
+
+/// Lê a saída de um pipe linha a linha, emitindo cada linha e devolvendo o
+/// texto completo. `Read::read` bloqueia até haver dado, então a linha só é
+/// emitida quando o winget a escreve de fato — nada de progresso inventado.
+fn spawn_output_reader<R: std::io::Read + Send + 'static>(
+    pipe: R,
+    app: AppHandle,
+    id: String,
+) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let reader = std::io::BufReader::new(pipe);
+        let mut full = String::new();
+        for line in reader.lines() {
+            let Ok(line) = line else { break };
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if full.len() < UPGRADE_OUTPUT_LIMIT {
+                full.push_str(trimmed);
+                full.push('\n');
+            }
+            emit_progress(&app, &id, "log", trimmed);
+        }
+        full
+    })
+}
+
+fn emit_progress(app: &AppHandle, id: &str, phase: &str, line: &str) {
+    let _ = app.emit(
+        UPGRADE_PROGRESS_EVENT,
+        UpgradeProgress {
+            id: id.to_string(),
+            phase: phase.to_string(),
+            line: truncate_chars(line, 300),
+        },
+    );
+}
+
+/// Corta por caracteres (nunca por byte), para não quebrar um caractere UTF-8
+/// no meio e produzir uma `String` inválida.
+fn truncate_chars(text: &str, limit: usize) -> String {
+    if text.chars().count() <= limit {
+        return text.to_string();
+    }
+    let mut truncated: String = text.chars().take(limit).collect();
+    truncated.push_str("\n(saída truncada)");
+    truncated
+}
+
+#[tauri::command]
+pub async fn list_pending_updates(force_refresh: Option<bool>) -> UpdatesSnapshot {
+    if !force_refresh.unwrap_or(false) {
+        if let Ok(guard) = UPDATES_CACHE.lock() {
+            if let Some(cached) = guard.as_ref() {
+                if cached.fetched_at.elapsed() < UPDATES_CACHE_TTL {
+                    return cached.snapshot.clone();
+                }
+            }
+        }
+    }
+
+    let snapshot =
+        match tauri::async_runtime::spawn_blocking(collect_updates).await {
+            Ok(snapshot) => snapshot,
+            Err(_) => unavailable("A verificação de atualizações foi interrompida"),
+        };
+
+    if let Ok(mut guard) = UPDATES_CACHE.lock() {
+        *guard = Some(UpdatesCache {
+            snapshot: snapshot.clone(),
+            fetched_at: Instant::now(),
+        });
+    }
+    snapshot
+}
+
+fn collect_updates() -> UpdatesSnapshot {
+    let Some(path) = winget_path() else {
+        return unavailable(
+            "Gerenciador de Pacotes do Windows (winget) não encontrado neste sistema",
+        );
+    };
+
+    let mut child = match crate::process::hidden_command(&path)
+        .args([
+            "list",
+            "--upgrade-available",
+            "--accept-source-agreements",
+            "--disable-interactivity",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) => {
+            return unavailable(format!("Não foi possível executar o winget: {error}"));
+        }
+    };
+
+    // Espera com timeout: `winget` em rede lenta não pode travar a UI.
+    let deadline = Instant::now() + WINGET_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return unavailable(
+                        "O winget excedeu o tempo limite ao consultar as atualizações",
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(120));
+            }
+            Err(error) => return unavailable(format!("Falha ao ler a saída do winget: {error}")),
+        }
+    }
+
+    let output = match child.wait_with_output() {
+        Ok(output) => output,
+        Err(error) => return unavailable(format!("Falha ao coletar a saída do winget: {error}")),
+    };
+
+    // winget devolve código != 0 quando nada foi atualizado em `--upgrade`
+    // sem argumentos; em `list` código 0 com lista vazia é o caso normal.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{stdout}\n{stderr}");
+
+    let updates = parse_winget_upgrades(&combined);
+    if updates.is_empty() && !combined.contains("atualiza") && parse_footer_total(&combined).is_none()
+    {
+        return unavailable(format!(
+            "O winget não retornou uma lista legível{}",
+            if stderr.trim().is_empty() {
+                String::new()
+            } else {
+                format!(": {}", stderr.trim().lines().next().unwrap_or(""))
+            }
+        ));
+    }
+
+    let total = updates.len();
+    UpdatesSnapshot {
+        updates,
+        total_count: total,
+        unavailable_reason: None,
+        collected_at_unix_ms: now_unix_ms(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Fixture gerado com larguras de coluna coerentes (max entre cabeçalho e
+    // células), reproduzindo a saída real do winget 1.29 em pt-BR.
+    const PT_BR_SAMPLE: &str = "Nome                                       ID                                 Versão                        Disponível                    Origem\n------------------------------------------------------------------------------------------------------------------------------------------------\nAnaconda3 2024.06-1 (Python 3.12.4 64-bit) Anaconda.Anaconda3                 2024.06-1                     2026.07-1                     winget\nAnki Launcher                              Anki.Anki                          25.09                         26.09.3                       winget\nDocker Desktop                             Docker.DockerDesktop               4.35.1                        4.36.0                        winget\nWarp                                       Warp.Warp                          v0.2026.08.05.09.03.stable_01 v0.2026.09.30.08.29.stable_01 winget\nNVIDIA Nsight Compute 2026.2.0             Nvidia.Nsight.Compute              < 2026.3.1                    2026.3.1                      winget\nPlayStation® Accessories                   PlayStation.PlayStationAccessories 2.2.0.3                       2.2.1.2                       winget\n";
+    const EN_SAMPLE: &str = "Name            Id                   Version Available Source\n-------------------------------------------------------------\nDocker Desktop  Docker.DockerDesktop 4.35.1  4.36.0    winget\nMozilla Firefox Mozilla.Firefox      133.0.0 133.0.3   winget\n";
+
+    #[test]
+    fn parses_localized_table_into_updates() {
+        let updates = parse_winget_upgrades(PT_BR_SAMPLE);
+        assert_eq!(updates.len(), 6);
+        assert_eq!(updates[0].id, "Anaconda.Anaconda3");
+        // Nome com espaços é preservado inteiro, sem cortar na coluna ID.
+        assert_eq!(updates[0].name, "Anaconda3 2024.06-1 (Python 3.12.4 64-bit)");
+        assert_eq!(updates[0].current_version, "2024.06-1");
+        assert_eq!(updates[0].available_version, "2026.07-1");
+        assert_eq!(updates[0].source, "winget");
+        assert_eq!(updates[1].id, "Anki.Anki");
+    }
+
+    /// Regressão do bug de accentuação: os cabeçalhos pt-BR têm letras
+    /// acentuadas (2 bytes). Usar offsets de BYTE sobre as linhas de dados
+    /// — que são ASCII — desloca as colunas 3, 4 e 5 e corrompe as versões.
+    #[test]
+    fn accents_in_header_do_not_shift_data_columns() {
+        let updates = parse_winget_upgrades(PT_BR_SAMPLE);
+        // Versões sem resíduo das colunas seguintes (bug byte vs char).
+        for update in &updates {
+            assert!(
+                !update.current_version.contains("winget"),
+                "versão atual corrompida por offset em bytes: {:?}",
+                update.current_version
+            );
+            assert!(
+                !update.available_version.contains("winget"),
+                "versão disponível corrompida por offset em bytes: {:?}",
+                update.available_version
+            );
+            // Cada versão é exatamente o token da sua coluna, sem resíduo da vizinha.
+            let expected_current = [
+                "2024.06-1",
+                "25.09",
+                "4.35.1",
+                "v0.2026.08.05.09.03.stable_01",
+                "< 2026.3.1",
+                "2.2.0.3",
+            ];
+            let expected_available = [
+                "2026.07-1",
+                "26.09.3",
+                "4.36.0",
+                "v0.2026.09.30.08.29.stable_01",
+                "2026.3.1",
+                "2.2.1.2",
+            ];
+            assert_eq!(
+                updates
+                    .iter()
+                    .map(|u| u.current_version.as_str())
+                    .collect::<Vec<_>>(),
+                expected_current
+            );
+            assert_eq!(
+                updates
+                    .iter()
+                    .map(|u| u.available_version.as_str())
+                    .collect::<Vec<_>>(),
+                expected_available
+            );
+        }
+        assert_eq!(updates[2].current_version, "4.35.1");
+        assert_eq!(updates[2].available_version, "4.36.0");
+    }
+
+    #[test]
+    fn handles_versions_longer_than_the_column_width() {
+        let updates = parse_winget_upgrades(PT_BR_SAMPLE);
+        let warp = updates.iter().find(|u| u.id == "Warp.Warp").expect("Warp");
+        assert_eq!(warp.current_version, "v0.2026.08.05.09.03.stable_01");
+        assert_eq!(warp.available_version, "v0.2026.09.30.08.29.stable_01");
+    }
+
+    #[test]
+    fn keeps_less_than_version_marker_and_non_ascii_names() {
+        let updates = parse_winget_upgrades(PT_BR_SAMPLE);
+        let nsight = updates
+            .iter()
+            .find(|u| u.id == "Nvidia.Nsight.Compute")
+            .expect("Nsight");
+        assert_eq!(nsight.current_version, "< 2026.3.1");
+        let ps = updates
+            .iter()
+            .find(|u| u.id.starts_with("PlayStation"))
+            .expect("PlayStation");
+        assert_eq!(ps.name, "PlayStation® Accessories");
+    }
+
+    #[test]
+    fn ignores_footer_and_warning_lines() {
+        let with_footer = format!(
+            "{PT_BR_SAMPLE}57 atualizações disponíveis.\n\n1 pacotes têm números de versão que não podem ser determinados. Use --include-unknown para ver todos os resultados.\n"
+        );
+        let updates = parse_winget_upgrades(&with_footer);
+        assert_eq!(updates.len(), 6, "rodapé e avisos não são atualizações");
+    }
+
+    #[test]
+    fn works_with_english_headers() {
+        let updates = parse_winget_upgrades(EN_SAMPLE);
+        assert_eq!(updates.len(), 2);
+        assert_eq!(updates[0].id, "Docker.DockerDesktop");
+        assert_eq!(updates[0].current_version, "4.35.1");
+        assert_eq!(updates[0].available_version, "4.36.0");
+        assert_eq!(updates[1].id, "Mozilla.Firefox");
+    }
+
+    #[test]
+    fn empty_table_yields_no_updates_and_no_crash() {
+        let empty = "Nome                          ID                                 Versão                        Disponível                    Origem\n--------------------------------------------------------------------------------------------------------------------------------------\nNenhuma atualização de pacote disponível.\n";
+        assert!(parse_winget_upgrades(empty).is_empty());
+    }
+
+    #[test]
+    fn garbage_output_yields_no_updates() {
+        assert!(parse_winget_upgrades("erro desconhecido").is_empty());
+        assert!(parse_winget_upgrades("").is_empty());
+    }
+
+    #[test]
+    fn column_offsets_require_exactly_five_columns() {
+        assert!(column_offsets("Nome  ID  Versão  Disponível  Origem").is_some());
+        assert!(column_offsets("Nome  ID").is_none());
+        // Cabeçalho pt-BR real: acentos não podem alterar a contagem.
+        let real = "Nome                                       ID                                 Versão                        Disponível                    Origem";
+        let offsets = column_offsets(real).expect("5 colunas");
+        assert_eq!(offsets.len(), 5);
+        // O cabeçalho tem 4 colunas acentuadas (`ã`, `í`): o total em bytes
+        // é MAIOR que o total em caracteres. É exatamente essa diferença que
+        // corromperia o corte se os offsets fossem calculados em bytes.
+        let char_len = real.chars().count();
+        let byte_len = real.len();
+        assert!(byte_len > char_len, "fixture deve conter acentuação");
+        assert_eq!(char_len, 144);
+        // 2 caracteres acentuados (`ã`, `í`) = 2 bytes extras: 144 + 2 = 146.
+        assert_eq!(byte_len, 146);
+    }
+
+    #[test]
+    fn slice_columns_never_splits_an_accented_character() {
+        let line = "PlayStation® Accessories                   PlayStation.PlayStationAccessories 2.2.0.3                       2.2.1.2                       winget";
+        let offsets = column_offsets("Nome                                       ID                                 Versão                        Disponível                    Origem").unwrap();
+        let fields = slice_columns(line, &offsets);
+        assert_eq!(fields[0], "PlayStation® Accessories");
+        assert_eq!(fields[1], "PlayStation.PlayStationAccessories");
+        assert_eq!(fields[4], "winget");
+    }
+
+    #[test]
+    fn extracts_footer_total_in_multiple_locales() {
+        assert_eq!(parse_footer_total("57 atualizações disponíveis.\n"), Some(57));
+        assert_eq!(parse_footer_total("3 upgrades available.\n"), Some(3));
+        assert_eq!(parse_footer_total("sem número aqui"), None);
+    }
+
+    #[test]
+    fn unavailable_snapshot_never_looks_like_zero_updates() {
+        let snapshot = unavailable("winget ausente");
+        assert_eq!(snapshot.total_count, 0);
+        assert_eq!(snapshot.unavailable_reason.as_deref(), Some("winget ausente"));
+    }
+
+    #[test]
+    fn accepts_real_winget_package_ids() {
+        assert!(validate_package_id("Microsoft.PowerToys").is_ok());
+        assert!(validate_package_id("  Docker.DockerDesktop  ").is_ok());
+        // Pacotes do Microsoft Store são referenciados por ProductId numérico.
+        assert!(validate_package_id("9NB1234N5L2T").is_ok());
+    }
+
+    #[test]
+    fn rejects_empty_or_blank_ids() {
+        assert!(validate_package_id("").is_err());
+        assert!(validate_package_id("   ").is_err());
+    }
+
+    #[test]
+    fn rejects_overlong_ids() {
+        let long = "A".repeat(MAX_PACKAGE_ID_LEN + 1);
+        assert!(validate_package_id(&long).is_err());
+        // Exatamente no limite ainda é aceito.
+        assert!(validate_package_id(&"A".repeat(MAX_PACKAGE_ID_LEN)).is_ok());
+        // O limite conta caracteres, não bytes.
+        let accents = "é".repeat(MAX_PACKAGE_ID_LEN);
+        assert!(validate_package_id(&accents).is_ok());
+    }
+
+    /// O ID é repassado como argumento do subprocesso: uma aspa permitiria
+    /// injetar outro argumento na linha de comando do winget.
+    #[test]
+    fn rejects_ids_with_quotes() {
+        assert!(validate_package_id("Microsoft.Power\"Toys").is_err());
+        assert!(validate_package_id("Microsoft.Power'Toys").is_err());
+        assert!(validate_package_id("\"").is_err());
+    }
+
+    #[test]
+    fn truncate_chars_keeps_text_short_or_marks_it() {
+        assert_eq!(truncate_chars("curto", 10), "curto");
+        let long = "á".repeat(50);
+        let cut = truncate_chars(&long, 10);
+        assert_eq!(cut.chars().filter(|c| *c == 'á').count(), 10);
+        assert!(cut.ends_with("(saída truncada)"));
+    }
+}

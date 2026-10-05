@@ -16,6 +16,7 @@ import {
 import { DiskAnalyzer } from "./DiskAnalyzer";
 import { DiskCleanup } from "./DiskCleanup";
 import { ensureDiskAnalyzerLoaded } from "./diskScanStore";
+import { ServicesHub } from "./ServicesHub";
 import { formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, SubscriptionUsage, type ProviderUsage } from "./SubscriptionUsage";
 import { ProviderIcon } from "./ProviderIcon";
 
@@ -25,6 +26,7 @@ const navigationItems = [
   "Desempenho",
   "Armazenamento",
   "Inicialização e segurança",
+  "Serviços e atualizações",
   "Cotas de IA",
   "Debug",
 ];
@@ -342,6 +344,11 @@ const copy: Record<string, { eyebrow: string; title: string; intro: string }> = 
     eyebrow: "INICIALIZAÇÃO E SEGURANÇA",
     title: "Inicialização — controle local",
     intro: "Inventário do boot do Windows e alterações somente onde suportadas.",
+  },
+  "Serviços e atualizações": {
+    eyebrow: "SERVIÇOS E ATUALIZAÇÕES",
+    title: "Serviços ativos e aplicativos desatualizados",
+    intro: "Serviços do Windows lidos direto do gerenciador do sistema e atualizações pendentes pela fonte oficial do Windows.",
   },
   "Cotas de IA": {
     eyebrow: "COTAS DE IA",
@@ -3444,6 +3451,8 @@ function App() {
                 </section>
               </section>
             )}
+
+            {activeArea === "Serviços e atualizações" && <ServicesHub />}
 
             {activeArea === "Cotas de IA" && <SubscriptionUsage />}
 

@@ -1,4 +1,5 @@
 pub mod app_icons;
+pub mod app_updates;
 pub mod audio;
 pub mod debug;
 pub mod disk_analyzer;
@@ -10,6 +11,7 @@ pub mod process;
 pub mod process_usage;
 pub mod quota_history;
 pub mod recent_files;
+pub mod services;
 pub mod single_instance;
 pub mod startup;
 pub mod startup_inventory;
@@ -122,6 +124,11 @@ pub fn run() {
             disk_analyzer::open_disk_item,
             disk_cleanup::analyze_disk_cleanup,
             disk_cleanup::clean_disk_categories,
+            services::list_windows_services,
+            services::set_windows_service_state,
+            app_updates::list_pending_updates,
+            app_updates::upgrade_winget_package,
+            app_updates::upgrade_all_winget_packages,
             subscription_usage::get_subscription_usage,
             subscription_usage::get_subscription_settings,
             subscription_usage::set_openrouter_api_key,
