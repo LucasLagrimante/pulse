@@ -6,24 +6,29 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:native": "bash scripts/build-native.sh",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "tsc --noEmit && vitest run && vite build",
     "tauri": "tauri",
-    "tauri:build": "node scripts/kill-running-app.mjs && tauri build && node scripts/run-installer.mjs",
-    "tauri:build:install": "node scripts/kill-running-app.mjs && tauri build && node scripts/run-installer.mjs"
+    "tauri:build": "bash scripts/build-native.sh",
+    "tauri:build:install": "bash scripts/build-native.sh --install",
+    "lp:dev": "vite landing --config landing/vite.config.js",
+    "lp:build": "vite build landing --config landing/vite.config.js",
+    "lp:preview": "vite preview landing --config landing/vite.config.js",
+    "lp:check": "node landing/scripts/check-seo.mjs --dir=landing/dist",
+    "lp:sync": "node scripts/sync-landing.mjs"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.9.1",
-    "@tauri-apps/plugin-opener": "^2.5.0",
+    "@tauri-apps/api": "2.11.5",
+    "@tauri-apps/plugin-opener": "2.5.5",
     "lucide-react": "^1.46.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.9.6",
-    "@tauri-apps/cli-win32-x64-msvc": "^2.11.4",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
@@ -35,5 +40,8 @@
     "typescript": "~6.0.3",
     "vite": "^8.0.16",
     "vitest": "^3.2.4"
+  },
+  "optionalDependencies": {
+    "@tauri-apps/cli-win32-x64-msvc": "2.11.5"
   }
 }

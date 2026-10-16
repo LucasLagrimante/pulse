@@ -1,7 +1,13 @@
-# Build do Tauri no toolchain nativo do Windows
+---
+name: windows-native-toolchain
+description: Build do Tauri no WSL via ponte NTFS para o toolchain Rust MSVC do Windows
+module: build
+metadata:
+  type: project
+---
 
-O Pulse deve ser compilado em um shell Windows com Rust MSVC, mesmo quando o repositório está armazenado em `C:\Users\...`.
+**Why:** O repositório vive no WSL (`/home/lucas/projects/pulse`), mas o backend Rust/Tauri exige toolchain MSVC (`cargo.exe`, `link.exe`, `vcvars64.bat`) e bundler NSIS no Windows. Compilar via rede `\\wsl.localhost\...` (9P) é lento e `cmd.exe` rejeita caminhos UNC como `cwd`.
 
-Executar `npm run tauri dev` ou `npm run tauri build` a partir do WSL em `/mnt/c/...` faz o Tauri procurar um `cargo` Linux e pode resultar em `failed to run 'cargo metadata': No such file or directory (os error 2)`.
-
-Use PowerShell, Prompt de Comando ou invoque explicitamente `powershell.exe` a partir do WSL. Antes do build, confirme `rustc --version` e `cargo --version` no mesmo shell que executará o Tauri.
+**How to apply:**
+- Use `npm run build:native` (ou `npm run tauri:build`), que executa `scripts/build-native.sh`.
+- O script compila o frontend no WSL, copia os fontes para NTFS (`C:\Users\lucas\AppData\Local\Temp\pulse-src`), compila com `CARGO_TARGET_DIR=C:\Users\lucas\AppData\Local\Temp\pulse-target`, traz os binários de volta para `src-tauri/target/release/` e sincroniza a Landing Page via `scripts/sync-landing.mjs`.

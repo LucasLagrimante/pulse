@@ -128,6 +128,23 @@ A interface do Pulse segue as diretrizes do **Windows 11 Fluent Design**: foco e
     ```
 - **Error Boundaries**: Todas as visões principais devem estar sob o `CrashBoundary`. Se um módulo falhar, exiba fallback contextual com botão para restabelecer a "Visão geral", sem derrubar o shell da aplicação.
 
+### 4.4. Conformidade Estrita com o Sistema de Temas (Claro e Escuro)
+- **Proibição Absoluta de Cores Hardcoded**:
+  - É estritamente proibido definir cores hexadecimais ou RGB fixas (`#141619`, `#191c20`, `#2b3138`, `#ffffff`, etc.) em propriedades de cor, fundo ou borda (`background`, `color`, `border`, `stroke`, `fill`) de componentes, telas ou arquivos CSS adicionais.
+  - Cores fixas quebram imediatamente o tema claro (Porcelain), gerando cards escuros com texto ilegível.
+- **Uso Obrigatório de Tokens Semânticos (`identity.css`)**:
+  - Todo e qualquer elemento visual deve consumir exclusivamente as variáveis do Design System:
+    - **Superfícies**: `var(--neu-surface)`, `var(--neu-surface-sunken)`, `var(--neu-surface-hover)`, `var(--neu-surface-active)`, `var(--neu-bg)`
+    - **Bordas e Divisores**: `var(--neu-divider)`, `var(--neu-border-subtle)`
+    - **Tipografia**: `var(--neu-text-title)`, `var(--neu-text-primary)`, `var(--neu-text-secondary)`, `var(--neu-text-muted)`
+    - **Acentos e Status**: `var(--neu-accent)`, `var(--neu-accent-hover)`, `var(--neu-signal-secondary)`, `var(--neu-success)`, `var(--neu-warning)`, `var(--neu-danger)`
+    - **Sombras Neumórficas**: `var(--neu-shadow-raised-xs)`, `var(--neu-shadow-raised-sm)`, `var(--neu-shadow-raised-lg)`, `var(--neu-shadow-inset-sm)`
+    - **Trilhos e Barras**: `var(--neu-track-bg)`
+- **Modais, Popups, Diálogos e Inputs**:
+  - Backdrops, containers de diálogo (`.modal-card`, `.quota-modal-card`, `.cleanup-dialog`), formulários e inputs devem responder dinamicamente a `[data-theme]`, sem herdar fundos escuros do skin legado.
+- **SVGs Inline e Gráficos**:
+  - Elementos vetoriais devem utilizar `currentColor`, `var(--neu-divider)`, `var(--neu-surface)` ou variáveis dedicadas com fallbacks semânticos em vez de valores estáticos em `stroke` e `fill`.
+
 ---
 
 ## 5. Regras do Sistema Operacional (Windows Internals)
@@ -147,34 +164,67 @@ Ao interagir com subsistemas do Windows, aplique os seguintes padrões canônico
 
 ---
 
-## 6. Estrutura do Repositório
+## 6. Estrutura do Repositório (App + Landing Page Unificados)
 
 ```text
 pulse/
-├── src/                          # Frontend React 19 + TypeScript
+├── src/                          # Frontend React 19 + TypeScript (App Desktop)
 │   ├── App.tsx                   # Shell da aplicação, módulos e roteamento
-│   ├── App.css                   # Sistema de estilos Fluent escuro
+│   ├── App.css                   # Sistema de estilos base
+│   ├── identity.css              # Design System Neumórfico Mineral (Porcelain / Obsidian)
+│   ├── Identity.tsx              # Marca PulseMark e ícones de módulos
 │   ├── Charts.tsx                # Gráficos SVG otimizados e Hardware Gauges
-│   ├── Charts.test.tsx           # Testes unitários de renderização de gráficos
-│   ├── DiskAnalyzer.tsx          # Módulo TreeSize e análise de capacidade
-│   ├── App.test.tsx              # Cobertura completa de fluxos da UI
+│   ├── DiskAnalyzer.tsx          # Módulo TreeSize, Treemap e análise de capacidade
+│   ├── DiskCleanup.tsx           # Limpeza local controlada por categorias seguras
+│   ├── UninstallHub.tsx          # Desinstalação com Ponto de Restauração e resíduos
+│   ├── ServicesHub.tsx           # Serviços do Windows (SCM) e atualizações Winget
+│   ├── SubscriptionUsage.tsx     # Cotas de assinaturas de IA (5 provedores)
+│   ├── QuotaHistory.tsx          # Histórico de cotas de 30 dias em SQLite
 │   └── main.tsx                  # Ponto de entrada do React
-├── src-tauri/                    # Backend nativo Rust
+├── src-tauri/                    # Backend nativo Rust (Tauri v2 / MSVC)
 │   ├── src/
 │   │   ├── lib.rs                # Registro de plugins, handlers e janelas Tauri
 │   │   ├── main.rs               # Entrypoint binário
 │   │   ├── system_overview.rs    # CPU, RAM, disco e top processos com cache
 │   │   ├── performance.rs        # Sensores de hardware, GPU e telemetria
 │   │   ├── disk_analyzer.rs      # Scanner TreeSize em árvore agregada
+│   │   ├── disk_cleanup.rs       # Categorias seguras de limpeza local
+│   │   ├── uninstall/            # Desinstalador, Restore Point e scanner de resíduos
+│   │   ├── services.rs           # Leitura nativa SCM / WMI
+│   │   ├── app_updates.rs        # Integração com winget upgrade
+│   │   ├── subscription_usage.rs # Coleta local de cotas de IA + Keyring
+│   │   ├── quota_history.rs      # Persistência SQLite de 30 dias
+│   │   ├── audio.rs              # Mixer de volume Core Audio COM por aplicativo
 │   │   ├── recent_files.rs       # Scanner de arquivos recentes resiliente a I/O
 │   │   ├── startup_inventory.rs  # Inventário de boot e suporte a StartupApproved
 │   │   ├── tray.rs               # Controle da bandeja e janela flyout
 │   │   └── single_instance.rs    # Prevenção de execução múltipla
 │   ├── Cargo.toml                # Dependências Rust
 │   └── tauri.conf.json           # Configuração de capacidades, janelas e bundles
+├── landing/                      # Landing Page Oficial Unificada (pulse.lagrimante.com.br)
+│   ├── index.html                # Página completa com Simulador Interativo, SEO e JSON-LD
+│   ├── src/                      # CSS neumórfico (base.css, components.css) e main.js
+│   ├── public/                   # index.md, llms.txt, release.json, sitemap.xml e download/.exe
+│   ├── scripts/check-seo.mjs     # Auditoria automatizada de SEO, IA, JSON-LD e instalador
+│   ├── worker.js                 # Cloudflare Worker (Content Negotiation Markdown + headers .exe)
+│   └── wrangler.jsonc            # Configuração de deploy Cloudflare Workers
+├── scripts/
+│   ├── build-native.sh           # Ponte WSL -> Windows MSVC + NSIS + sync da Landing Page
+│   ├── sync-landing.mjs          # Sincroniza .exe, versão, tamanho, SHA-256 e espelha em ../pulse-lp
+│   ├── kill-running-app.mjs      # Encerra pulse-windows.exe antes do build (Windows e WSL)
+│   └── run-installer.mjs         # Abre o instalador NSIS gerado (Windows e WSL)
 ├── memory/                       # Memória contínua com lições arquiteturais
-└── AGENTS.md                     # Este documento de referência
+└── AGENTS.md                     # Este documento canônico de referência
 ```
+
+### 6.1. Fluxo de Build Nativa no WSL e Sincronização com a Landing Page
+Como o repositório reside no WSL (`~/projects/pulse`), mas o backend Rust/Tauri requer o compilador MSVC (`link.exe`, `vcvars64.bat`) e NSIS no Windows:
+1. `npm run build:native` (ou `npm run tauri:build`) compila o frontend no WSL (`dist/`), sincroniza os fontes para NTFS (`C:\Users\lucas\AppData\Local\Temp\pulse-src`) e compila o backend em `C:\Users\lucas\AppData\Local\Temp\pulse-target`.
+2. Os artefatos compilados são copiados de volta para o WSL em:
+   - Executável standalone: `src-tauri/target/release/pulse-windows.exe`
+   - Instalador NSIS: `src-tauri/target/release/bundle/nsis/Pulse_<versão>_x64-setup.exe`
+3. Automaticamente ao final do build, `scripts/sync-landing.mjs` copia o instalador mais recente para `landing/public/download/Pulse-latest-x64-setup.exe`, recalcula o tamanho real em MB e o hash `SHA-256`, atualiza `landing/index.html`, `landing/public/index.md`, `landing/public/llms.txt` e `landing/public/release.json`, compila `landing/dist`, executa `check-seo.mjs` e espelha tudo em `../pulse-lp` (se presente).
+4. **Regra de Paridade Obrigatória**: Sempre que uma nova funcionalidade, módulo ou mudança de comportamento for adicionada ao aplicativo Pulse, a Landing Page (`landing/index.html`, `landing/public/index.md` e `landing/public/llms.txt`) **DEVE** ser atualizada na mesma tarefa.
 
 ---
 
@@ -186,9 +236,13 @@ Sempre valide as alterações antes de finalizar qualquer intervenção:
 | :--- | :--- |
 | `npm test` | Executa a suíte de testes unitários do frontend (Vitest) |
 | `npm run typecheck` | Validação estrita de tipos TypeScript (`tsc --noEmit`) |
-| `npm run build` | Compilação completa do bundle de produção (TypeScript + Vite) |
-| `npm run verify` | Execução encadeada: typecheck, testes e build |
-| `npm run tauri dev` | Inicia o aplicativo em modo de desenvolvimento com hot-reload |
+| `npm run build` | Compilação completa do bundle do app (TypeScript + Vite) |
+| `npm run verify` | Execução encadeada: typecheck, testes e build do app |
+| `npm run build:native` | Build completa WSL -> Windows (Frontend + Rust MSVC + NSIS + Sync Landing Page) |
+| `npm run tauri:build:install` | Executa `build:native` e abre o instalador NSIS no Windows |
+| `npm run lp:sync` | Sincroniza instalador, versão, tamanho e SHA-256 com a Landing Page e valida SEO |
+| `npm run lp:dev` | Inicia servidor de desenvolvimento da Landing Page (`landing/`) |
+| `npm run lp:check` | Executa auditoria de SEO, JSON-LD, `llms.txt` e instalador na Landing Page |
 
 ---
 
@@ -198,6 +252,9 @@ Antes de entregar qualquer tarefa no Pulse, verifique:
 - [ ] O código respeita a proibição de dados fictícios (`0` falso vs "Indisponível")?
 - [ ] Qualquer operação de I/O em lote foi descarregada com `spawn_blocking` e `yield_now`?
 - [ ] A interface mantém flexbox fluido sem alturas estáticas em pixels?
+- [ ] Todos os elementos, telas, modais e formulários utilizam tokens de tema (`--neu-*` e `--theme-*`) sem cores hex/rgb fixas?
 - [ ] Valores numéricos recebidos do IPC são sanitizados contra `null`/`undefined`/`NaN`?
-- [ ] `npm test` e `npm run typecheck` executam com 100% de aprovação e zero alertas?
+- [ ] Novas funcionalidades ou módulos foram refletidos na Landing Page (`landing/`) e sincronizados com `npm run lp:sync` / `npm run build:native`?
+- [ ] `npm test`, `npm run typecheck` e `npm run lp:check` executam com 100% de aprovação e zero alertas?
 - [ ] Novas lições ou restrições foram registradas em `memory/<modulo>/<slug>.md`?
+
