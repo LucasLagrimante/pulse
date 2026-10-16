@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  clearQuotaHistoryCache,
   computeCycleInfo,
   downsampleValues,
   groupValuesByDay,
@@ -141,6 +142,7 @@ describe("computeCycleInfo", () => {
 describe("QuotaHistoryChart", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearQuotaHistoryCache();
     Element.prototype.getBoundingClientRect = vi.fn(() => ({
       x: 0,
       y: 0,
@@ -154,15 +156,28 @@ describe("QuotaHistoryChart", () => {
     }));
   });
 
-  const history = [
-    point(day2026(8, 10, 9), 20),
-    point(day2026(8, 10, 18), 40),
-    point(day2026(8, 11, 10), 80),
-    point(day2026(8, 12, 10), 35),
-  ];
+  afterEach(() => {
+    clearQuotaHistoryCache();
+  });
+
+  const createHistory = () => {
+    const now = Date.now();
+    const oneDay = 24 * 3600 * 1000;
+    const peakTime = now - 2 * oneDay;
+    return {
+      points: [
+        point(now - 3 * oneDay, 20),
+        point(now - 3 * oneDay + 3600 * 1000, 40),
+        point(peakTime, 80),
+        point(now - oneDay, 35),
+      ],
+      peakDateLabel: new Date(peakTime).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+    };
+  };
 
   it("exibe máximo, média e dia de maior consumo do ciclo", async () => {
-    vi.mocked(invoke).mockResolvedValue({ points: history, retainedDays: 35 } as never);
+    const { points, peakDateLabel } = createHistory();
+    vi.mocked(invoke).mockResolvedValue({ points, retainedDays: 35 } as never);
     render(
       <QuotaHistoryChart providerId="claude" windowId="session" windowLabel="Sessão" mode="percent" />,
     );
@@ -170,7 +185,7 @@ describe("QuotaHistoryChart", () => {
     expect(screen.getByText("MÉDIA")).toBeInTheDocument();
     expect(screen.getByText("44%")).toBeInTheDocument();
     expect(screen.getByText("DIA DO MÁXIMO")).toBeInTheDocument();
-    expect(screen.getByText("11/09")).toBeInTheDocument();
+    expect(screen.getByText(peakDateLabel)).toBeInTheDocument();
     expect(invoke).toHaveBeenCalledWith("get_quota_history", {
       providerId: "claude",
       windowId: "session",
@@ -180,7 +195,8 @@ describe("QuotaHistoryChart", () => {
   });
 
   it("mostra tooltip com valor e data ao passar o mouse", async () => {
-    vi.mocked(invoke).mockResolvedValue({ points: history, retainedDays: 35 } as never);
+    const { points } = createHistory();
+    vi.mocked(invoke).mockResolvedValue({ points, retainedDays: 35 } as never);
     const { container } = render(
       <QuotaHistoryChart providerId="claude" windowId="session" windowLabel="Sessão" mode="percent" />,
     );

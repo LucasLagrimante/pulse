@@ -226,7 +226,7 @@ export function sortServices(services: WindowsService[]): WindowsService[] {
 const FALLBACK_ICON =
   "data:image/svg+xml;utf8," +
   encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#23282b"/><path d="M12 4v16M4 12h16" stroke="#8b928a" stroke-width="2.4" stroke-linecap="round"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="rgba(141,169,191,0.18)"/><path d="M12 4v16M4 12h16" stroke="#688099" stroke-width="2.4" stroke-linecap="round"/></svg>',
   );
 
 /* ------------------------------------------------------------------ */

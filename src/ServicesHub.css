@@ -1,7 +1,6 @@
 /* Serviços e Atualizações — prefixo `sh-`.
-   Vocabulário visual herdado de App.css (fundo #141619, painel #181c19,
-   borda #343a42, Cascadia Mono). Nenhuma altura fixa em pixels: o painel
-   cresce por flex e a lista rola sozinha. */
+   Totalmente integrado aos tokens do Design System (identity.css), respondendo
+   nativamente a [data-theme="light"] e [data-theme="dark"]. */
 
 .sh-hub {
   display: flex;
@@ -21,10 +20,7 @@
   gap: 10px;
 }
 
-/* Cartões de estatística.
-   NÃO usam a classe `panel`: ela traz `padding: 18px 20px`, `flex: 1` e
-   `overflow: hidden`, que esticam o cartão para o altura do contêiner e
-   deixam um retângulo vazio dentro. Aqui o tamanho é o do conteúdo. */
+/* Cartões de estatística */
 .sh-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
@@ -37,9 +33,25 @@
   flex-direction: column;
   gap: 2px;
   padding: 9px 12px;
-  border: 1px solid #2b3138;
-  border-radius: 5px;
-  background: #191c20;
+  border: 1px solid var(--neu-divider);
+  border-radius: 6px;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-raised-xs);
+  color: var(--neu-text-primary);
+}
+
+.sh-stat strong {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--neu-text-title);
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-stat small {
+  color: var(--neu-text-muted);
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .sh-toolbar {
@@ -49,43 +61,44 @@
   padding: 8px 10px;
   flex-shrink: 0;
   flex-wrap: wrap;
-  border: 1px solid #2b3138;
-  border-radius: 5px;
-  background: #191c20;
+  border: 1px solid var(--neu-divider);
+  border-radius: 6px;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-raised-xs);
 }
 
 .sh-search {
   flex: 1 1 200px;
   min-width: 0;
-  background: #141619;
-  border: 1px solid #343a42;
-  border-radius: 4px;
-  color: #e8e9e3;
+  background: var(--neu-surface);
+  border: 1px solid var(--neu-divider);
+  border-radius: 6px;
+  color: var(--neu-text-primary);
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .72rem;
-  padding: 6px 8px;
+  padding: 6px 10px;
+  transition: border-color 140ms ease;
 }
 
 .sh-search:focus-visible,
 .sh-filter:focus-visible {
-  outline: 1px solid #dda76d;
+  outline: 2px solid var(--neu-accent);
   outline-offset: 1px;
+  border-color: var(--neu-accent);
 }
 
 .sh-filter {
-  background: #141619;
-  border: 1px solid #343a42;
-  border-radius: 4px;
-  color: #e8e9e3;
+  background: var(--neu-surface);
+  border: 1px solid var(--neu-divider);
+  border-radius: 6px;
+  color: var(--neu-text-primary);
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .68rem;
-  padding: 6px 8px;
+  padding: 6px 10px;
+  cursor: pointer;
 }
 
-/* Filtro por origem (Sistema / Usuário / Revisão). Fica logo abaixo da barra de
-   ferramentas e antes da lista: é o segundo eixo de filtragem, independente do
-   eixo de estado. Chips, não `select`, porque a contagem precisa ficar visível
-   junto do rótulo para o usuário comparar os grupos antes de clicar. */
+/* Filtro por origem (Sistema / Usuário / Revisão) */
 .sh-categories {
   display: flex;
   align-items: center;
@@ -100,40 +113,44 @@
   gap: 6px;
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .64rem;
-  padding: 5px 9px;
-  border: 1px solid #2b3138;
-  border-radius: 4px;
-  background: #191c20;
-  color: #9aa39a;
+  padding: 5px 10px;
+  border: 1px solid var(--neu-divider);
+  border-radius: 6px;
+  background: var(--neu-surface);
+  color: var(--neu-text-secondary);
+  box-shadow: var(--neu-shadow-raised-xs);
   cursor: pointer;
+  transition: all 120ms ease;
 }
 
 .sh-chip:hover {
-  border-color: #3a424c;
-  color: #e8e9e3;
+  border-color: var(--neu-accent);
+  color: var(--neu-text-title);
+  background: var(--neu-surface-hover);
 }
 
 .sh-chip:focus-visible {
-  outline: 1px solid #dda76d;
+  outline: 2px solid var(--neu-accent);
   outline-offset: 1px;
 }
 
 .sh-chip.active {
-  color: #e8e9e3;
-  border-color: #4a544c;
-  background: #20242a;
+  color: var(--neu-accent);
+  border-color: var(--neu-accent);
+  background: var(--neu-surface-active);
+  font-weight: 600;
 }
 
 .sh-chip-count {
   font-size: .6rem;
-  color: #7e867e;
+  color: var(--neu-text-muted);
 }
 
 .sh-chip.active .sh-chip-count {
-  color: #b9c2b8;
+  color: var(--neu-accent);
 }
 
-/* Listas longas (centenas de serviços) rolam de forma independente. */
+/* Listas longas */
 .sh-list {
   display: flex;
   flex-direction: column;
@@ -144,23 +161,22 @@
   padding-right: 4px;
 }
 
-/* Linha da lista. Também NÃO usa `panel`: `flex: 1` + `height: 100%` dela
-   fariam cada linha ocupar a altura inteira da lista. Aqui a altura é a do
-   conteúdo e a lista inteira que rola. */
 .sh-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   flex-shrink: 0;
-  border: 1px solid #2b3138;
-  border-radius: 5px;
-  background: #191c20;
+  border: 1px solid var(--neu-divider);
+  border-radius: 6px;
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-raised-xs);
+  transition: border-color 120ms ease, background 120ms ease;
 }
 
 .sh-item:hover {
-  border-color: #3a424c;
-  background: #1c2025;
+  border-color: var(--neu-accent);
+  background: var(--neu-surface-hover);
 }
 
 .sh-item-icon {
@@ -179,9 +195,9 @@
 }
 
 .sh-item-main strong {
-  color: #e8e9e3;
+  color: var(--neu-text-title);
   font-size: .82rem;
-  font-weight: 500;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -192,7 +208,7 @@
 .sh-item-pid {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .6rem;
-  color: #7e867e;
+  color: var(--neu-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -208,48 +224,41 @@
 .sh-start-type {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .58rem;
-  color: #8da9bf;
-  border: 1px solid rgba(141, 169, 191, .25);
-  background: rgba(141, 169, 191, .1);
+  color: var(--neu-signal-secondary);
+  border: 1px solid color-mix(in srgb, var(--neu-signal-secondary) 25%, var(--neu-divider));
+  background: color-mix(in srgb, var(--neu-signal-secondary) 10%, transparent);
   border-radius: 3px;
   padding: 1px 6px;
 }
 
-/* Badge de origem do serviço. "Revisão" é o único que ganha destaque: é o que
-   pede ação do usuário. As demais categorias são informação neutra e ficam
-   apagadas de propósito — são a maioria e não devem competir por atenção. */
+/* Badge de origem do serviço */
 .sh-cat {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .58rem;
-  color: #7e867e;
-  border: 1px solid #2b3138;
-  background: #191c20;
+  color: var(--neu-text-muted);
+  border: 1px solid var(--neu-divider);
+  background: var(--neu-surface-sunken);
   border-radius: 3px;
   padding: 1px 6px;
   white-space: nowrap;
 }
 
 .sh-cat-user {
-  color: #8da9bf;
-  border-color: rgba(141, 169, 191, .25);
-  background: rgba(141, 169, 191, .08);
+  color: var(--neu-signal-secondary);
+  border-color: color-mix(in srgb, var(--neu-signal-secondary) 25%, var(--neu-divider));
+  background: color-mix(in srgb, var(--neu-signal-secondary) 8%, transparent);
 }
 
 .sh-cat-review {
-  color: #dda76d;
-  border-color: rgba(221, 167, 109, .4);
-  background: rgba(221, 167, 109, .12);
+  color: var(--neu-warning);
+  border-color: color-mix(in srgb, var(--neu-warning) 40%, var(--neu-divider));
+  background: color-mix(in srgb, var(--neu-warning) 12%, transparent);
 }
 
-/* Destaque do item em revisão: borda quente, discreta. A linha inteira não
-   fica colorida — a lista tem centenas de itens e o alerta tem que ser lido
-   como exceção, não como padrão. */
 .sh-item-review {
-  border-color: rgba(221, 167, 109, .35);
+  border-color: color-mix(in srgb, var(--neu-warning) 40%, var(--neu-divider));
 }
 
-/* Motivos verificáveis. Lista explícita porque cada motivo é uma afirmação
-   sobre o host que o usuário precisa poder conferir. */
 .sh-reasons {
   list-style: none;
   margin: 3px 0 0;
@@ -262,27 +271,27 @@
 .sh-reasons li {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .58rem;
-  color: #dda76d;
+  color: var(--neu-warning);
   overflow-wrap: anywhere;
 }
 
 .sh-version {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .68rem;
-  color: #8b928a;
+  color: var(--neu-text-secondary);
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
 .sh-version b {
-  color: #8dc98a;
+  color: var(--neu-success);
   font-weight: 600;
 }
 
 .sh-version em {
   font-style: normal;
-  color: #7e867e;
+  color: var(--neu-text-muted);
 }
 
 .sh-action {
@@ -305,37 +314,35 @@
 }
 
 .sh-unavailable {
-  color: #dda76d;
-  background: rgba(221, 167, 109, .1);
-  border: 1px solid rgba(221, 167, 109, .25);
+  color: var(--neu-warning);
+  background: color-mix(in srgb, var(--neu-warning) 10%, var(--neu-surface));
+  border: 1px solid color-mix(in srgb, var(--neu-warning) 25%, var(--neu-divider));
 }
 
 .sh-error {
-  color: #e08a80;
-  background: rgba(224, 138, 128, .1);
-  border: 1px solid rgba(224, 138, 128, .3);
+  color: var(--neu-danger);
+  background: color-mix(in srgb, var(--neu-danger) 10%, var(--neu-surface));
+  border: 1px solid color-mix(in srgb, var(--neu-danger) 30%, var(--neu-divider));
 }
 
 .sh-notice {
-  color: #8dc98a;
-  background: rgba(141, 201, 138, .1);
-  border: 1px solid rgba(141, 201, 138, .25);
+  color: var(--neu-success);
+  background: color-mix(in srgb, var(--neu-success) 10%, var(--neu-surface));
+  border: 1px solid color-mix(in srgb, var(--neu-success) 25%, var(--neu-divider));
 }
 
 .sh-empty {
-  color: #7e867e;
+  color: var(--neu-text-muted);
 }
 
-/* Progresso de instalação. O winget não expõe porcentagem, então a barra é
-   INDETERMINADA de propósito: um "62%" inventado seria mentira. O que dá
-   substância ao estado é o texto literal da saída do winget ao lado. */
+/* Progresso de instalação */
 .sh-progress {
   position: relative;
-  height: 3px;
+  height: 4px;
   width: 100%;
   min-width: 120px;
   border-radius: 999px;
-  background: #22272c;
+  background: var(--neu-track-bg);
   overflow: hidden;
 }
 
@@ -348,7 +355,7 @@
   inset: 0 auto 0 0;
   width: 38%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #6f8f7a, #8dc98a);
+  background: linear-gradient(90deg, var(--neu-signal-secondary), var(--neu-success));
 }
 
 .sh-progress-indeterminate {
@@ -370,9 +377,9 @@
   gap: 6px;
   flex-shrink: 0;
   padding: 10px 12px;
-  border: 1px solid rgba(141, 201, 138, .25);
-  background: rgba(141, 201, 138, .07);
-  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--neu-success) 25%, var(--neu-divider));
+  background: color-mix(in srgb, var(--neu-success) 8%, var(--neu-surface));
+  border-radius: 6px;
 }
 
 .sh-progress-head {
@@ -381,41 +388,41 @@
   gap: 10px;
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .62rem;
-  color: #8dc98a;
+  color: var(--neu-success);
   letter-spacing: .06em;
 }
 
 .sh-progress-log {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .6rem;
-  color: #7e867e;
+  color: var(--neu-text-muted);
   overflow-wrap: anywhere;
 }
 
 .sh-item-error {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .6rem;
-  color: #e08a80;
+  color: var(--neu-danger);
   overflow-wrap: anywhere;
 }
 
 .sh-item-elapsed {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .6rem;
-  color: #7e867e;
+  color: var(--neu-text-muted);
 }
 
 .sh-item-elapsed-done {
-  color: #8dc98a;
+  color: var(--neu-success);
 }
 
 .sh-running-note {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .62rem;
-  color: #8dc98a;
+  color: var(--neu-success);
   margin: 0;
   flex-shrink: 0;
 }
 
-.sh-item-update.is-running { border-color: rgba(141, 201, 138, .3); }
-.sh-item-update.is-done { border-color: rgba(141, 201, 138, .2); }
+.sh-item-update.is-running { border-color: color-mix(in srgb, var(--neu-success) 35%, var(--neu-divider)); }
+.sh-item-update.is-done { border-color: color-mix(in srgb, var(--neu-success) 25%, var(--neu-divider)); }

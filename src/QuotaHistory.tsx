@@ -411,7 +411,7 @@ export function QuotaHistoryChart({
                 x2={width - padRight}
                 y1={y(tick)}
                 y2={y(tick)}
-                stroke="rgba(255,255,255,0.08)"
+                stroke="var(--neu-divider, rgba(255,255,255,0.08))"
                 strokeWidth="1"
                 vectorEffect="non-scaling-stroke"
               />
@@ -420,7 +420,7 @@ export function QuotaHistoryChart({
           ))}
           <path d={area} fill={accent} opacity="0.18" />
           <path d={line} fill="none" stroke={accent} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-          <circle cx={x(values[peakIndex].at)} cy={y(values[peakIndex].value)} r="3.5" fill={accent} stroke="#141619" strokeWidth="1.5">
+          <circle cx={x(values[peakIndex].at)} cy={y(values[peakIndex].value)} r="3.5" fill={accent} stroke="var(--neu-surface, #141619)" strokeWidth="1.5">
             <title>{`Pico: ${formatValue(values[peakIndex].value)} em ${formatDayMonth(values[peakIndex].at)} · ${formatHour(values[peakIndex].at)}`}</title>
           </circle>
           {hovered && (
@@ -430,11 +430,11 @@ export function QuotaHistoryChart({
                 x2={x(hovered.at)}
                 y1={padTop}
                 y2={padTop + plotHeight}
-                stroke="rgba(255,255,255,0.35)"
+                stroke="var(--neu-divider, rgba(255,255,255,0.35))"
                 strokeWidth="1"
                 vectorEffect="non-scaling-stroke"
               />
-              <circle cx={x(hovered.at)} cy={y(hovered.value)} r="3" fill="#fff" stroke={accent} strokeWidth="2" />
+              <circle cx={x(hovered.at)} cy={y(hovered.value)} r="3" fill="var(--neu-surface, #fff)" stroke={accent} strokeWidth="2" />
             </g>
           )}
           {(() => {

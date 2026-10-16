@@ -2213,9 +2213,52 @@ body:has(.tray-flyout-container),
   height: 0 !important;
 }
 
-.tray-flyout-container .pulse-loading.compact {
-  min-height: 28px;
-  padding: 0;
+.tray-flyout-container .flyout-brand-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tray-flyout-container .flyout-loading-tag {
+  display: inline-flex;
+  align-items: center;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--neu-accent-soft);
+  color: var(--neu-accent);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  animation: pulse-badge-fade 1.5s ease-in-out infinite alternate;
+}
+
+.tray-flyout-container .flyout-skeleton-value {
+  display: inline-block;
+  width: 44px;
+  height: 13px;
+  border-radius: 4px;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-inset-xs);
+  position: relative;
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.tray-flyout-container .flyout-skeleton-value::after,
+.tray-flyout-container .flyout-skeleton-box::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  animation: flyout-skeleton-sweep 1.5s ease-in-out infinite;
+  transform: translateX(-100%);
+}
+
+[data-theme="light"] .tray-flyout-container .flyout-skeleton-value::after,
+[data-theme="light"] .tray-flyout-container .flyout-skeleton-box::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
 }
 
 .tray-flyout-container .flyout-header {
@@ -2409,6 +2452,74 @@ body:has(.tray-flyout-container),
   background: var(--neu-surface) !important;
   color: var(--neu-danger) !important;
   box-shadow: var(--neu-shadow-raised-xs) !important;
+}
+
+[data-theme] .flyout-process-list li.flyout-process-skeleton {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(78px, auto) 28px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 38px;
+  height: 38px;
+  padding: 5px 8px !important;
+  border-radius: 10px !important;
+  background: var(--neu-surface) !important;
+  box-shadow: var(--neu-shadow-raised-xs) !important;
+  border: var(--neu-border) !important;
+  box-sizing: border-box;
+}
+
+[data-theme] .flyout-skeleton-box {
+  display: block;
+  border-radius: 4px;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-inset-xs);
+  position: relative;
+  overflow: hidden;
+}
+
+[data-theme] .flyout-skeleton-box.rank {
+  width: 18px;
+  height: 14px;
+}
+
+[data-theme] .flyout-skeleton-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+[data-theme] .flyout-skeleton-box.title {
+  width: 65%;
+  height: 12px;
+}
+
+[data-theme] .flyout-skeleton-box.sub {
+  width: 40%;
+  height: 9px;
+}
+
+[data-theme] .flyout-skeleton-box.mem {
+  width: 50px;
+  height: 12px;
+  justify-self: end;
+}
+
+[data-theme] .flyout-process-list li.flyout-process-empty,
+[data-theme] .flyout-process-list li.muted {
+  display: flex !important;
+  grid-column: 1 / -1 !important;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 48px;
+  text-align: center;
+  color: var(--neu-text-muted) !important;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
 }
 
 [data-theme] .flyout-audio-field select {
@@ -3000,3 +3111,192 @@ body:has(.tray-flyout-container),
   border-color: var(--neu-divider);
   color: var(--neu-text-muted);
 }
+
+/* ==========================================================================
+   Modais, Formulários e Diálogos Universais (Conformidade Temática)
+   ========================================================================== */
+
+[data-theme] .modal-backdrop {
+  background: rgba(0, 0, 0, 0.52) !important;
+  backdrop-filter: blur(4px);
+}
+
+[data-theme] .modal-card {
+  background: var(--neu-surface) !important;
+  border: 1px solid var(--neu-divider) !important;
+  box-shadow: var(--neu-shadow-raised-lg) !important;
+  color: var(--neu-text-primary) !important;
+  border-radius: 12px;
+}
+
+[data-theme] .modal-card h3 {
+  color: var(--neu-text-title) !important;
+}
+
+[data-theme] .modal-desc {
+  color: var(--neu-text-secondary) !important;
+}
+
+[data-theme] .modal-actions button {
+  background: var(--neu-surface) !important;
+  border: 1px solid var(--neu-divider) !important;
+  color: var(--neu-text-primary) !important;
+  box-shadow: var(--neu-shadow-raised-xs);
+  border-radius: 6px;
+}
+
+[data-theme] .modal-actions button:hover {
+  background: var(--neu-surface-hover) !important;
+  border-color: var(--neu-accent) !important;
+  color: var(--neu-text-title) !important;
+  box-shadow: var(--neu-shadow-raised-sm);
+}
+
+[data-theme] .modal-actions button.button-primary {
+  background: var(--neu-accent) !important;
+  border-color: var(--neu-accent) !important;
+  color: #ffffff !important;
+}
+
+[data-theme] .modal-actions button.button-primary:hover {
+  background: var(--neu-accent-hover) !important;
+}
+
+[data-theme] .modal-actions button.button-danger {
+  background: color-mix(in srgb, var(--neu-danger) 15%, var(--neu-surface)) !important;
+  border-color: color-mix(in srgb, var(--neu-danger) 40%, var(--neu-divider)) !important;
+  color: var(--neu-danger) !important;
+}
+
+/* Modal de chaves de cota (OpenRouter e outros provedores) */
+[data-theme] .quota-modal-overlay {
+  background: rgba(0, 0, 0, 0.52) !important;
+}
+
+[data-theme] .quota-modal-card {
+  background: var(--neu-surface) !important;
+  border: 1px solid var(--neu-divider) !important;
+  box-shadow: var(--neu-shadow-raised-lg) !important;
+  color: var(--neu-text-primary) !important;
+}
+
+[data-theme] .quota-modal-header {
+  border-bottom: 1px solid var(--neu-divider) !important;
+}
+
+[data-theme] .quota-modal-header h3 {
+  color: var(--neu-text-title) !important;
+}
+
+[data-theme] .quota-modal-close {
+  background: var(--neu-surface) !important;
+  border: 1px solid var(--neu-divider) !important;
+  color: var(--neu-text-muted) !important;
+}
+
+[data-theme] .quota-modal-close:hover {
+  background: var(--neu-surface-hover) !important;
+  border-color: var(--neu-accent) !important;
+  color: var(--neu-text-title) !important;
+}
+
+[data-theme] .quota-modal-body > p {
+  color: var(--neu-text-secondary) !important;
+}
+
+[data-theme] .quota-modal-body strong {
+  color: var(--neu-text-title) !important;
+}
+
+[data-theme] .quota-key-form label span {
+  color: var(--neu-text-muted) !important;
+}
+
+[data-theme] .quota-key-form input {
+  background: var(--neu-surface) !important;
+  border: 1px solid var(--neu-divider) !important;
+  color: var(--neu-text-primary) !important;
+  border-radius: 6px;
+}
+
+[data-theme] .quota-key-form input:focus {
+  outline: 2px solid var(--neu-accent) !important;
+  border-color: var(--neu-accent) !important;
+}
+
+[data-theme] .quota-key-actions button {
+  background: var(--neu-accent) !important;
+  border-color: var(--neu-accent) !important;
+  color: #ffffff !important;
+  border-radius: 6px;
+}
+
+[data-theme] .quota-key-actions button:hover {
+  background: var(--neu-accent-hover) !important;
+}
+
+[data-theme] .quota-key-actions button.is-secondary {
+  background: var(--neu-surface) !important;
+  border-color: var(--neu-divider) !important;
+  color: var(--neu-text-primary) !important;
+}
+
+[data-theme] .quota-key-actions button.is-secondary:hover {
+  background: var(--neu-surface-hover) !important;
+  border-color: var(--neu-accent) !important;
+  color: var(--neu-text-title) !important;
+}
+
+[data-theme] .quota-key-actions button.is-danger {
+  background: color-mix(in srgb, var(--neu-danger) 12%, var(--neu-surface)) !important;
+  border-color: color-mix(in srgb, var(--neu-danger) 35%, var(--neu-divider)) !important;
+  color: var(--neu-danger) !important;
+}
+
+/* Painel de escopo de pastas de escaneamento em Armazenamento */
+[data-theme] .scan-folders-panel {
+  background: var(--neu-surface) !important;
+  border: 1px solid var(--neu-divider) !important;
+  color: var(--neu-text-primary);
+}
+
+[data-theme] .add-folder-input {
+  background: var(--neu-surface) !important;
+  border: 1px solid var(--neu-divider) !important;
+  color: var(--neu-text-primary) !important;
+  border-radius: 6px;
+}
+
+[data-theme] .add-folder-input:focus {
+  outline: 2px solid var(--neu-accent) !important;
+  border-color: var(--neu-accent) !important;
+}
+
+[data-theme] .add-folder-btn {
+  background: var(--neu-surface) !important;
+  border: 1px solid var(--neu-divider) !important;
+  color: var(--neu-text-primary) !important;
+  border-radius: 6px;
+  box-shadow: var(--neu-shadow-raised-xs);
+}
+
+[data-theme] .add-folder-btn:hover {
+  background: var(--neu-surface-hover) !important;
+  border-color: var(--neu-accent) !important;
+  color: var(--neu-text-title) !important;
+}
+
+/* Crash Screen Error Boundary */
+[data-theme] .crash-screen {
+  background: var(--neu-bg) !important;
+  color: var(--neu-text-primary) !important;
+}
+
+[data-theme] .crash-screen h1 {
+  color: var(--neu-text-title) !important;
+}
+
+[data-theme] .crash-message {
+  color: var(--neu-warning) !important;
+}
+
