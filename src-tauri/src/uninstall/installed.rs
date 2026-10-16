@@ -130,38 +130,71 @@ pub fn collect() -> InstalledAppsSnapshot {
     let mut problems: Vec<String> = Vec::new();
     let mut scanned_roots = 0usize;
 
-    for hive in [Hive::LocalMachine, Hive::CurrentUser] {
-        for view in [RegistryView::Native64, RegistryView::Native32] {
-            match RegHandle::open(hive, UNINSTALL_SUBKEY, view) {
-                Ok(handle) => match handle.enum_keys() {
-                    Ok(names) => {
-                        scanned_roots += 1;
-                        for name in names {
-                            if let Some(app) = read_app(hive, view, &name) {
-                                apps.push(app);
-                            }
+    // HKLM no Windows 64-bit possui visões separadas de 64 bits e 32 bits (WOW6432Node).
+    for view in [RegistryView::Native64, RegistryView::Native32] {
+        match RegHandle::open(Hive::LocalMachine, UNINSTALL_SUBKEY, view) {
+            Ok(handle) => match handle.enum_keys() {
+                Ok(names) => {
+                    scanned_roots += 1;
+                    for name in names {
+                        let subkey = format!("{}\\{}", UNINSTALL_SUBKEY, name);
+                        if let Some(app) = read_app(Hive::LocalMachine, view, &subkey) {
+                            apps.push(app);
                         }
                     }
-                    Err(code) => problems.push(format!(
-                        "{} (visão {}) não pôde ser enumerada (código {})",
-                        hive.label(),
+                }
+                Err(code) => problems.push(format!(
+                    "{} (visão {}) não pôde ser enumerada (código {})",
+                    Hive::LocalMachine.label(),
+                    view.label(),
+                    code
+                )),
+            },
+            // A visão de 32 bits não existe em installs só de 64 bits:
+            // chave raiz ausente é normal, não é problema. Qualquer outro
+            // código é permissão ou bloqueio e precisa aparecer.
+            Err(code) => {
+                if code != super::registry::ERROR_FILE_NOT_FOUND_CODE {
+                    problems.push(format!(
+                        "{} (visão {}) não pôde ser aberta (código {})",
+                        Hive::LocalMachine.label(),
                         view.label(),
                         code
-                    )),
-                },
-                // A visão de 32 bits não existe em installs só de 64 bits:
-                // chave raiz ausente é normal, não é problema. Qualquer outro
-                // código é permissão ou bloqueio e precisa aparecer.
-                Err(code) => {
-                    if code != super::registry::ERROR_FILE_NOT_FOUND_CODE {
-                        problems.push(format!(
-                            "{} (visão {}) não pôde ser aberta (código {})",
-                            hive.label(),
-                            view.label(),
-                            code
-                        ));
+                    ));
+                }
+            }
+        }
+    }
+
+    // HKCU no Windows 64-bit não tem redirecionamento WOW6432Node para Uninstall.
+    // Ler Native32 e Native64 em HKCU lê a mesma chave duas vezes.
+    // Lemos apenas Native64 para evitar duplicar entradas do usuário atual.
+    match RegHandle::open(Hive::CurrentUser, UNINSTALL_SUBKEY, RegistryView::Native64) {
+        Ok(handle) => match handle.enum_keys() {
+            Ok(names) => {
+                scanned_roots += 1;
+                for name in names {
+                    let subkey = format!("{}\\{}", UNINSTALL_SUBKEY, name);
+                    if let Some(app) = read_app(Hive::CurrentUser, RegistryView::Native64, &subkey) {
+                        apps.push(app);
                     }
                 }
+            }
+            Err(code) => problems.push(format!(
+                "{} (visão {}) não pôde ser enumerada (código {})",
+                Hive::CurrentUser.label(),
+                RegistryView::Native64.label(),
+                code
+            )),
+        },
+        Err(code) => {
+            if code != super::registry::ERROR_FILE_NOT_FOUND_CODE {
+                problems.push(format!(
+                    "{} (visão {}) não pôde ser aberta (código {})",
+                    Hive::CurrentUser.label(),
+                    RegistryView::Native64.label(),
+                    code
+                ));
             }
         }
     }
@@ -215,23 +248,22 @@ fn collect_user_hives(apps: &mut Vec<InstalledApp>, problems: &mut Vec<String>) 
             continue;
         }
         let path = format!("{}\\{}", sid, UNINSTALL_SUBKEY);
-        for view in [RegistryView::Native64, RegistryView::Native32] {
-            let handle = match RegHandle::open(Hive::Users, &path, view) {
-                Ok(handle) => handle,
-                Err(_) => continue,
-            };
-            scanned += 1;
-            let names = match handle.enum_keys() {
-                Ok(names) => names,
-                Err(code) => {
-                    problems.push(format!("Perfil {} não pôde ser enumerado (código {})", sid, code));
-                    continue;
-                }
-            };
-            for name in names {
-                if let Some(app) = read_app(Hive::Users, view, &format!("{}\\{}", path, name)) {
-                    apps.push(app);
-                }
+        // HKU também não possui redirecionamento WOW64 para Uninstall.
+        let handle = match RegHandle::open(Hive::Users, &path, RegistryView::Native64) {
+            Ok(handle) => handle,
+            Err(_) => continue,
+        };
+        scanned += 1;
+        let names = match handle.enum_keys() {
+            Ok(names) => names,
+            Err(code) => {
+                problems.push(format!("Perfil {} não pôde ser enumerado (código {})", sid, code));
+                continue;
+            }
+        };
+        for name in names {
+            if let Some(app) = read_app(Hive::Users, RegistryView::Native64, &format!("{}\\{}", path, name)) {
+                apps.push(app);
             }
         }
     }
@@ -267,29 +299,107 @@ fn read_app(hive: Hive, view: RegistryView, subkey: &str) -> Option<InstalledApp
     })
 }
 
-/// A mesma chave aparece em `HKLM` e, quando o app é per-user em máquina com
-/// UAC, também em `HKU\<perfil>`. Manter as duas invites o usuário a
-/// desinstalar duas vezes o mesmo programa.
+fn normalize_str(s: Option<&str>) -> String {
+    s.map(|v| v.trim().trim_matches('"').to_lowercase())
+        .unwrap_or_default()
+}
+
+fn subkey_leaf(path: &str) -> &str {
+    path.rsplit('\\').next().unwrap_or(path).trim()
+}
+
+pub fn is_duplicate(a: &InstalledApp, b: &InstalledApp) -> bool {
+    let name_a = a.display_name.trim().to_lowercase();
+    let name_b = b.display_name.trim().to_lowercase();
+    if name_a.is_empty() || name_b.is_empty() {
+        return false;
+    }
+
+    // Mesmo DisplayName é o mesmo aplicativo instalado
+    if name_a == name_b {
+        return true;
+    }
+
+    // Mesma folha de chave de desinstalação (ex: {GUID} do MSI ou chave do instalador)
+    let leaf_a = subkey_leaf(&a.registry_path).to_lowercase();
+    let leaf_b = subkey_leaf(&b.registry_path).to_lowercase();
+    if !leaf_a.is_empty() && leaf_a == leaf_b {
+        return true;
+    }
+
+    // Mesmo comando de desinstalação normalizado não vazio
+    let uninst_a = normalize_str(a.uninstall_string.as_deref());
+    let uninst_b = normalize_str(b.uninstall_string.as_deref());
+    if !uninst_a.is_empty() && !uninst_b.is_empty() && uninst_a == uninst_b {
+        return true;
+    }
+
+    // Mesma pasta de instalação normalizada não vazia
+    let loc_a = normalize_str(a.install_location.as_deref());
+    let loc_b = normalize_str(b.install_location.as_deref());
+    if !loc_a.is_empty() && !loc_b.is_empty() && loc_a == loc_b {
+        return true;
+    }
+
+    false
+}
+
+fn merge_app_info(target: &mut InstalledApp, incoming: InstalledApp) {
+    if target.publisher.is_none() && incoming.publisher.is_some() {
+        target.publisher = incoming.publisher;
+    }
+    if target.version.is_none() && incoming.version.is_some() {
+        target.version = incoming.version;
+    }
+    if target.install_date.is_none() && incoming.install_date.is_some() {
+        target.install_date = incoming.install_date;
+    }
+    if target.install_location.is_none() && incoming.install_location.is_some() {
+        target.install_location = incoming.install_location;
+    }
+    if target.estimated_size_kb.is_none() && incoming.estimated_size_kb.is_some() {
+        target.estimated_size_kb = incoming.estimated_size_kb;
+    }
+    if target.uninstall_string.is_none() && incoming.uninstall_string.is_some() {
+        target.uninstall_string = incoming.uninstall_string;
+        target.is_msi = incoming.is_msi;
+    }
+}
+
+/// Deduplica programas para garantir que cada aplicativo apareça exatamente uma vez.
+///
+/// A mesma chave pode ser registrada em HKLM, HKCU e HKU (perfil do usuário).
+/// Além disso, o desinstalador pode estar presente em uma colmeia e metadados como tamanho
+/// ou pasta de instalação em outra. A deduplicação preserva a melhor identidade (dando
+/// preferência a HKLM e HKCU sobre HKU genérico, e a entradas com desinstalador válido)
+/// e mescla metadados complementares.
 fn dedupe(apps: &mut Vec<InstalledApp>) {
-    // Mesma chave visível em HKLM e no perfil do usuário é o mesmo programa;
-    // versões x86/x64 legítimas têm chaves distintas e são preservadas porque a
-    // visão (32/64) entra na chave de comparação.
-    let mut seen: Vec<(String, String, String)> = Vec::new();
-    apps.retain(|app| {
+    let mut deduped: Vec<InstalledApp> = Vec::with_capacity(apps.len());
+
+    for app in apps.drain(..) {
         if app.display_name.trim().is_empty() {
-            return false;
+            continue;
         }
-        let key = (
-            app.display_name.to_lowercase(),
-            app.view.to_string(),
-            app.uninstall_string.clone().unwrap_or_default().to_lowercase(),
-        );
-        if seen.contains(&key) {
-            return false;
+
+        if let Some(existing) = deduped.iter_mut().find(|e| is_duplicate(e, &app)) {
+            let existing_is_hku = existing.hive == Hive::Users.label();
+            let new_is_not_hku = app.hive != Hive::Users.label();
+            let existing_lacks_uninst = existing.uninstall_string.is_none();
+            let new_has_uninst = app.uninstall_string.is_some();
+
+            if (existing_is_hku && new_is_not_hku) || (existing_lacks_uninst && new_has_uninst) {
+                let mut incoming = app;
+                merge_app_info(&mut incoming, existing.clone());
+                *existing = incoming;
+            } else {
+                merge_app_info(existing, app);
+            }
+        } else {
+            deduped.push(app);
         }
-        seen.push(key);
-        true
-    });
+    }
+
+    *apps = deduped;
 }
 
 fn cached() -> Option<InstalledAppsSnapshot> {
@@ -420,5 +530,91 @@ mod tests {
             .apps
             .iter()
             .any(|app| app.display_name.eq_ignore_ascii_case("Windows SDK")));
+    }
+
+    #[test]
+    fn dedupe_remove_duplicados_mesmo_nome_visoes_diferentes() {
+        let mut apps = vec![
+            InstalledApp {
+                id: "HKU|S-1-5-21-...|64".to_string(),
+                hive: "HKU".to_string(),
+                view: "64".to_string(),
+                registry_path: "HKU\\S-1-5-21-...\\App".to_string(),
+                display_name: "Slack".to_string(),
+                publisher: Some("Slack Technologies".to_string()),
+                version: Some("4.36.0".to_string()),
+                install_date: None,
+                install_location: None,
+                estimated_size_kb: Some(120000),
+                uninstall_string: Some("C:\\Users\\Update.exe --uninstall".to_string()),
+                is_msi: false,
+            },
+            InstalledApp {
+                id: "HKU|S-1-5-21-...|32".to_string(),
+                hive: "HKU".to_string(),
+                view: "32".to_string(),
+                registry_path: "HKU\\S-1-5-21-...\\App".to_string(),
+                display_name: "Slack".to_string(),
+                publisher: Some("Slack Technologies".to_string()),
+                version: Some("4.36.0".to_string()),
+                install_date: None,
+                install_location: None,
+                estimated_size_kb: Some(120000),
+                uninstall_string: Some("C:\\Users\\Update.exe --uninstall".to_string()),
+                is_msi: false,
+            },
+        ];
+
+        dedupe(&mut apps);
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].display_name, "Slack");
+    }
+
+    #[test]
+    fn dedupe_prioriza_hklm_e_mescla_informacoes() {
+        let mut apps = vec![
+            InstalledApp {
+                id: "HKU|S-1-5-21-...|64".to_string(),
+                hive: "HKU".to_string(),
+                view: "64".to_string(),
+                registry_path: "HKU\\S-1-5-21-...\\Chrome".to_string(),
+                display_name: "Google Chrome".to_string(),
+                publisher: None,
+                version: Some("120.0.0.0".to_string()),
+                install_date: None,
+                install_location: Some("C:\\Program Files\\Google\\Chrome".to_string()),
+                estimated_size_kb: None,
+                uninstall_string: None,
+                is_msi: false,
+            },
+            InstalledApp {
+                id: "HKLM|SOFTWARE\\...\\Chrome|64".to_string(),
+                hive: "HKLM".to_string(),
+                view: "64".to_string(),
+                registry_path: "HKLM\\SOFTWARE\\...\\Chrome".to_string(),
+                display_name: "Google Chrome".to_string(),
+                publisher: Some("Google LLC".to_string()),
+                version: Some("120.0.0.0".to_string()),
+                install_date: Some("20240101".to_string()),
+                install_location: None,
+                estimated_size_kb: Some(350000),
+                uninstall_string: Some("setup.exe --uninstall".to_string()),
+                is_msi: false,
+            },
+        ];
+
+        dedupe(&mut apps);
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].hive, "HKLM");
+        assert_eq!(apps[0].publisher.as_deref(), Some("Google LLC"));
+        assert_eq!(apps[0].estimated_size_kb, Some(350000));
+        assert_eq!(
+            apps[0].install_location.as_deref(),
+            Some("C:\\Program Files\\Google\\Chrome")
+        );
+        assert_eq!(
+            apps[0].uninstall_string.as_deref(),
+            Some("setup.exe --uninstall")
+        );
     }
 }
