@@ -25,19 +25,20 @@ import { ensureDiskAnalyzerLoaded } from "./diskScanStore";
 import { formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, type ProviderUsage } from "./subscriptionHelpers";
 import { ProviderIcon } from "./ProviderIcon";
 
-const navigationItems = [
+export const ALL_NAVIGATION_ITEMS = [
   "Visão geral",
   "Atividade",
   "Desempenho",
   "Armazenamento",
+  "Desinstalar programas",
   "Inicialização e segurança",
   "Serviços e atualizações",
   "Cotas de IA",
   "Debug",
-  // Inserido ao final de propósito: `ModuleIcon` é posicional, e adicionar no
-  // meio trocaria o ícone de todos os itens seguintes.
-  "Desinstalar programas",
-];
+] as const;
+
+export type NavigationItem = (typeof ALL_NAVIGATION_ITEMS)[number];
+export const navigationItems = ALL_NAVIGATION_ITEMS;
 const INITIAL_BOOT_MINIMUM_MS = 2200;
 const INITIAL_CHART_SKELETON_MS = INITIAL_BOOT_MINIMUM_MS + 850;
 const INITIAL_CHART_SAMPLE_DELAY_MS = 3600;
@@ -348,6 +349,11 @@ const copy: Record<string, { eyebrow: string; title: string; intro: string }> = 
     title: "Armazenamento — capacidade local",
     intro: "Analise a ocupação, revise arquivos recentes e recupere espaço com uma limpeza local e controlada.",
   },
+  "Desinstalar programas": {
+    eyebrow: "DESINSTALAR PROGRAMAS",
+    title: "Remoção com rastreamento de resíduos",
+    intro: "Desinstalador padrão do fabricante, com varredura conservadora do registro e das pastas que sobraram.",
+  },
   "Inicialização e segurança": {
     eyebrow: "INICIALIZAÇÃO E SEGURANÇA",
     title: "Inicialização — controle local",
@@ -357,11 +363,6 @@ const copy: Record<string, { eyebrow: string; title: string; intro: string }> = 
     eyebrow: "SERVIÇOS E ATUALIZAÇÕES",
     title: "Serviços ativos e aplicativos desatualizados",
     intro: "Serviços do Windows lidos direto do gerenciador do sistema e atualizações pendentes pela fonte oficial do Windows.",
-  },
-  "Desinstalar programas": {
-    eyebrow: "DESINSTALAR PROGRAMAS",
-    title: "Remoção com rastreamento de resíduos",
-    intro: "Desinstalador padrão do fabricante, com varredura conservadora do registro e das pastas que sobraram.",
   },
   "Cotas de IA": {
     eyebrow: "COTAS DE IA",
@@ -1491,16 +1492,19 @@ export function TrayFlyout({
       <header className="flyout-header">
         <div className="flyout-brand">
           <span
-            className={isQuotaRefreshing ? "flyout-brand-mark is-refreshing" : "flyout-brand-mark"}
-            role={isQuotaRefreshing ? "status" : undefined}
-            aria-label={isQuotaRefreshing ? "Atualizando cotas de IA" : undefined}
-            title={isQuotaRefreshing ? "Atualizando cotas de IA…" : undefined}
+            className="flyout-brand-mark"
+            role={!overview || isQuotaRefreshing ? "status" : undefined}
+            aria-label={!overview ? "Conectando à telemetria local" : isQuotaRefreshing ? "Atualizando cotas de IA" : undefined}
+            title={!overview ? "Conectando à telemetria local…" : isQuotaRefreshing ? "Atualizando cotas de IA…" : undefined}
           >
-            <PulseMark animated={isQuotaRefreshing} />
+            <PulseMark animated={!overview || isQuotaRefreshing} />
           </span>
           <div>
             <h2>Pulse</h2>
-            <p>PAINEL RÁPIDO</p>
+            <div className="flyout-brand-sub">
+              <p>PAINEL RÁPIDO</p>
+              {!overview && <span className="flyout-loading-tag">CONECTANDO</span>}
+            </div>
           </div>
           {typeof openrouterCredits === "number" && Number.isFinite(openrouterCredits) && (
             <span className="flyout-training-credit" title="Saldo OpenRouter disponível em dólares (USD)" aria-label="Saldo OpenRouter disponível em dólares (USD)">
@@ -1532,14 +1536,17 @@ export function TrayFlyout({
         </div>
       </header>
 
-      {!overview && <PulseLoading compact />}
       <section className="flyout-metrics">
         <div className="flyout-metrics-row">
           <div className="flyout-metric-card">
             <div className="flyout-metric-head">
               <span>CPU</span>
               <strong title={flyoutCpuSensor ? `${flyoutCpuSensor.label} · ${flyoutCpuSensor.source}` : undefined}>
-                {metric(overview?.cpuPercent, "%")}{flyoutCpuSensor ? ` · ${metric(flyoutCpuSensor.celsius, " °C")}` : ""}
+                {overview ? (
+                  `${metric(overview.cpuPercent, "%")}${flyoutCpuSensor ? ` · ${metric(flyoutCpuSensor.celsius, " °C")}` : ""}`
+                ) : (
+                  <span className="flyout-skeleton-value" aria-hidden="true" />
+                )}
               </strong>
             </div>
             <SparklineChart
@@ -1554,7 +1561,11 @@ export function TrayFlyout({
             <div className="flyout-metric-head">
               <span>RAM</span>
               <strong>
-                {metric(overview?.memoryUsedGb, " GB")} ({metric(memoryPercent, "%")})
+                {overview ? (
+                  `${metric(overview.memoryUsedGb, " GB")} (${metric(memoryPercent, "%")})`
+                ) : (
+                  <span className="flyout-skeleton-value" aria-hidden="true" />
+                )}
               </strong>
             </div>
             <SparklineChart
@@ -1574,9 +1585,11 @@ export function TrayFlyout({
             <div className="flyout-metric-head">
               <div className="disk-metric-label">
                 <span>DISCO C:</span>
-                <DiskHealthBadge health={diskHealth} />
+                {overview && <DiskHealthBadge health={diskHealth} />}
               </div>
-              <strong>{metric(diskPercent, "%")}</strong>
+              <strong>
+                {overview ? metric(diskPercent, "%") : <span className="flyout-skeleton-value" aria-hidden="true" />}
+              </strong>
             </div>
             <MiniCapacityBar
               usedGb={overview?.diskUsedGb}
@@ -1843,31 +1856,46 @@ export function TrayFlyout({
       <section className="flyout-processes">
         <div className="flyout-section-title">
           <span>TOP PROCESSOS</span>
-          <small>MAIOR CONSUMO DE MEMÓRIA</small>
+          <small>{!overview ? "CONECTANDO…" : "MAIOR CONSUMO DE MEMÓRIA"}</small>
         </div>
         <ul className="flyout-process-list">
-          {(overview?.topProcesses?.length ? overview.topProcesses.slice(0, 5).map((p, i) => (
-            <li key={p.id}>
-              <span className="flyout-process-rank">{String(i + 1).padStart(2, "0")}</span>
-              <span className="flyout-process-name" title={[p.displayName || p.name, p.name, p.publisher].filter(Boolean).join(" · ")}>
-                <strong>{p.displayName || p.name}</strong>
-                <small>
-                  {[p.name, p.publisher].filter(Boolean).join(" · ") || `PID ${p.id}`}
-                  {(p.processCount ?? 1) > 1 ? ` · ${p.processCount} processos` : ""}
-                </small>
-              </span>
-              <span className="flyout-process-mem">{metric(p.memoryMb, " MB")}</span>
-              <button
-                type="button"
-                className="flyout-process-close"
-                aria-label={`Fechar ${p.displayName || p.name}`}
-                disabled={p.name.toLocaleLowerCase("pt-BR").startsWith("pulse")}
-                onClick={() => { setProcessError(""); setProcessToClose(p); }}
-              >
-                ✕
-              </button>
-            </li>
-          )) : <li className="muted">Processos indisponíveis nesta coleta.</li>)}
+          {!overview ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <li key={`skeleton-${i}`} className="flyout-process-skeleton" aria-hidden="true">
+                <span className="flyout-skeleton-box rank" />
+                <div className="flyout-skeleton-details">
+                  <span className="flyout-skeleton-box title" />
+                  <span className="flyout-skeleton-box sub" />
+                </div>
+                <span className="flyout-skeleton-box mem" />
+              </li>
+            ))
+          ) : overview.topProcesses?.length ? (
+            overview.topProcesses.slice(0, 5).map((p, i) => (
+              <li key={p.id}>
+                <span className="flyout-process-rank">{String(i + 1).padStart(2, "0")}</span>
+                <span className="flyout-process-name" title={[p.displayName || p.name, p.name, p.publisher].filter(Boolean).join(" · ")}>
+                  <strong>{p.displayName || p.name}</strong>
+                  <small>
+                    {[p.name, p.publisher].filter(Boolean).join(" · ") || `PID ${p.id}`}
+                    {(p.processCount ?? 1) > 1 ? ` · ${p.processCount} processos` : ""}
+                  </small>
+                </span>
+                <span className="flyout-process-mem">{metric(p.memoryMb, " MB")}</span>
+                <button
+                  type="button"
+                  className="flyout-process-close"
+                  aria-label={`Fechar ${p.displayName || p.name}`}
+                  disabled={p.name.toLocaleLowerCase("pt-BR").startsWith("pulse")}
+                  onClick={() => { setProcessError(""); setProcessToClose(p); }}
+                >
+                  ✕
+                </button>
+              </li>
+            ))
+          ) : (
+            <li className="flyout-process-empty muted">Processos indisponíveis nesta coleta.</li>
+          )}
         </ul>
       </section>
 
@@ -2054,6 +2082,11 @@ function App() {
   const debugCategories = useMemo(
     () => Array.from(new Set(debugLog.map(entry => entry.category ?? "application"))).sort(),
     [debugLog],
+  );
+
+  const visibleNavigationItems = useMemo(
+    () => ALL_NAVIGATION_ITEMS.filter(item => item !== "Debug" || debugEnabled),
+    [debugEnabled],
   );
 
   const filteredDebugLog = useMemo(() => {
@@ -2430,9 +2463,15 @@ function App() {
 
   useEffect(() => {
     invoke<boolean>("get_debug_mode")
-      .then(setDebugEnabled)
+      .then(enabled => {
+        const isEnabled = enabled === true;
+        setDebugEnabled(isEnabled);
+        if (!isEnabled && activeArea === "Debug") {
+          setActiveArea("Visão geral");
+        }
+      })
       .catch(() => undefined);
-  }, []);
+  }, [activeArea]);
 
   useEffect(() => {
     if (activeArea === "Armazenamento") {
@@ -2518,9 +2557,12 @@ function App() {
 
   const toggleDebug = async (enabled: boolean) => {
     setDebugEnabled(enabled);
+    if (!enabled && activeArea === "Debug") {
+      setActiveArea("Visão geral");
+    }
     try {
       await invoke<boolean>("set_debug_mode", { enabled });
-      if (activeArea === "Debug") await loadDebugAudit();
+      if (enabled && activeArea === "Debug") await loadDebugAudit();
     } catch {
       setDebugEnabled(!enabled);
       setError("Não foi possível alterar o modo Debug.");
@@ -2732,14 +2774,14 @@ function App() {
           <nav aria-label="Navegação principal">
             <p className="nav-label">MÓDULOS</p>
             <ul>
-              {navigationItems.map((item, i) => (
+              {visibleNavigationItems.map(item => (
                 <li key={item}>
                   <button
                     aria-current={activeArea === item ? "page" : undefined}
                     className={`nav-item ${activeArea === item ? "active" : ""}`}
                     onClick={() => setActiveArea(item)}
                   >
-                    <ModuleIcon index={i} />
+                    <ModuleIcon name={item} index={ALL_NAVIGATION_ITEMS.indexOf(item)} />
                     <span className="nav-title">{item}</span>
                   </button>
                 </li>
@@ -2827,7 +2869,7 @@ function App() {
           <div className={`overview-heading${activeArea === "Armazenamento" ? " storage-overview-heading" : ""}`}>
             <div>
               <p className="eyebrow">
-                {module.eyebrow} / {activeArea === "Informações" ? "INFO" : `0${navigationItems.indexOf(activeArea) + 1}`}
+                {module.eyebrow} / {activeArea === "Informações" ? "INFO" : `0${ALL_NAVIGATION_ITEMS.indexOf(activeArea as NavigationItem) + 1}`}
               </p>
               <h2>{module.title}</h2>
             </div>
@@ -3333,6 +3375,12 @@ function App() {
               </section>
             )}
 
+            {activeArea === "Desinstalar programas" && (
+              <Suspense fallback={<PulseLoading compact />}>
+                <UninstallHub />
+              </Suspense>
+            )}
+
             {activeArea === "Inicialização e segurança" && (
               <section className="module-dashboard">
                 <div className="startup-stats-row">
@@ -3478,12 +3526,6 @@ function App() {
             {activeArea === "Cotas de IA" && (
               <Suspense fallback={<PulseLoading compact />}>
                 <SubscriptionUsage />
-              </Suspense>
-            )}
-
-            {activeArea === "Desinstalar programas" && (
-              <Suspense fallback={<PulseLoading compact />}>
-                <UninstallHub />
               </Suspense>
             )}
 

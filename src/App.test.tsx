@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -666,6 +666,53 @@ describe("Formatters and Components", () => {
       expect(await screen.findByText("Codex")).toBeInTheDocument();
       expect(screen.queryByText("Claude Code")).not.toBeInTheDocument();
       expect(screen.getByText("1 DISPONÍVEIS")).toBeInTheDocument();
+    });
+
+    it("renders stable native skeleton loading state without intrusive banner or duplicate indicator", async () => {
+      let resolveOverview!: (value: unknown) => void;
+      vi.mocked(invoke).mockImplementation((command: string) => {
+        if (command === "get_system_overview") {
+          return new Promise(resolve => {
+            resolveOverview = resolve;
+          }) as never;
+        }
+        return Promise.resolve() as never;
+      });
+
+      const { container } = render(<TrayFlyout onOpenMain={vi.fn()} />);
+
+      // Verifica ausência do banner intrusivo que causava overflow e logo duplicado
+      expect(screen.queryByText("Lendo o sistema")).not.toBeInTheDocument();
+      expect(screen.queryByText("Conectando à telemetria local…")).not.toBeInTheDocument();
+
+      // Indicador limpo e alinhado no cabeçalho
+      expect(screen.getByText("CONECTANDO")).toBeInTheDocument();
+      expect(container.querySelector(".flyout-brand-mark .pulse-mark-loading")).toBeInTheDocument();
+
+      // Skeletons de telemetria e processos mantêm o layout estável
+      expect(container.querySelectorAll(".flyout-skeleton-value").length).toBeGreaterThanOrEqual(3);
+      expect(container.querySelectorAll(".flyout-process-skeleton").length).toBe(4);
+      expect(screen.queryByText("Processos indisponíveis nesta coleta.")).not.toBeInTheDocument();
+
+      // Resolve a telemetria e confere a transição fluida
+      act(() => {
+        resolveOverview({
+          cpuPercent: 22.0,
+          memoryUsedGb: 8.0,
+          memoryTotalGb: 16.0,
+          diskUsedGb: 200.0,
+          diskTotalGb: 500.0,
+          topProcesses: [
+            { name: "pulse.exe", id: 10, memoryMb: 75 },
+          ],
+        });
+      });
+
+      expect(await screen.findByText("22%")).toBeInTheDocument();
+      expect(screen.queryByText("CONECTANDO")).not.toBeInTheDocument();
+      expect(container.querySelectorAll(".flyout-skeleton-value").length).toBe(0);
+      expect(container.querySelectorAll(".flyout-process-skeleton").length).toBe(0);
+      expect(screen.getAllByText("pulse.exe")[0]).toBeInTheDocument();
     });
   });
 
@@ -2116,6 +2163,78 @@ describe("Pulse application shell", () => {
     expect(screen.getByText("Somente memória desta execução")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "COPIAR JSON" })).toBeEnabled();
     expect(screen.getByLabelText("Buscar na auditoria")).toBeInTheDocument();
+  });
+
+  it("reorganizes navigation menu, hides Debug when disabled, and reveals it at the end on toggle", async () => {
+    let debugMode = false;
+    vi.mocked(invoke).mockImplementation((command: string, args?: unknown) => {
+      if (command === "get_debug_mode") return Promise.resolve(debugMode) as never;
+      if (command === "set_debug_mode") {
+        debugMode = Boolean((args as { enabled?: boolean })?.enabled);
+        return Promise.resolve(debugMode) as never;
+      }
+      if (command === "get_debug_log") return Promise.resolve([]) as never;
+      if (command === "get_debug_audit_info") return Promise.resolve({}) as never;
+      return Promise.resolve([]) as never;
+    });
+
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("get_debug_mode");
+    });
+
+    // 1. Inicialmente sem debug: Debug não aparece no menu e ordem é coerente
+    const nav = screen.getByRole("navigation", { name: "Navegação principal" });
+    const moduleButtons = within(nav).getAllByRole("button");
+    const moduleNames = moduleButtons.map(btn => btn.textContent?.trim());
+    expect(moduleNames).toEqual([
+      "Visão geral",
+      "Atividade",
+      "Desempenho",
+      "Armazenamento",
+      "Desinstalar programas",
+      "Inicialização e segurança",
+      "Serviços e atualizações",
+      "Cotas de IA",
+    ]);
+    expect(within(nav).queryByRole("button", { name: /Debug/ })).not.toBeInTheDocument();
+
+    // 2. Ativar no cabeçalho revela Debug no final da lista
+    const headerToggle = screen.getByLabelText("Modo Debug");
+    expect(headerToggle).not.toBeChecked();
+    fireEvent.click(headerToggle);
+
+    await waitFor(() => {
+      const updatedButtons = within(nav).getAllByRole("button");
+      const updatedNames = updatedButtons.map(btn => btn.textContent?.trim());
+      expect(updatedNames).toEqual([
+        "Visão geral",
+        "Atividade",
+        "Desempenho",
+        "Armazenamento",
+        "Desinstalar programas",
+        "Inicialização e segurança",
+        "Serviços e atualizações",
+        "Cotas de IA",
+        "Debug",
+      ]);
+    });
+
+    // 3. Ao navegar para o módulo Debug
+    fireEvent.click(within(nav).getByRole("button", { name: /Debug/ }));
+    await waitFor(() => {
+      expect(screen.getByText("Registro técnico da execução")).toBeInTheDocument();
+    });
+
+    // 4. Ao desativar o Debug no cabeçalho, ele desaparece do menu e redireciona para a Visão Geral
+    const headerCheckbox = container.querySelector(".command-bar input[aria-label='Modo Debug']") as HTMLInputElement;
+    expect(headerCheckbox.checked).toBe(true);
+    fireEvent.click(headerCheckbox);
+    await waitFor(() => {
+      expect(within(nav).queryByRole("button", { name: /Debug/ })).not.toBeInTheDocument();
+      expect(screen.getByText("Estado da máquina.")).toBeInTheDocument();
+    });
   });
 
   it("renders when current window is tray-flyout and switches to main on action", async () => {

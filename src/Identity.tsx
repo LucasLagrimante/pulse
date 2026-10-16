@@ -17,8 +17,26 @@ const paths = [
   "M4 17V9 M10 17V5 M16 17v-4 M3 21h18 M19 3v6 M16 6h6",
   "M8 6l-5 6 5 6 M16 6l5 6-5 6",
 ];
-export function ModuleIcon({ index }: { index: number }) {
-  return <svg className="module-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[index] || paths[0]} /></svg>;
+
+const moduleIconPaths: Record<string, string> = {
+  "Visão geral": paths[0],
+  "Atividade": paths[1],
+  "Desempenho": paths[2],
+  "Armazenamento": paths[3],
+  "Desinstalar programas": "M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M10 11v6 M14 11v6",
+  "Inicialização e segurança": paths[4],
+  "Serviços e atualizações": paths[5],
+  "Cotas de IA": paths[6],
+  "Debug": paths[7],
+};
+
+export function ModuleIcon({ index, name }: { index?: number; name?: string }) {
+  const d = (name ? moduleIconPaths[name] : undefined) ?? (index !== undefined ? paths[index] : undefined) ?? paths[0];
+  return (
+    <svg className="module-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={d} />
+    </svg>
+  );
 }
 
 export function FileIcon({ folder = false }: { folder?: boolean }) {
