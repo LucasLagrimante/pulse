@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" fill="none">
+  <defs>
+    <radialGradient id="halo" cx="0.5" cy="0.18" r="0.75">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="signal" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#181b20"/>
+  <rect width="1200" height="630" fill="url(#halo)"/>
+
+  <!-- grade discreta de fundo -->
+  <g stroke="#ffffff" stroke-opacity="0.035" stroke-width="1">
+    <line x1="0" y1="0" x2="0" y2="630"/><line x1="60" y1="0" x2="60" y2="630"/><line x1="120" y1="0" x2="120" y2="630"/><line x1="180" y1="0" x2="180" y2="630"/><line x1="240" y1="0" x2="240" y2="630"/><line x1="300" y1="0" x2="300" y2="630"/><line x1="360" y1="0" x2="360" y2="630"/><line x1="420" y1="0" x2="420" y2="630"/><line x1="480" y1="0" x2="480" y2="630"/><line x1="540" y1="0" x2="540" y2="630"/><line x1="600" y1="0" x2="600" y2="630"/><line x1="660" y1="0" x2="660" y2="630"/><line x1="720" y1="0" x2="720" y2="630"/><line x1="780" y1="0" x2="780" y2="630"/><line x1="840" y1="0" x2="840" y2="630"/><line x1="900" y1="0" x2="900" y2="630"/><line x1="960" y1="0" x2="960" y2="630"/><line x1="1020" y1="0" x2="1020" y2="630"/><line x1="1080" y1="0" x2="1080" y2="630"/><line x1="1140" y1="0" x2="1140" y2="630"/><line x1="1200" y1="0" x2="1200" y2="630"/>
+    <line x1="0" y1="0" x2="1200" y2="0"/><line x1="0" y1="60" x2="1200" y2="60"/><line x1="0" y1="120" x2="1200" y2="120"/><line x1="0" y1="180" x2="1200" y2="180"/><line x1="0" y1="240" x2="1200" y2="240"/><line x1="0" y1="300" x2="1200" y2="300"/><line x1="0" y1="360" x2="1200" y2="360"/><line x1="0" y1="420" x2="1200" y2="420"/><line x1="0" y1="480" x2="1200" y2="480"/><line x1="0" y1="540" x2="1200" y2="540"/><line x1="0" y1="600" x2="1200" y2="600"/>
+  </g>
+
+  <!-- marca -->
+  <g transform="translate(96 96)">
+    <rect width="76" height="76" rx="19" fill="#22262d"/>
+    <g transform="translate(14 14)" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 34V14a6 6 0 0 1 6-6h20a6 6 0 0 1 6 6v20a6 6 0 0 1-6 6H20" stroke="#8da9bf" stroke-width="2.6"/>
+      <path d="M4 26h10l5-12v24l7-20 4 8h14" stroke="url(#signal)" stroke-width="4"/>
+    </g>
+  </g>
+  <text x="196" y="132" font-family="Segoe UI, system-ui, sans-serif" font-size="42"
+        font-weight="700" letter-spacing="-1.4" fill="#f1f5f9">Pulse</text>
+  <text x="196" y="160" font-family="Consolas, monospace" font-size="15"
+        letter-spacing="3.4" fill="#f59e0b">WINDOWS OBSERVABILITY</text>
+
+  <!-- headline -->
+  <text x="96" y="330" font-family="Segoe UI, system-ui, sans-serif" font-size="70"
+        font-weight="700" letter-spacing="-2.4" fill="#f1f5f9">Seu Windows,</text>
+  <text x="96" y="416" font-family="Segoe UI, system-ui, sans-serif" font-size="70"
+        font-weight="700" letter-spacing="-2.4" fill="#f1f5f9">em perspectiva.</text>
+
+  <!-- linha de pulso decorativa -->
+  <path d="M96 512h84l30-58v116l42-96 24 38h90" stroke="url(#signal)" stroke-width="5"
+        stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.9"/>
+  <path d="M96 512h82" stroke="#8da9bf" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.55"/>
+
+  <!-- rodapé: descrição na esquerda, URL na direita, sem sobreposição -->
+  <text x="96" y="574" font-family="Segoe UI, system-ui, sans-serif" font-size="25" fill="#94a3b8">
+    Observabilidade e controle — 100% local.
+  </text>
+  <text x="1104" y="579" font-family="Consolas, monospace" font-size="21" letter-spacing="0.4"
+        fill="#f59e0b" text-anchor="end">pulse.lagrimante.com.br</text>
+</svg>

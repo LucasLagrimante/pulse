@@ -1,0 +1,79 @@
+# Pulse
+
+> Central nativa de observabilidade, diagnóstico e controle local para Windows 11. Reúne monitoramento de CPU, memória, disco e GPU, atividade por grupo de processos, análise de armazenamento TreeSize/Treemap, limpeza segura, desinstalação em 3 fases com resíduos, inventário de inicialização StartupApproved, serviços nativos (SCM) + atualizações winget, cotas de assinaturas de IA com histórico de 30 dias em SQLite e flyout na bandeja com mixer Core Audio por aplicativo. Todo o processamento é 100% local: sem conta, sem telemetria e sem nuvem.
+
+- Versão atual: 1.0.0
+- Instalador Windows 11 x64: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe (instalador NSIS de 3,5 MB)
+- SHA-256: `d1c034853020fbd0663fab244f886456bd82c24aa8e6e53889af6c8c6002d06a`
+
+## O que é
+
+O Pulse substitui a fragmentação de sete utilitários isolados — Gerenciador de Tarefas, Monitor de Recursos, TreeSize, Sysinternals Autoruns, Revo Uninstaller, console `services.msc`/`winget` e EarTrumpet — por uma experiência única, fluida e orientada a explicar o que está acontecendo na máquina.
+
+É um aplicativo nativo para Windows 11 (x64), construído com Rust e Tauri 2, com interface React 19 e TypeScript sob o sistema de design neumórfico mineral (temas Porcelain claro e Obsidian escuro). Não é um serviço web e não possui backend remoto.
+
+## Quando usar o Pulse
+
+Use o Pulse quando você precisa:
+
+- Entender por que o Windows está lento, sem cair em suspeita genérica sobre processos.
+- Ver qual aplicativo realmente consome memória, CPU ou GPU agora, agrupado por programa (com identificação dedicada de `vmmemWSL`).
+- Descobrir o que está ocupando o disco com TreeSize + Treemap e recuperar espaço com categorias seguras em whitelist, sem micro-travamentos de DPC (`WdFilter.sys`).
+- Desinstalar um programa criando Ponto de Restauração do Windows e revisando pastas e chaves de registro órfãs antes de limpar.
+- Saber quais itens iniciam junto com o Windows via `StartupApproved` (sem `reg delete` destrutivo) e qual o impacto real medido em milissegundos no Event Log.
+- Inspecionar serviços do Windows (classificados em Sistema, Usuário e Revisão) e atualizar programas instalados via `winget`.
+- Controlar o volume individual de cada aplicativo e trocar dispositivos de áudio direto pelo flyout da bandeja do sistema (Core Audio COM).
+- Acompanhar localmente limites, janelas de reset (5h/semanal), créditos e histórico de 30 dias das suas assinaturas de IA (**Claude Code**, **OpenAI Codex**, **Google Antigravity**, **OpenRouter** e **OpenCode Go**).
+
+Quando NÃO usar:
+
+- Você precisa de monitoramento remoto, de servidores ou de múltiplas máquinas em rede.
+- Você usa Windows 10, macOS ou Linux nativo — o Pulse é Windows-first, para Windows 11 x64.
+- Você quer que o aplicativo apague arquivos automaticamente sem confirmação. O Pulse não executa operações destrutivas por conta própria.
+- Você procura um antivírus. O Pulse aponta evidências técnicas verificáveis para revisão, nunca rotula executáveis arbitrariamente como malware.
+
+## Recursos principais
+
+1. **Visão geral** — CPU, memória, disco por volume, GPU, rede e processos em uma tela.
+2. **Atividade** — processos agrupados por aplicativo com ordenação por RAM, CPU e GPU, detecção de `vmmemWSL` e encerramento seguro de árvore.
+3. **Desempenho** — gráficos SVG em tempo real e sensores térmicos reais (`Indisponível` com justificativa quando não exposto pelo hardware).
+4. **Armazenamento (TreeSize + Treemap)** — árvore agregada, mapa visual proporcional, arquivos recentes e pastas personalizadas multi-volume com proteção anti-DPC.
+5. **Limpeza local controlada** — categorias seguras em whitelist com estimativa de espaço antes da ação.
+6. **Desinstalação rastreada** — Ponto de Restauração do Sistema + desinstalador oficial do fabricante + varredura conservadora de resíduos de registro e pastas.
+7. **Inicialização e segurança** — controle reversível via `StartupApproved` (0x02/0x03), impacto de boot em ms (Event ID 101/102) e evidências verificáveis.
+8. **Serviços e atualizações** — leitura nativa do SCM/WMI (Sistema, Usuário, Revisão) e atualizações de pacotes via `winget`.
+9. **Cotas de IA** — monitoramento local de Claude Code, OpenAI Codex, Google Antigravity, OpenRouter e OpenCode Go com chaves no Windows Keyring e histórico de 30 dias em SQLite.
+10. **Áudio, Bandeja e Auditoria** — flyout rápido no tray com mixer Core Audio por aplicativo e trilha de auditoria local exportável.
+
+## Como funciona
+
+1. Baixe o instalador NSIS (3,5 MB) em https://pulse.lagrimante.com.br/#download.
+2. Instale — o processo é local no escopo do usuário atual e não exige privilégios de administrador.
+3. Abra o Pulse. A telemetria da máquina carrega imediatamente na janela principal e no ícone da bandeja.
+
+## Requisitos
+
+- Windows 11 x64.
+- WebView2 Runtime (já incluído nas versões atuais do Windows 11).
+- Pegada leve (< 80 MB de Working Set em RAM).
+
+## Modelo de honestidade
+
+- Métrica sem suporte do hardware ou driver aparece como **Indisponível**, com justificativa técnica. Nunca como zero fictício.
+- Alertas de segurança apresentam evidências verificáveis, sem rotular executáveis arbitrariamente como malware.
+- Operações potencialmente destrutivas sem confirmação explícita são proibidas por arquitetura.
+
+## Detalhes técnicos
+
+- Backend nativo em Rust (Tauri 2) sobre APIs Windows: PDH, DXGI, Core Audio COM, SCM, WMI, System Restore, Event Log e Registro.
+- Frontend React 19 + TypeScript + Vite com carregamento lazy por módulo.
+- Banco de dados local SQLite para histórico de 30 dias de cotas de IA + Windows Credential Manager (`keyring`).
+- Interface neumórfica mineral com temas claro (Porcelain) e escuro (Obsidian), ambos com contraste WCAG AA.
+
+## Links
+
+- Landing page: https://pulse.lagrimante.com.br/
+- Versão Markdown: https://pulse.lagrimante.com.br/index.md
+- Manifesto de release: https://pulse.lagrimante.com.br/release.json
+- Código-fonte: https://github.com/LucasLagrimante/pulse
+- Autor: https://lucaslagrimante.github.io/

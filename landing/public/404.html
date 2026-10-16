@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pulse — página não encontrada</title>
+    <meta name="robots" content="noindex, follow" />
+    <meta
+      name="description"
+      content="A página solicitada não existe no site do Pulse, central de observabilidade e diagnóstico para Windows 11."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href="https://pulse.lagrimante.com.br/" />
+    <style>
+      :root {
+        --bg: #181b20;
+        --surface: #1e2229;
+        --text: #f1f5f9;
+        --muted: #8b98ab;
+        --accent: #f59e0b;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 32px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        line-height: 1.6;
+      }
+      .card {
+        max-width: 56ch;
+        padding: 40px;
+        background: var(--surface);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        border-radius: 20px;
+        box-shadow: 8px 8px 18px #0e1013, -8px -8px 18px #22262d;
+        text-align: center;
+      }
+      h1 { font-size: 1.7rem; letter-spacing: -0.03em; margin-bottom: 14px; }
+      p { color: var(--muted); margin-bottom: 26px; }
+      .links { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+      a {
+        padding: 11px 20px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 0.92rem;
+        text-decoration: none;
+      }
+      .primary { background: var(--accent); color: #141619; }
+      .ghost { background: var(--bg); color: var(--text); border: 1px solid rgba(255, 255, 255, 0.07); }
+      .markdown { margin-top: 26px; font-family: Consolas, monospace; font-size: 0.78rem; color: var(--muted); }
+      .markdown a { color: var(--accent); background: none; padding: 0; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>404 — página não encontrada</h1>
+      <p>
+        O endereço que você abriu não existe no site do Pulse. A central de
+        observabilidade e diagnóstico para Windows 11 está na página inicial.
+      </p>
+      <nav class="links" aria-label="Navegação alternativa">
+        <a class="primary" href="/">Página inicial</a>
+        <a class="ghost" href="/#download">Baixar para Windows</a>
+        <a class="ghost" href="/sitemap.xml">Sitemap</a>
+        <a class="ghost" href="/llms.txt">llms.txt</a>
+      </nav>
+      <p class="markdown">
+        Versão em Markdown para agentes: <a href="/index.md">/index.md</a>
+      </p>
+    </main>
+  </body>
+</html>

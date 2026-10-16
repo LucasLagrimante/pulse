@@ -1,0 +1,1471 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Pulse — central de observabilidade e diagnóstico para Windows 11</title>
+    <meta
+      name="description"
+      content="Pulse reúne monitoramento de CPU, memória, disco e GPU, atividade por grupo de processos, análise de armazenamento TreeSize, limpeza segura, desinstalação com resíduos, inicialização, serviços, winget, mixer de áudio e cotas de IA em um aplicativo nativo para Windows 11. Dados 100% locais."
+    />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <meta name="author" content="Lucas Lagrimante" />
+    <meta name="theme-color" content="#181b20" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#e6edf5" media="(prefers-color-scheme: light)" />
+    <link rel="canonical" href="https://pulse.lagrimante.com.br/" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="alternate" type="text/markdown" href="/index.md" />
+
+    <meta property="og:site_name" content="Pulse" />
+    <meta property="og:title" content="Pulse — seu Windows, em perspectiva." />
+    <meta
+      property="og:description"
+      content="Observabilidade, diagnóstico e controle local do Windows 11 em uma interface única. Sem conta, sem telemetria e sem envio de dados para a nuvem."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://pulse.lagrimante.com.br/" />
+    <meta property="og:image" content="https://pulse.lagrimante.com.br/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Pulse — seu Windows, em perspectiva." />
+    <meta
+      name="twitter:description"
+      content="Observabilidade, diagnóstico e controle local do Windows 11 em uma interface única. Sem conta, sem telemetria e sem envio de dados para a nuvem."
+    />
+    <meta name="twitter:image" content="https://pulse.lagrimante.com.br/og-image.png" />
+    <meta
+      name="keywords"
+      content="monitor de sistema windows, gerenciador de tarefas alternativo, monitoramento cpu gpu ram, analisador de disco windows, otimizar windows 11, programas de inicialização windows, desinstalador windows resíduos, cotas claude codex openrouter, observabilidade local, pulse lagrimante"
+    />
+
+    <link rel="stylesheet" href="/src/base.css" />
+    <link rel="stylesheet" href="/src/components.css" />
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Pulse",
+      "alternateName": ["Pulse Windows Observability"],
+      "url": "https://pulse.lagrimante.com.br/",
+      "inLanguage": "pt-BR",
+      "description": "Central de observabilidade e diagnóstico para Windows 11: recursos, processos, armazenamento, inicialização, desinstalação, serviços, áudio e cotas de IA em uma interface única, com dados 100% locais.",
+      "author": {
+        "@type": "Person",
+        "name": "Lucas Lagrimante",
+        "url": "https://lucaslagrimante.github.io/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Pulse",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "Windows 11",
+      "softwareVersion": "1.0.0",
+      "fileSize": "3,5 MB",
+      "downloadUrl": "https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe",
+      "description": "Aplicativo nativo para Windows 11 que reúne observabilidade de hardware, atividade de processos, análise de armazenamento TreeSize, limpeza segura, desinstalação com rastreamento de resíduos, inventário de inicialização, serviços e winget, cotas de IA com histórico SQLite e painel na bandeja com mixer Core Audio. Todo o processamento é local.",
+      "featureList": [
+        "Visão geral de CPU, memória, disco, GPU e processos agrupados",
+        "Atividade com consumo de CPU, GPU e RAM por aplicativo e identificação de vmmemWSL",
+        "Telemetria em tempo real com gráficos SVG e sensores térmicos reais",
+        "Análise de armazenamento em árvore (TreeSize), treemap e arquivos recentes com proteção anti-DPC",
+        "Limpeza local controlada por categorias seguras em whitelist",
+        "Desinstalação em 3 fases com Ponto de Restauração e varredura conservadora de resíduos",
+        "Inventário de inicialização via StartupApproved com impacto de boot em milissegundos",
+        "Serviços nativos do Windows (SCM/WMI) e atualizações de aplicativos via winget",
+        "Cotas de assinaturas de IA (Claude Code, OpenAI Codex, Google Antigravity, OpenRouter, OpenCode Go) com histórico de 30 dias em SQLite",
+        "Mixer de volume Core Audio por aplicativo no flyout da bandeja e trilha de auditoria local"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "BRL"
+      },
+      "isAccessibleForFree": true,
+      "author": {
+        "@type": "Person",
+        "name": "Lucas Lagrimante",
+        "url": "https://lucaslagrimante.github.io/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "O Pulse envia meus dados para a nuvem?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Não. O Pulse foi projetado para processar tudo localmente na sua máquina. Não há conta de usuário, não há telemetria para servidores externos e nenhuma leitura do sistema é transmitida para a nuvem."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Preciso criar conta ou pagar para usar o Pulse?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Não. O Pulse é gratuito, não exige cadastro, login ou assinatura. Você baixa o instalador para Windows 11 e usa."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "O Pulse funciona no Windows 10?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "O Pulse é Windows-first e foi projetado e testado para o Windows 11 x64. Ele depende de APIs e do WebView2 presentes nas versões atuais do Windows 11."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "O Pulse apaga arquivos ou chaves de registro automaticamente?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Não. O Pulse nunca executa operações destrutivas por conta própria. A limpeza de disco usa categorias seguras em whitelist, a inicialização usa o padrão reversível StartupApproved (sem reg delete) e a desinstalação cria Ponto de Restauração e exibe os resíduos para sua revisão."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "O que acontece quando um sensor não é suportado pelo meu hardware?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "O Pulse exibe o valor como Indisponível, acompanhado da justificativa técnica. Ele nunca inventa um zero ou um percentual fictício para preencher a interface."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Quais ferramentas de IA são suportadas no módulo de Cotas?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "O Pulse acompanha localmente Claude Code, OpenAI Codex, Google Antigravity, OpenRouter e OpenCode Go, armazenando chaves opcionais no Windows Credential Manager e mantendo histórico de 30 dias em SQLite local."
+          }
+        }
+      ]
+    }
+    </script>
+
+    <script>
+      // Tema aplicado antes do primeiro paint: evita piscada ao carregar.
+      (function () {
+        try {
+          var saved = localStorage.getItem("pulse-theme");
+          if (saved !== "light" && saved !== "dark") {
+            saved = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          document.documentElement.setAttribute("data-theme", saved);
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+
+    <header class="site-header" data-header>
+      <div class="container">
+        <a class="brand" href="/" aria-label="Pulse — página inicial">
+          <svg class="brand-mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+            <rect width="48" height="48" rx="12" fill="var(--surface-raised)" stroke="var(--border-subtle)" />
+            <g stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 34V14a6 6 0 0 1 6-6h20a6 6 0 0 1 6 6v20a6 6 0 0 1-6 6H20" stroke="var(--rail)" stroke-width="2.4" />
+              <path d="M4 26h10l5-12v24l7-20 4 8h14" stroke="var(--accent)" stroke-width="3.8" />
+            </g>
+          </svg>
+          <span>Pulse<small>WINDOWS OBSERVABILITY</small></span>
+        </a>
+
+        <nav class="site-nav" aria-label="Navegação principal">
+          <a href="#previa">Simulador</a>
+          <a href="#recursos">Módulos</a>
+          <a href="#ia">Cotas de IA</a>
+          <a href="#privacidade">Privacidade</a>
+          <a href="#requisitos">Requisitos</a>
+          <a href="#duvidas">Dúvidas</a>
+        </nav>
+
+        <div class="header-actions">
+          <button
+            type="button"
+            class="theme-toggle"
+            data-theme-toggle
+            aria-label="Ativar tema claro"
+            aria-pressed="true"
+          >
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+            </svg>
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+            </svg>
+          </button>
+          <a class="btn btn-primary" href="#download">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="18" height="18">
+              <path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" />
+            </svg>
+            <span class="btn-label">Baixar para Windows</span>
+            <span class="sr-only">Baixar o Pulse para Windows</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="conteudo">
+      <!-- ================= HERO ================= -->
+      <section class="hero">
+        <div class="container">
+          <div class="hero-top-row" data-reveal>
+            <span class="hero-badge">
+              <span class="dot" aria-hidden="true"></span>
+              100% local · zero telemetria · Windows 11 nativo
+            </span>
+            <span class="hero-version-pill">
+              <span data-release-version>v1.0.0</span> · Rust + Tauri 2 + React 19
+            </span>
+          </div>
+
+          <h1 data-reveal>Seu Windows,<br /><em>em perspectiva.</em></h1>
+
+          <p class="hero-sub" data-reveal>
+            O Pulse substitui sete utilitários isolados — Gerenciador de Tarefas, Monitor de
+            Recursos, TreeSize, Autoruns, Desinstalador, Serviços e Mixer de Volume — além de
+            monitorar suas assinaturas de IA localmente. Leitura direta das APIs do Windows,
+            honestidade absoluta em sensores e nenhum byte saindo da sua máquina.
+          </p>
+
+          <div class="hero-cta" data-reveal>
+            <a class="btn btn-primary btn-lg" href="#download">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="20" height="20">
+                <path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" />
+              </svg>
+              Baixar para Windows 11
+              <span class="btn-pill-meta" data-release-size>3,5 MB</span>
+            </a>
+            <a class="btn btn-secondary btn-lg" href="#previa">Testar interface interativa</a>
+          </div>
+
+          <p class="hero-meta" data-reveal>
+            <span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z M12 6v6l4 2" /></svg>
+              <span data-release-installer-label>Instalador NSIS · 3,5 MB</span>
+            </span>
+            <span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13h5l3-8 4 14 3-6h5" /></svg>
+              &lt; 80 MB RAM · ~0% CPU em repouso
+            </span>
+            <span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+              Zero conta · Zero nuvem
+            </span>
+            <span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17V9 M10 17V5 M16 17v-6 M22 21H2" /></svg>
+              10 módulos + Tray Flyout
+            </span>
+          </p>
+        </div>
+      </section>
+
+      <!-- ================= SIMULADOR INTERATIVO DA INTERFACE ================= -->
+      <section class="hero-visual" id="previa" aria-label="Simulador esquemático da interface do Pulse">
+        <div class="container">
+          <div class="sim-caption-bar" data-reveal>
+            <span class="sim-caption-hint">
+              <i aria-hidden="true"></i>
+              Clique nos módulos da barra lateral ou alterne para o Tray Flyout
+            </span>
+            <div class="sim-surface-switch" role="tablist" aria-label="Superfícies do Pulse">
+              <button
+                type="button"
+                role="tab"
+                class="sim-surface-btn"
+                data-sim-surface-btn="main"
+                aria-selected="true"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M9 4v16" /></svg>
+                Janela Principal (9 abas)
+              </button>
+              <button
+                type="button"
+                role="tab"
+                class="sim-surface-btn"
+                data-sim-surface-btn="tray"
+                aria-selected="false"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z M15.5 8.5a5 5 0 0 1 0 7 M19 5a9 9 0 0 1 0 14" /></svg>
+                Tray Flyout &amp; Mixer de Áudio
+              </button>
+            </div>
+          </div>
+
+          <figure class="app-window" data-reveal>
+            <figcaption class="sr-only">
+              Representação esquemática interativa da interface do Pulse para Windows 11.
+            </figcaption>
+            <div class="app-titlebar">
+              <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="file" data-sim-title>pulse — visão geral</span>
+              <div class="title-badges">
+                <span class="local-pill">PDH · WMI · CORE AUDIO · SQLITE</span>
+                <span class="live">AO VIVO</span>
+              </div>
+            </div>
+
+            <!-- SUPERFÍCIE 1: JANELA PRINCIPAL -->
+            <div class="app-body" data-sim-surface-view="main">
+              <aside class="app-sidebar" role="tablist" aria-label="Módulos do aplicativo">
+                <span class="side-label">MÓDULOS</span>
+                <button type="button" role="tab" class="side-item" data-sim-tab="overview" data-sim-label="visão geral" aria-selected="true" tabindex="0">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z" /></svg>
+                  Visão geral
+                </button>
+                <button type="button" role="tab" class="side-item" data-sim-tab="activity" data-sim-label="atividade (processos)" aria-selected="false" tabindex="-1">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7h18 M3 12h12 M3 17h16" /></svg>
+                  Atividade
+                </button>
+                <button type="button" role="tab" class="side-item" data-sim-tab="performance" data-sim-label="desempenho e sensores" aria-selected="false" tabindex="-1">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 13h5l3-8 4 14 3-6h5" /></svg>
+                  Desempenho
+                </button>
+                <button type="button" role="tab" class="side-item" data-sim-tab="storage" data-sim-label="armazenamento e limpeza" aria-selected="false" tabindex="-1">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z M4 14h16 M15 17h2" /></svg>
+                  Armazenamento
+                </button>
+                <button type="button" role="tab" class="side-item" data-sim-tab="uninstall" data-sim-label="desinstalar programas" aria-selected="false" tabindex="-1">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M10 11v6 M14 11v6" /></svg>
+                  Desinstalar programas
+                </button>
+                <button type="button" role="tab" class="side-item" data-sim-tab="startup" data-sim-label="inicialização e segurança" aria-selected="false" tabindex="-1">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l8 4v6c0 4-8 8-8 8s-8-4-8-8V7z M8 12l3 3 5-6" /></svg>
+                  Inicialização e segurança
+                </button>
+                <button type="button" role="tab" class="side-item" data-sim-tab="services" data-sim-label="serviços e atualizações" aria-selected="false" tabindex="-1">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z M12 2.5v3 M12 18.5v3 M2.5 12h3 M18.5 12h3 M5.2 5.2l2.1 2.1 M16.7 16.7l2.1 2.1 M18.8 5.2l-2.1 2.1 M7.3 16.7l-2.1 2.1" /></svg>
+                  Serviços e atualizações
+                </button>
+                <button type="button" role="tab" class="side-item" data-sim-tab="quotas" data-sim-label="cotas de assinaturas de IA" aria-selected="false" tabindex="-1">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 17V9 M10 17V5 M16 17v-4 M3 21h18 M19 3v6 M16 6h6" /></svg>
+                  Cotas de IA
+                </button>
+                <button type="button" role="tab" class="side-item" data-sim-tab="debug" data-sim-label="trilha de auditoria e debug" aria-selected="false" tabindex="-1">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 6l-5 6 5 6 M16 6l5 6-5 6" /></svg>
+                  Debug
+                </button>
+              </aside>
+
+              <div class="app-main">
+                <!-- PAINEL 1: VISÃO GERAL -->
+                <div class="sim-panel" role="tabpanel" data-sim-panel="overview">
+                  <div class="sim-panel-header">
+                    <div>
+                      <h3>Saúde do sistema em perspectiva</h3>
+                      <p>Cache nativo com TTL de 3,5 s · zero subprocessos ocultos no caminho crítico</p>
+                    </div>
+                    <span class="sim-api-tag">PDH · DXGI · WIN32</span>
+                  </div>
+                  <div class="app-cards">
+                    <div class="app-card">
+                      <span class="k">CPU</span>
+                      <span class="v">18%</span>
+                      <span class="sub">Ryzen 7 · 54 °C</span>
+                      <span class="track"><i style="width: 18%"></i></span>
+                    </div>
+                    <div class="app-card">
+                      <span class="k">MEMÓRIA</span>
+                      <span class="v">11,4 GB</span>
+                      <span class="sub">de 32,0 GB (35%)</span>
+                      <span class="track"><i style="width: 35%"></i></span>
+                    </div>
+                    <div class="app-card">
+                      <span class="k">DISCO C: (NVMe)</span>
+                      <span class="v">318 GB livres</span>
+                      <span class="sub">de 1,0 TB (68% em uso)</span>
+                      <span class="track ok"><i style="width: 68%"></i></span>
+                    </div>
+                    <div class="app-card">
+                      <span class="k">GPU 3D</span>
+                      <span class="v">12%</span>
+                      <span class="sub">RTX · 49 °C · 1,8 GB VRAM</span>
+                      <span class="track rail"><i style="width: 12%"></i></span>
+                    </div>
+                  </div>
+                  <div class="app-rows">
+                    <div class="app-row">
+                      <span class="rank">1</span>
+                      <span class="name">Navegador Principal</span>
+                      <span class="meta">14 processos</span>
+                      <span class="tag">CPU 4,2%</span>
+                      <span class="tag rail">GPU 8,5%</span>
+                      <span class="val">2,41 GB</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="rank">2</span>
+                      <span class="name">vmmemWSL</span>
+                      <span class="tag ok">Host WSL2</span>
+                      <span class="tag">CPU 3,1%</span>
+                      <span class="val">1,85 GB</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="rank">3</span>
+                      <span class="name">Editor de Código</span>
+                      <span class="meta">9 processos</span>
+                      <span class="tag">CPU 1,8%</span>
+                      <span class="val">1,12 GB</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="rank">4</span>
+                      <span class="name">Windows Terminal</span>
+                      <span class="meta">3 processos</span>
+                      <span class="tag">CPU 0,4%</span>
+                      <span class="val">240 MB</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- PAINEL 2: ATIVIDADE -->
+                <div class="sim-panel" role="tabpanel" data-sim-panel="activity" hidden>
+                  <div class="sim-panel-header">
+                    <div>
+                      <h3>Processos agrupados por aplicativo</h3>
+                      <p>Ordenação multi-coluna (Memória, CPU, GPU), detecção de host WSL e encerramento seguro de árvore</p>
+                    </div>
+                    <span class="sim-api-tag">NTQUERY · PDH GPU ENGINE</span>
+                  </div>
+                  <div class="app-rows">
+                    <div class="app-row">
+                      <span class="rank">1</span>
+                      <span class="name">Google Chrome</span>
+                      <span class="meta">Google LLC · 14 PIDs</span>
+                      <span class="tag">CPU 4,2%</span>
+                      <span class="tag rail">GPU 8,5%</span>
+                      <span class="val">2.468 MB</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="rank">2</span>
+                      <span class="name">vmmemWSL (Subsistema Linux)</span>
+                      <span class="tag ok">Máquina Virtual WSL</span>
+                      <span class="tag">CPU 3,1%</span>
+                      <span class="val">1.894 MB</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="rank">3</span>
+                      <span class="name">Visual Studio Code</span>
+                      <span class="meta">Microsoft Corp · 9 PIDs</span>
+                      <span class="tag">CPU 1,8%</span>
+                      <span class="tag rail">GPU 2,1%</span>
+                      <span class="val">1.146 MB</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="rank">4</span>
+                      <span class="name">Rust Analyzer Server</span>
+                      <span class="meta">rust-analyzer.exe · 2 PIDs</span>
+                      <span class="tag">CPU 6,4%</span>
+                      <span class="val">812 MB</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- PAINEL 3: DESEMPENHO -->
+                <div class="sim-panel" role="tabpanel" data-sim-panel="performance" hidden>
+                  <div class="sim-panel-header">
+                    <div>
+                      <h3>Telemetria vetorial e sensores honestos</h3>
+                      <p>Gráficos SVG com geometricPrecision e zero dados inventados quando o hardware não expõe leitura</p>
+                    </div>
+                    <span class="sim-api-tag">ZERO FAKE DATA</span>
+                  </div>
+                  <div class="sim-chart-grid">
+                    <div class="sim-chart-box">
+                      <div class="sim-chart-head">
+                        <span>CARGA DE CPU &amp; REDE (60 S)</span>
+                        <strong>18% · Down 42,8 Mbps</strong>
+                      </div>
+                      <svg class="sim-svg-Wave" viewBox="0 0 320 80" fill="none" aria-hidden="true">
+                        <path d="M4 62 L40 56 L76 48 L112 52 L148 28 L184 36 L220 22 L256 30 L292 18 L316 24" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M4 70 L40 66 L76 68 L112 60 L148 54 L184 58 L220 49 L256 52 L292 44 L316 46" stroke="var(--signal-secondary)" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round" />
+                      </svg>
+                    </div>
+                    <div class="sim-chart-box">
+                      <div class="sim-chart-head">
+                        <span>SENSORES TÉRMICOS</span>
+                        <strong>Leitura verificada</strong>
+                      </div>
+                      <div class="sim-honesty-note">
+                        <strong>GPU NVIDIA · 49 °C (NVML/SMI)</strong>
+                        <span>Leitura direta do sensor físico da placa dedicada.</span>
+                      </div>
+                      <div class="sim-honesty-note">
+                        <strong>VRM / Placa-mãe · Indisponível</strong>
+                        <span>Justificativa: sensor térmico não exposto pelo driver ACPI/WMI sem driver proprietário. Nunca exibido como 0 °C.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- PAINEL 4: ARMAZENAMENTO -->
+                <div class="sim-panel" role="tabpanel" data-sim-panel="storage" hidden>
+                  <div class="sim-panel-header">
+                    <div>
+                      <h3>TreeSize + Treemap + Limpeza Controlada</h3>
+                      <p>Varredura com spawn_blocking e yield_now a cada 15 arquivos para nunca travar o cursor (WdFilter.sys)</p>
+                    </div>
+                    <span class="sim-api-tag">ANTI-DPC · WHITELIST</span>
+                  </div>
+                  <div class="sim-treemap">
+                    <div class="treemap-cell span-2">
+                      <strong>C:\Users\lucas\projects</strong>
+                      <span>84,2 GB · 41% da amostra</span>
+                    </div>
+                    <div class="treemap-cell">
+                      <strong>AppData\Local\Temp</strong>
+                      <span>3,4 GB · Limpeza segura</span>
+                    </div>
+                    <div class="treemap-cell">
+                      <strong>Downloads</strong>
+                      <span>19,8 GB · 142 itens</span>
+                    </div>
+                    <div class="treemap-cell">
+                      <strong>Cargo &amp; npm Caches</strong>
+                      <span>14,1 GB · Desenvolvedor</span>
+                    </div>
+                    <div class="treemap-cell">
+                      <strong>Demais itens agrupados</strong>
+                      <span>6,2 GB · Poda automática</span>
+                    </div>
+                  </div>
+                  <div class="app-row">
+                    <span class="tag ok">LIMPEZA CONTROLADA</span>
+                    <span class="name">4,8 GB recuperáveis em 3 categorias recomendadas (Temp, Cache WebView, Relatórios WER)</span>
+                    <span class="val">Revisar antes de limpar</span>
+                  </div>
+                </div>
+
+                <!-- PAINEL 5: DESINSTALAR PROGRAMAS -->
+                <div class="sim-panel" role="tabpanel" data-sim-panel="uninstall" hidden>
+                  <div class="sim-panel-header">
+                    <div>
+                      <h3>Desinstalação com Ponto de Restauração e Resíduos</h3>
+                      <p>Inventário deduplicado (HKLM 64/32 + HKCU) com verificação pós-desinstalador de pastas e chaves órfãs</p>
+                    </div>
+                    <span class="sim-api-tag">SRSETrestorepointW · REGISTRY</span>
+                  </div>
+                  <div class="app-cards cols-3">
+                    <div class="app-card">
+                      <span class="k">ETAPA 01</span>
+                      <span class="v">Ponto criado</span>
+                      <span class="sub">Seq #482 verificada no VSS</span>
+                      <span class="track ok"><i style="width: 100%"></i></span>
+                    </div>
+                    <div class="app-card">
+                      <span class="k">ETAPA 02</span>
+                      <span class="v">Exit code 0</span>
+                      <span class="sub">Desinstalador oficial concluído</span>
+                      <span class="track ok"><i style="width: 100%"></i></span>
+                    </div>
+                    <div class="app-card">
+                      <span class="k">ETAPA 03</span>
+                      <span class="v">3 resíduos</span>
+                      <span class="sub">Aguardando sua seleção manual</span>
+                      <span class="track"><i style="width: 100%"></i></span>
+                    </div>
+                  </div>
+                  <div class="app-rows">
+                    <div class="app-row">
+                      <span class="tag">REGISTRO</span>
+                      <span class="name">HKCU\Software\VendorApp\Preferences</span>
+                      <span class="meta">Confiança alta · Chave órfã</span>
+                      <span class="val">Selecionado</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="tag">PASTA</span>
+                      <span class="name">%LOCALAPPDATA%\VendorApp\ShaderCache</span>
+                      <span class="meta">Whitelist AppData · 148 MB</span>
+                      <span class="val">148,4 MB</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- PAINEL 6: INICIALIZAÇÃO E SEGURANÇA -->
+                <div class="sim-panel" role="tabpanel" data-sim-panel="startup" hidden>
+                  <div class="sim-panel-header">
+                    <div>
+                      <h3>Inventário de Boot e Evidências de Segurança</h3>
+                      <p>Usa chave binária StartupApproved (0x02 / 0x03) sem reg delete destrutivo e mede degradação real via Event ID 101/102</p>
+                    </div>
+                    <span class="sim-api-tag">STARTUPAPPROVED · EVENT LOG</span>
+                  </div>
+                  <div class="app-rows">
+                    <div class="app-row">
+                      <span class="tag warn">+1.420 ms</span>
+                      <span class="name">Docker Desktop Service Helper</span>
+                      <span class="meta">HKCU\...\Run · Assinado</span>
+                      <span class="val">Ativo (0x02)</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="tag ok">+180 ms</span>
+                      <span class="name">PowerToys Runner</span>
+                      <span class="meta">Microsoft Corporation</span>
+                      <span class="val">Ativo (0x02)</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="tag warn">EVIDÊNCIA DE REVISÃO</span>
+                      <span class="name">updater-sync.exe</span>
+                      <span class="meta">Executável em %TEMP% sem assinatura Authenticode · Nunca rotulado como malware sem prova</span>
+                      <span class="val">Desativado (0x03)</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- PAINEL 7: SERVIÇOS E ATUALIZAÇÕES -->
+                <div class="sim-panel" role="tabpanel" data-sim-panel="services" hidden>
+                  <div class="sim-panel-header">
+                    <div>
+                      <h3>Serviços do Windows (SCM) &amp; Atualizações Winget</h3>
+                      <p>Classificação automática em Sistema, Usuário e Revisão + conferência oficial de pacotes desatualizados</p>
+                    </div>
+                    <span class="sim-api-tag">SCM NATIVO · WINGET</span>
+                  </div>
+                  <div class="app-rows">
+                    <div class="app-row">
+                      <span class="tag ok">EM EXECUÇÃO</span>
+                      <span class="name">Windows Audio Endpoint Builder (AudioEndpointBuilder)</span>
+                      <span class="meta">Sistema · LocalSystem · PID 1420</span>
+                      <span class="val">Automático</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="tag warn">REVISÃO</span>
+                      <span class="name">Custom Bridge Service</span>
+                      <span class="meta">Caminho fora de System32 e Program Files · Conta de usuário</span>
+                      <span class="val">Manual</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="tag">WINGET UPGRADE</span>
+                      <span class="name">Git.Git (2.47.1 → 2.49.0) · Microsoft.PowerToys (0.88 → 0.89)</span>
+                      <span class="val">Atualizar em 1 clique</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- PAINEL 8: COTAS DE IA -->
+                <div class="sim-panel" role="tabpanel" data-sim-panel="quotas" hidden>
+                  <div class="sim-panel-header">
+                    <div>
+                      <h3>Cotas de Assinaturas de IA + Histórico SQLite (30 dias)</h3>
+                      <p>Claude Code, OpenAI Codex, Google Antigravity, OpenRouter e OpenCode Go com chaves no Windows Keyring</p>
+                    </div>
+                    <span class="sim-api-tag">KEYRING · SQLITE 30D</span>
+                  </div>
+                  <div class="sim-quota-grid">
+                    <div class="sim-quota-card">
+                      <div class="sim-quota-top">
+                        <strong>Claude Code (Max)</strong>
+                        <span>Renova em 2h 14m</span>
+                      </div>
+                      <div class="sim-quota-bars">
+                        <div class="sim-quota-bar-row">
+                          <span>Janela 5h</span>
+                          <span class="app-card" style="padding:0;border:0;box-shadow:none"><span class="track"><i style="width: 42%"></i></span></span>
+                          <span>58% liv</span>
+                        </div>
+                        <div class="sim-quota-bar-row">
+                          <span>Semanal</span>
+                          <span class="app-card" style="padding:0;border:0;box-shadow:none"><span class="track ok"><i style="width: 31%"></i></span></span>
+                          <span>69% liv</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="sim-quota-card">
+                      <div class="sim-quota-top">
+                        <strong>OpenAI Codex &amp; OpenRouter</strong>
+                        <span>Histórico 30d ativo</span>
+                      </div>
+                      <div class="sim-quota-bars">
+                        <div class="sim-quota-bar-row">
+                          <span>Codex 5h</span>
+                          <span class="app-card" style="padding:0;border:0;box-shadow:none"><span class="track"><i style="width: 19%"></i></span></span>
+                          <span>81% liv</span>
+                        </div>
+                        <div class="sim-quota-bar-row">
+                          <span>Créditos</span>
+                          <span class="app-card" style="padding:0;border:0;box-shadow:none"><span class="track ok"><i style="width: 76%"></i></span></span>
+                          <span>US$ 38,40</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- PAINEL 9: DEBUG & AUDITORIA -->
+                <div class="sim-panel" role="tabpanel" data-sim-panel="debug" hidden>
+                  <div class="sim-panel-header">
+                    <div>
+                      <h3>Trilha de Auditoria Local e Diagnóstico</h3>
+                      <p>Módulo dinâmico (ocultável quando desligado) que registra cada leitura, latência em ms e origem</p>
+                    </div>
+                    <span class="sim-api-tag">EXPORTAÇÃO JSON / LOG</span>
+                  </div>
+                  <div class="app-rows">
+                    <div class="app-row">
+                      <span class="tag ok">OK · 14 ms</span>
+                      <span class="name">system_overview::collect_snapshot</span>
+                      <span class="meta">PDH + GlobalMemoryStatusEx</span>
+                      <span class="val">Cache HIT (3,5 s)</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="tag ok">OK · 6 ms</span>
+                      <span class="name">audio::list_mixer_sessions</span>
+                      <span class="meta">IMMDeviceEnumerator + ISimpleAudioVolume</span>
+                      <span class="val">4 sessões ativas</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="tag ok">OK · 22 ms</span>
+                      <span class="name">services::query_scm_inventory</span>
+                      <span class="meta">OpenSCManagerW + EnumServicesStatusExW</span>
+                      <span class="val">284 serviços lidos</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- SUPERFÍCIE 2: TRAY FLYOUT & MIXER DE ÁUDIO -->
+            <div class="app-body" data-sim-surface-view="tray" hidden style="grid-template-columns: 1fr">
+              <div class="tray-sim-layout">
+                <div class="tray-flyout-card">
+                  <div class="tray-flyout-head">
+                    <strong>Pulse — Painel Rápido (Tray)</strong>
+                    <span class="sim-api-tag">CPU 54 °C · GPU 49 °C</span>
+                  </div>
+                  <div class="app-cards cols-3">
+                    <div class="app-card">
+                      <span class="k">CPU</span>
+                      <span class="v">18%</span>
+                      <span class="track"><i style="width: 18%"></i></span>
+                    </div>
+                    <div class="app-card">
+                      <span class="k">RAM</span>
+                      <span class="v">35%</span>
+                      <span class="track"><i style="width: 35%"></i></span>
+                    </div>
+                    <div class="app-card">
+                      <span class="k">C: LIVRE</span>
+                      <span class="v">318G</span>
+                      <span class="track ok"><i style="width: 68%"></i></span>
+                    </div>
+                  </div>
+                  <div class="tray-mixer-list" aria-label="Simulador de Mixer de Volume por Aplicativo">
+                    <div class="tray-mixer-item">
+                      <strong>Navegador</strong>
+                      <input type="range" class="tray-mixer-slider" min="0" max="100" value="80" data-mixer-slider aria-label="Volume do Navegador" />
+                      <span class="tray-mixer-val" data-mixer-val>80%</span>
+                    </div>
+                    <div class="tray-mixer-item">
+                      <strong>Spotify</strong>
+                      <input type="range" class="tray-mixer-slider" min="0" max="100" value="65" data-mixer-slider aria-label="Volume do Spotify" />
+                      <span class="tray-mixer-val" data-mixer-val>65%</span>
+                    </div>
+                    <div class="tray-mixer-item">
+                      <strong>Discord</strong>
+                      <input type="range" class="tray-mixer-slider" min="0" max="100" value="100" data-mixer-slider aria-label="Volume do Discord" />
+                      <span class="tray-mixer-val" data-mixer-val>100%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="sim-panel">
+                  <div class="sim-panel-header">
+                    <div>
+                      <h3>Flyout nativo na bandeja + Mixer Core Audio</h3>
+                      <p>Sempre à mão ao lado do relógio do Windows 11, sem precisar abrir a janela principal</p>
+                    </div>
+                    <span class="sim-api-tag">390×740 PX · ZERO OVERFLOW</span>
+                  </div>
+                  <div class="app-rows">
+                    <div class="app-row">
+                      <span class="tag ok">CORE AUDIO COM</span>
+                      <span class="name">Controle o volume e o mute de cada aplicativo individualmente (arraste os sliders ao lado para testar)</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="tag">DISPOSITIVOS</span>
+                      <span class="name">Troque o dispositivo padrão de saída (Fones / Caixas) e entrada (Microfone) direto no flyout</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="tag rail">BARRAS DUPLAS DE IA</span>
+                      <span class="name">Veja as janelas de 5 horas e semanal das suas ferramentas de IA em um único olhar</span>
+                    </div>
+                    <div class="app-row">
+                      <span class="tag ok">FOCO INTELIGENTE</span>
+                      <span class="name">Fecha automaticamente ao clicar fora (WindowEvent::Focused) e hiberna o polling em segundo plano</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ================= ANTES VS. PULSE (CONSOLIDAÇÃO) ================= -->
+      <section class="section section-alt">
+        <div class="container">
+          <div class="section-head" data-reveal>
+            <span class="eyebrow">Consolidação nativa</span>
+            <h2>Sete ferramentas fragmentadas vs. uma única central.</h2>
+            <p class="section-lead">
+              Diagnosticar o Windows não deveria exigir sete janelas com interfaces de décadas
+              diferentes. O Pulse unifica toda a observabilidade operacional da máquina sob o
+              mesmo sistema de design e com pegada mínima de memória.
+            </p>
+          </div>
+
+          <div class="consolidation-grid">
+            <div class="consolidation-card" data-reveal>
+              <span class="eyebrow">Abordagem tradicional</span>
+              <h3>Fragmentação nativa e utilitários avulsos</h3>
+              <div class="tool-pill-list">
+                <div class="tool-pill">
+                  <span>Gerenciador de Tarefas + Monitor de Recursos</span>
+                  <code>taskmgr / resmon</code>
+                </div>
+                <div class="tool-pill">
+                  <span>Analisador de disco externo pesado</span>
+                  <code>TreeSize / WinDirStat</code>
+                </div>
+                <div class="tool-pill">
+                  <span>Inventário de boot e registro técnico</span>
+                  <code>Sysinternals Autoruns</code>
+                </div>
+                <div class="tool-pill">
+                  <span>Desinstalador de terceiros com anúncios</span>
+                  <code>Revo / IObit</code>
+                </div>
+                <div class="tool-pill">
+                  <span>Console legado de serviços e terminal CLI</span>
+                  <code>services.msc + winget</code>
+                </div>
+                <div class="tool-pill">
+                  <span>Mixer de áudio por app + 5 dashboards web de IA</span>
+                  <code>EarTrumpet + Browser</code>
+                </div>
+              </div>
+            </div>
+
+            <div class="consolidation-card is-pulse" data-reveal>
+              <span class="eyebrow">Com o Pulse</span>
+              <h3>Tudo conectado, explicado e 100% local</h3>
+              <div class="tool-pill-list">
+                <div class="tool-pill">
+                  <span><strong>Visão Geral, Atividade e Desempenho</strong> (CPU, GPU, RAM, Rede e Térmica)</span>
+                  <span class="arrow-tag">Integrado</span>
+                </div>
+                <div class="tool-pill">
+                  <span><strong>TreeSize + Treemap + Limpeza Segura</strong> (com proteção anti-DPC)</span>
+                  <span class="arrow-tag">Integrado</span>
+                </div>
+                <div class="tool-pill">
+                  <span><strong>Inicialização StartupApproved</strong> + impacto de boot em milissegundos</span>
+                  <span class="arrow-tag">Integrado</span>
+                </div>
+                <div class="tool-pill">
+                  <span><strong>Desinstalação em 3 fases</strong> (Ponto de Restauração + varredura de resíduos)</span>
+                  <span class="arrow-tag">Integrado</span>
+                </div>
+                <div class="tool-pill">
+                  <span><strong>Serviços SCM nativos</strong> (Sistema / Usuário / Revisão) + <strong>Winget Upgrade</strong></span>
+                  <span class="arrow-tag">Integrado</span>
+                </div>
+                <div class="tool-pill">
+                  <span><strong>Tray Flyout com Mixer Core Audio</strong> + <strong>Cotas de 5 provedores de IA (SQLite 30d)</strong></span>
+                  <span class="arrow-tag">Integrado</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= RECURSOS (10 MÓDULOS) ================= -->
+      <section class="section" id="recursos">
+        <div class="container">
+          <div class="section-head" data-reveal>
+            <span class="eyebrow">O que o Pulse faz</span>
+            <h2>Dez módulos, uma única central.</h2>
+            <p class="section-lead">
+              Cada módulo substitui uma ferramenta isolada e responde a uma pergunta
+              concreta sobre a sua máquina. Nada de painel genérico: a leitura é direta
+              das APIs do Windows.
+            </p>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature" data-reveal>
+              <div class="feature-top">
+                <span class="icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z" /></svg>
+                </span>
+                <span class="feature-badge">CACHE TTL 3,5 S</span>
+              </div>
+              <h3>Visão geral e Atividade</h3>
+              <p>CPU, memória, disco, GPU e processos agrupados por aplicativo (incluindo identificação de <code>vmmemWSL</code>), com ordenação por RAM, CPU ou GPU e encerramento seguro de árvore.</p>
+              <button type="button" class="feature-sim-link" data-open-sim="activity">Ver no simulador ↑</button>
+            </article>
+
+            <article class="feature" data-reveal>
+              <div class="feature-top">
+                <span class="icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13h5l3-8 4 14 3-6h5" /></svg>
+                </span>
+                <span class="feature-badge">PDH · NVML · WMI</span>
+              </div>
+              <h3>Telemetria em tempo real</h3>
+              <p>Gráficos vetoriais de CPU, RAM, GPU, download, upload e discos físicos. Sensores sem suporte aparecem como <strong>Indisponível</strong> com justificativa técnica, nunca como zero fictício.</p>
+              <button type="button" class="feature-sim-link" data-open-sim="performance">Ver no simulador ↑</button>
+            </article>
+
+            <article class="feature" data-reveal>
+              <div class="feature-top">
+                <span class="icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z M4 14h16 M15 17h2" /></svg>
+                </span>
+                <span class="feature-badge">TREESIZE · ANTI-DPC</span>
+              </div>
+              <h3>Análise de armazenamento</h3>
+              <p>Mapa visual Treemap e árvore agregada da ocupação do disco, arquivos recentes e pastas personalizadas em múltiplos volumes, com <code>yield_now</code> para não travar o mouse.</p>
+              <button type="button" class="feature-sim-link" data-open-sim="storage">Ver no simulador ↑</button>
+            </article>
+
+            <article class="feature" data-reveal>
+              <div class="feature-top">
+                <span class="icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18l-2 12H5z M8 6V4h8v2 M10 11v4 M14 11v4" /></svg>
+                </span>
+                <span class="feature-badge">WHITELIST SEGURA</span>
+              </div>
+              <h3>Limpeza local controlada</h3>
+              <p>Categorias seguras de espaço recuperável (temporários, caches e relatórios conhecidos), com estimativa exata antes da ação. O Pulse nunca apaga nada por conta própria.</p>
+              <button type="button" class="feature-sim-link" data-open-sim="storage">Ver no simulador ↑</button>
+            </article>
+
+            <article class="feature" data-reveal>
+              <div class="feature-top">
+                <span class="icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l1 4H8z M6 7h12l1.5 14H4.5z" /></svg>
+                </span>
+                <span class="feature-badge">RESTORE POINT + RESÍDUOS</span>
+              </div>
+              <h3>Desinstalação com rastreamento</h3>
+              <p>Inventário deduplicado que cria Ponto de Restauração do Windows, executa o desinstalador oficial do fabricante e rastreia pastas e chaves de registro órfãs para revisão.</p>
+              <button type="button" class="feature-sim-link" data-open-sim="uninstall">Ver no simulador ↑</button>
+            </article>
+
+            <article class="feature" data-reveal>
+              <div class="feature-top">
+                <span class="icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v6c0 4-8 8-8 8s-8-4-8-8V7z M8 12l3 3 5-6" /></svg>
+                </span>
+                <span class="feature-badge">STARTUPAPPROVED</span>
+              </div>
+              <h3>Inicialização e segurança</h3>
+              <p>Ativa ou desativa itens de boot pelo registro binário nativo do Windows (sem destruir chaves) e mede o impacto real em milissegundos, apontando anomalias verificáveis.</p>
+              <button type="button" class="feature-sim-link" data-open-sim="startup">Ver no simulador ↑</button>
+            </article>
+
+            <article class="feature" data-reveal>
+              <div class="feature-top">
+                <span class="icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z M12 2.5v3 M12 18.5v3 M2.5 12h3 M18.5 12h3 M5.2 5.2l2.1 2.1 M16.7 16.7l2.1 2.1 M18.8 5.2l-2.1 2.1 M7.3 16.7l-2.1 2.1" /></svg>
+                </span>
+                <span class="feature-badge">SCM NATIVO · WINGET</span>
+              </div>
+              <h3>Serviços e atualizações</h3>
+              <p>Inspeção direta do Service Control Manager (classificados em Sistema, Usuário e Revisão) e conferência/atualização de programas instalados via <code>winget</code>.</p>
+              <button type="button" class="feature-sim-link" data-open-sim="services">Ver no simulador ↑</button>
+            </article>
+
+            <article class="feature" data-reveal>
+              <div class="feature-top">
+                <span class="icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17V9 M10 17V5 M16 17v-4 M3 21h18 M19 3v6 M16 6h6" /></svg>
+                </span>
+                <span class="feature-badge">5 PROVEDORES · SQLITE 30D</span>
+              </div>
+              <h3>Cotas de assinaturas de IA</h3>
+              <p>Monitore limites de 5h/semanal, saldo de créditos e histórico de 30 dias para Claude Code, OpenAI Codex, Google Antigravity, OpenRouter e OpenCode Go.</p>
+              <button type="button" class="feature-sim-link" data-open-sim="quotas">Ver no simulador ↑</button>
+            </article>
+
+            <article class="feature" data-reveal>
+              <div class="feature-top">
+                <span class="icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z M15.5 8.5a5 5 0 0 1 0 7 M19 5a9 9 0 0 1 0 14" /></svg>
+                </span>
+                <span class="feature-badge">CORE AUDIO COM</span>
+              </div>
+              <h3>Áudio e bandeja do sistema</h3>
+              <p>Flyout nativo na bandeja com telemetria instantânea, barras duplas de cotas de IA e mixer de volume individual por aplicativo com troca rápida de entrada/saída.</p>
+              <button type="button" class="feature-sim-link" data-open-sim="tray">Ver no simulador ↑</button>
+            </article>
+
+            <article class="feature" data-reveal>
+              <div class="feature-top">
+                <span class="icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6l-5 6 5 6 M16 6l5 6-5 6" /></svg>
+                </span>
+                <span class="feature-badge">AUDITORIA TRANSPARENTE</span>
+              </div>
+              <h3>Trilha de auditoria local</h3>
+              <p>Cada operação registra duração em milissegundos, origem da API e resultado em um log estruturado que você pode inspecionar, filtrar ou exportar.</p>
+              <button type="button" class="feature-sim-link" data-open-sim="debug">Ver no simulador ↑</button>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= VITRINE DE COTAS DE IA ================= -->
+      <section class="section section-alt" id="ia">
+        <div class="container">
+          <div class="ai-showcase">
+            <div data-reveal>
+              <span class="eyebrow">Para quem desenvolve com IA</span>
+              <h2 style="font-size: clamp(1.85rem, 3.4vw, 2.6rem); margin: 14px 0 16px">
+                Suas assinaturas e cotas de IA em tempo real, direto no desktop.
+              </h2>
+              <p class="section-lead">
+                Chega de ser surpreendido por bloqueios de rate-limit no meio de uma tarefa.
+                O Pulse lê localmente o estado das suas ferramentas de IA, armazena chaves
+                opcionais no <strong>Windows Credential Manager</strong> e grava um histórico
+                local de 30 dias em SQLite para mostrar seu pico e média diária por janela.
+              </p>
+
+              <div class="provider-pills" aria-label="Provedores de IA suportados">
+                <span class="provider-pill">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" /></svg>
+                  Claude Code
+                </span>
+                <span class="provider-pill">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z" /></svg>
+                  OpenAI Codex
+                </span>
+                <span class="provider-pill">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z" /></svg>
+                  Google Antigravity
+                </span>
+                <span class="provider-pill">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.654 3.87a5.087 5.087 0 110 10.174L23.7 19.09c.64.641.187 1.737-.72 1.737H8.48a8.479 8.479 0 010-16.958h10.175zM8.479 7.26a5.087 5.087 0 100 10.176 5.087 5.087 0 000-10.175z" /></svg>
+                  OpenRouter
+                </span>
+                <span class="provider-pill">
+                  <svg viewBox="128 96 256 320" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z" /><path d="M192 224H320V352H192V224Z" opacity="0.45" /></svg>
+                  OpenCode Go
+                </span>
+              </div>
+            </div>
+
+            <div class="ai-history-card" data-reveal>
+              <div class="ai-history-head">
+                <div>
+                  <h3>Histórico de Consumo por Janela (30 dias)</h3>
+                  <p style="font-size: 0.82rem; color: var(--text-secondary)">Agregação diária local em SQLite · Pico em 14/10 (84%)</p>
+                </div>
+                <span>CICLO ATIVO</span>
+              </div>
+              <div class="ai-bars-chart" aria-hidden="true">
+                <div class="ai-bar-col"><span class="ai-bar-fill" style="height: 28%"></span><small>07</small></div>
+                <div class="ai-bar-col"><span class="ai-bar-fill" style="height: 44%"></span><small>08</small></div>
+                <div class="ai-bar-col"><span class="ai-bar-fill" style="height: 36%"></span><small>09</small></div>
+                <div class="ai-bar-col"><span class="ai-bar-fill" style="height: 62%"></span><small>10</small></div>
+                <div class="ai-bar-col"><span class="ai-bar-fill" style="height: 51%"></span><small>11</small></div>
+                <div class="ai-bar-col"><span class="ai-bar-fill" style="height: 40%"></span><small>12</small></div>
+                <div class="ai-bar-col"><span class="ai-bar-fill" style="height: 68%"></span><small>13</small></div>
+                <div class="ai-bar-col"><span class="ai-bar-fill is-peak" style="height: 84%"></span><small>14</small></div>
+                <div class="ai-bar-col"><span class="ai-bar-fill" style="height: 58%"></span><small>15</small></div>
+                <div class="ai-bar-col"><span class="ai-bar-fill" style="height: 42%"></span><small>16</small></div>
+              </div>
+              <div class="app-rows">
+                <div class="app-row">
+                  <span class="tag ok">RENOVAÇÃO AUTOMÁTICA</span>
+                  <span class="name">Janelas expiradas voltam a 100% livres imediatamente sem depender de polling fantasma</span>
+                </div>
+                <div class="app-row">
+                  <span class="tag">DRAG &amp; DROP</span>
+                  <span class="name">Ordene os provedores na sequência do seu fluxo ou desative os que não utiliza</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= PRIVACIDADE + DIAGRAMA DE FLUXO LOCAL ================= -->
+      <section class="section" id="privacidade">
+        <div class="container">
+          <div class="privacy">
+            <div>
+              <div class="section-head" data-reveal style="margin-bottom: 0">
+                <span class="eyebrow">Privacidade por arquitetura</span>
+                <h2>Nenhum byte seu sai da máquina.</h2>
+                <p class="section-lead">
+                  A privacidade do Pulse não é uma promessa de política: é uma consequência
+                  de como o aplicativo foi construído. Não existe servidor para onde enviar
+                  dados, porque não existe servidor.
+                </p>
+              </div>
+
+              <div class="privacy-points" data-reveal>
+                <div class="privacy-point">
+                  <span class="check" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                  </span>
+                  <div>
+                    <strong>Sem conta e sem login</strong>
+                    <span>Você baixa, instala e usa. Não há cadastro, e-mail ou senha.</span>
+                  </div>
+                </div>
+                <div class="privacy-point">
+                  <span class="check" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                  </span>
+                  <div>
+                    <strong>Sem telemetria</strong>
+                    <span>Nenhuma leitura do sistema é transmitida para fora. O app não tem backend em nuvem.</span>
+                  </div>
+                </div>
+                <div class="privacy-point">
+                  <span class="check" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                  </span>
+                  <div>
+                    <strong>Sem dados fictícios</strong>
+                    <span>Sensor sem suporte aparece como Indisponível, com a justificativa técnica. Nunca como zero.</span>
+                  </div>
+                </div>
+                <div class="privacy-point">
+                  <span class="check" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                  </span>
+                  <div>
+                    <strong>Sem ações destrutivas</strong>
+                    <span>Nada é apagado ou alterado no sistema sem a sua confirmação explícita.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <aside class="local-panel" data-reveal aria-label="Diagrama de fluxo de dados local">
+              <h3>Caminho dos dados na sua máquina</h3>
+              <p>Toda coleta começa e termina dentro do seu perfil de usuário no Windows 11.</p>
+              <div class="local-flow">
+                <div class="local-node">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 9h6v6H9z" /></svg>
+                  <div>
+                    <strong>1. Subsistemas Nativos do Windows 11</strong>
+                    <small>PDH, DXGI, Core Audio COM, SCM, WMI, Event Log e Registro</small>
+                  </div>
+                </div>
+                <span class="local-arrow" aria-hidden="true"></span>
+                <div class="local-node">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 13h5l3-8 4 14 3-6h5" /></svg>
+                  <div>
+                    <strong>2. Motor Nativo Rust (Tauri v2 IPC)</strong>
+                    <small>Agregação em memória com cache TTL 3,5 s e proteção anti-DPC</small>
+                  </div>
+                </div>
+                <span class="local-arrow" aria-hidden="true"></span>
+                <div class="local-node">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+                  <div>
+                    <strong>3. Persistência Exclusivamente Local</strong>
+                    <small>%LOCALAPPDATA%\Pulse (SQLite de 30 dias) + Windows Credential Manager</small>
+                  </div>
+                </div>
+              </div>
+              <div class="local-dead">
+                ✕ BARREIRA ARQUITETURAL: ZERO ENDPOINTS DE TELEMETRIA OU ANALYTICS
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= COMO FUNCIONA ================= -->
+      <section class="section section-alt" id="como-funciona">
+        <div class="container">
+          <div class="section-head" data-reveal>
+            <span class="eyebrow">Como funciona</span>
+            <h2>Três passos, sem configuração.</h2>
+            <p class="section-lead">
+              O Pulse é um aplicativo nativo, não um serviço em nuvem. Não há ambiente
+              para provisionar nem painel para configurar.
+            </p>
+          </div>
+
+          <div class="steps">
+            <article class="step" data-reveal>
+              <h3>Baixe o instalador</h3>
+              <p>Um único executável NSIS compacto (<span data-release-size>3,5 MB</span>), configurado para instalação rápida no usuário atual sem exigir elevação de administrador para todo o sistema.</p>
+            </article>
+            <article class="step" data-reveal>
+              <h3>Instale em segundos</h3>
+              <p>O instalador encerra automaticamente instâncias anteriores em upgrades e aproveita o WebView2 nativo que já acompanha o Windows 11.</p>
+            </article>
+            <article class="step" data-reveal>
+              <h3>Abra e leia o sistema</h3>
+              <p>O painel carrega a telemetria real da máquina imediatamente e também fica disponível no ícone da bandeja do sistema para consulta em 1 clique.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= REQUISITOS ================= -->
+      <section class="section" id="requisitos">
+        <div class="container">
+          <div class="section-head" data-reveal>
+            <span class="eyebrow">Requisitos</span>
+            <h2>O que você precisa para rodar.</h2>
+          </div>
+
+          <div class="reqs">
+            <article class="req" data-reveal>
+              <h3>Windows 11 x64</h3>
+              <p>O Pulse é Windows-first e foi projetado para o Windows 11 de 64 bits. Ele consome APIs Win32, COM e PDH presentes nas versões atuais do sistema.</p>
+            </article>
+            <article class="req" data-reveal>
+              <h3>WebView2 Runtime</h3>
+              <p>Já incluído nativamente no Windows 11 atual. Você não precisa instalar nenhum runtime separado.</p>
+            </article>
+            <article class="req" data-reveal>
+              <h3>Pegada ultraleve</h3>
+              <p>Instalador de <span data-release-size>3,5 MB</span>, menos de 80 MB de Working Set em RAM e banco SQLite local compacto em <code>%LOCALAPPDATA%\Pulse</code>.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= DOWNLOAD ================= -->
+      <section class="section section-alt" id="download">
+        <div class="container">
+          <div class="download-box" data-reveal>
+            <span class="eyebrow" style="justify-content: center">Download Oficial</span>
+            <h2>Leve o Pulse para o seu Windows.</h2>
+            <p>
+              Gratuito, código aberto, sem cadastro e sem surpresas. Compilado com
+              toolchain nativo MSVC para Windows 11 x64.
+            </p>
+
+            <div class="download-actions">
+              <a
+                class="btn btn-primary btn-lg"
+                href="/download/Pulse-latest-x64-setup.exe"
+                download="Pulse-latest-x64-setup.exe"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="20" height="20">
+                  <path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" />
+                </svg>
+                Baixar para Windows
+                <span class="btn-pill-meta" data-release-version>v1.0.0</span>
+              </a>
+              <a class="btn btn-secondary btn-lg" href="https://github.com/LucasLagrimante/pulse" rel="noopener">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="20" height="20">
+                  <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49v-1.7c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.34 1.12 2.91.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.35 4.8-4.58 5.05.36.32.68.95.68 1.92v2.85c0 .27.18.59.69.49A10.05 10.05 0 0 0 22 12.25C22 6.58 17.52 2 12 2z" />
+                </svg>
+                Ver o código-fonte
+              </a>
+            </div>
+
+            <div class="download-facts">
+              <span class="win-badge">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" /></svg>
+                WINDOWS 11 · X64
+              </span>
+              <span data-release-installer-label>Instalador NSIS · 3,5 MB</span>
+              <span data-release-version-label>Versão 1.0.0</span>
+              <span>Gratuito · Sem conta</span>
+            </div>
+
+            <div class="checksum-box" aria-label="Checksum SHA-256 do instalador">
+              <div class="checksum-meta">
+                <span>SHA-256 (Pulse-latest-x64-setup.exe)</span>
+                <code data-release-sha256>d1c034853020fbd0663fab244f886456bd82c24aa8e6e53889af6c8c6002d06a</code>
+              </div>
+              <button type="button" class="copy-hash-btn" data-copy-sha256>Copiar SHA-256</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= DÚVIDAS ================= -->
+      <section class="section" id="duvidas">
+        <div class="container">
+          <div class="section-head" data-reveal>
+            <span class="eyebrow">Dúvidas</span>
+            <h2>Perguntas frequentes.</h2>
+          </div>
+
+          <div class="faq">
+            <div class="faq-item" data-faq-item data-open="true">
+              <button class="faq-q" type="button" data-faq-q aria-expanded="true">
+                O Pulse envia meus dados para a nuvem?
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              <div class="faq-a" data-faq-a>
+                <p>Não. O Pulse processa tudo localmente na sua máquina. Não há conta de usuário, não há telemetria para servidores externos e nenhuma leitura do sistema é transmitida para a nuvem. O aplicativo não possui backend remoto.</p>
+              </div>
+            </div>
+
+            <div class="faq-item" data-faq-item>
+              <button class="faq-q" type="button" data-faq-q aria-expanded="false">
+                Preciso criar conta ou pagar para usar?
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              <div class="faq-a" data-faq-a>
+                <p>Não. O Pulse é gratuito e não exige cadastro, login ou assinatura. Você baixa o instalador para Windows 11 e usa.</p>
+              </div>
+            </div>
+
+            <div class="faq-item" data-faq-item>
+              <button class="faq-q" type="button" data-faq-q aria-expanded="false">
+                O Pulse funciona no Windows 10?
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              <div class="faq-a" data-faq-a>
+                <p>O Pulse é Windows-first e foi projetado e testado para o Windows 11 x64. Ele depende de APIs e do WebView2 presentes nas versões atuais do Windows 11.</p>
+              </div>
+            </div>
+
+            <div class="faq-item" data-faq-item>
+              <button class="faq-q" type="button" data-faq-q aria-expanded="false">
+                O Pulse apaga arquivos ou chaves de registro automaticamente?
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              <div class="faq-a" data-faq-a>
+                <p>Não. O Pulse não executa operações destrutivas por conta própria. A limpeza de disco usa categorias seguras em whitelist, a inicialização usa o padrão reversível <code>StartupApproved</code> (sem <code>reg delete</code>) e a desinstalação cria Ponto de Restauração antes de rodar o desinstalador oficial, exibindo os resíduos restantes para sua revisão manual.</p>
+              </div>
+            </div>
+
+            <div class="faq-item" data-faq-item>
+              <button class="faq-q" type="button" data-faq-q aria-expanded="false">
+                O que acontece quando um sensor não é suportado pelo meu hardware?
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              <div class="faq-a" data-faq-a>
+                <p>O valor é exibido como <strong>Indisponível</strong>, acompanhado da justificativa técnica. O Pulse nunca apresenta zero ou percentual fictício para preencher a interface.</p>
+              </div>
+            </div>
+
+            <div class="faq-item" data-faq-item>
+              <button class="faq-q" type="button" data-faq-q aria-expanded="false">
+                Quais ferramentas de IA são suportadas no módulo de Cotas?
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              <div class="faq-a" data-faq-a>
+                <p>O Pulse acompanha localmente <strong>Claude Code</strong>, <strong>OpenAI Codex</strong>, <strong>Google Antigravity</strong>, <strong>OpenRouter</strong> e <strong>OpenCode Go</strong>, protegendo chaves opcionais no Windows Credential Manager e registrando até 30 dias de histórico no banco SQLite local.</p>
+              </div>
+            </div>
+
+            <div class="faq-item" data-faq-item>
+              <button class="faq-q" type="button" data-faq-q aria-expanded="false">
+                Como o Pulse trata avisos de segurança em serviços e inicialização?
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              <div class="faq-a" data-faq-a>
+                <p>Os módulos de inspeção apontam evidências técnicas verificáveis (como caminho fora de <code>Program Files</code>/<code>System32</code>, similaridade de nome Damerau-Levenshtein ou ausência de assinatura), classificando o item para <strong>Revisão</strong> sem rotular executáveis arbitrariamente como malware.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= CTA FINAL ================= -->
+      <section class="section section-alt">
+        <div class="container">
+          <div class="download-box" data-reveal>
+            <span class="eyebrow" style="justify-content: center">Comece agora</span>
+            <h2>Entenda o seu Windows sem sair dele.</h2>
+            <p>
+              Um instalador leve, um aplicativo nativo e nenhuma conta. O Pulse começa a
+              ler a sua máquina no primeiro clique.
+            </p>
+            <div class="download-actions">
+              <a class="btn btn-primary btn-lg" href="/download/Pulse-latest-x64-setup.exe" download="Pulse-latest-x64-setup.exe">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="20" height="20">
+                  <path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" />
+                </svg>
+                Baixar para Windows 11
+              </a>
+            </div>
+            <div class="download-facts">
+              <span>Windows 11 x64</span>
+              <span data-release-installer-label>Instalador NSIS · 3,5 MB</span>
+              <span>Gratuito e sem cadastro</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ================= RODAPÉ ================= -->
+    <footer class="site-footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div class="footer-about">
+            <a class="brand" href="/" aria-label="Pulse — página inicial">
+              <svg class="brand-mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+                <rect width="48" height="48" rx="12" fill="var(--surface-raised)" stroke="var(--border-subtle)" />
+                <g stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 34V14a6 6 0 0 1 6-6h20a6 6 0 0 1 6 6v20a6 6 0 0 1-6 6H20" stroke="var(--rail)" stroke-width="2.4" />
+                  <path d="M4 26h10l5-12v24l7-20 4 8h14" stroke="var(--accent)" stroke-width="3.8" />
+                </g>
+              </svg>
+              <span>Pulse<small>WINDOWS OBSERVABILITY</small></span>
+            </a>
+            <p>
+              Central de observabilidade e diagnóstico para Windows 11, criada por
+              Lucas Lagrimante. Todo o processamento acontece na sua máquina.
+            </p>
+          </div>
+
+          <div>
+            <h3>Produto</h3>
+            <nav class="footer-links" aria-label="Links do produto">
+              <a href="#previa">Simulador Interativo</a>
+              <a href="#recursos">Módulos</a>
+              <a href="#ia">Cotas de IA</a>
+              <a href="#privacidade">Privacidade</a>
+              <a href="#download">Download</a>
+              <a href="#duvidas">Dúvidas</a>
+            </nav>
+          </div>
+
+          <div>
+            <h3>Autor &amp; Código</h3>
+            <nav class="footer-links" aria-label="Links do autor">
+              <a href="https://lucaslagrimante.github.io/" rel="noopener">Portfólio</a>
+              <a href="https://github.com/LucasLagrimante/pulse" rel="noopener">GitHub</a>
+              <a href="/index.md">Versão em Markdown</a>
+              <a href="/llms.txt">llms.txt</a>
+              <a href="mailto:llagrimante@gmail.com">Contato</a>
+            </nav>
+          </div>
+        </div>
+
+        <div class="footer-bottom">
+          <span>© <span data-year>2026</span> Lucas Lagrimante</span>
+          <span class="local-note"><i aria-hidden="true"></i> Privacidade por arquitetura · processamento 100% local</span>
+        </div>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

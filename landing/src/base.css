@@ -1,0 +1,243 @@
+/* ==========================================================================
+   Pulse — Landing page
+   Identidade herdada do app (src/identity.css): superfícies neumórficas
+   minerais (Porcelain #e6edf5 no claro, Obsidian #181b20 no escuro),
+   acento âmbar (#d97706 claro / #f59e0b escuro) e trilho em baixo-relevo.
+   Contraste WCAG AA garantido nos dois temas e zero gradiente em texto.
+   ========================================================================== */
+
+:root {
+  --amber: #d97706;
+  --amber-hover: #b45309;
+  --amber-dark: #f59e0b;
+  --amber-dark-hover: #fbbf24;
+  --rail: #4b6b88;
+  --rail-dark: #8da9bf;
+  --success: #059669;
+  --success-dark: #10b981;
+  --warn-light: #b45309;
+  --warn-dark: #fbbf24;
+  --danger-light: #dc2626;
+  --danger-dark: #f87171;
+  --info: #2563eb;
+  --info-dark: #3b82f6;
+
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --maxw: 1200px;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion: 240ms var(--ease);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #e6edf5;
+  --bg-alt: #eef3f9;
+  --surface: #e6edf5;
+  --surface-raised: #ebf2fa;
+  --surface-sunken: #dee6ef;
+  --surface-inset: #dde5ef;
+
+  --shadow-raised-xs: 2px 2px 6px rgba(166, 180, 202, 0.42), -2px -2px 6px rgba(255, 255, 255, 0.88);
+  --shadow-raised: 8px 8px 18px rgba(166, 180, 202, 0.5), -8px -8px 18px rgba(255, 255, 255, 0.92);
+  --shadow-raised-sm: 4px 4px 10px rgba(166, 180, 202, 0.48), -4px -4px 10px rgba(255, 255, 255, 0.9);
+  --shadow-raised-lg: 16px 16px 34px rgba(166, 180, 202, 0.55), -14px -14px 30px rgba(255, 255, 255, 0.95);
+  --shadow-inset: inset 4px 4px 9px rgba(166, 180, 202, 0.5), inset -4px -4px 9px rgba(255, 255, 255, 0.92);
+  --shadow-inset-sm: inset 2px 2px 5px rgba(166, 180, 202, 0.45), inset -2px -2px 5px rgba(255, 255, 255, 0.9);
+
+  --border: 1px solid rgba(255, 255, 255, 0.72);
+  --border-subtle: 1px solid rgba(166, 180, 202, 0.28);
+  --divider: rgba(140, 158, 184, 0.34);
+
+  --text-title: #182232;
+  --text-primary: #283344;
+  --text-secondary: #435064;
+  --text-muted: #56657a;
+  --text-caption: #63738a;
+
+  --accent: var(--amber);
+  --accent-hover: var(--amber-hover);
+  --accent-soft: rgba(217, 119, 6, 0.12);
+  --accent-glow: 0 0 20px rgba(217, 119, 6, 0.22);
+  --on-accent: #ffffff;
+
+  --ok: var(--success);
+  --ok-soft: rgba(5, 150, 105, 0.12);
+  --warn: var(--warn-light);
+  --warn-soft: rgba(180, 83, 9, 0.12);
+  --danger: var(--danger-light);
+  --danger-soft: rgba(220, 38, 38, 0.12);
+  --signal-secondary: var(--rail);
+  --signal-soft: rgba(75, 107, 136, 0.14);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #181b20;
+  --bg-alt: #1b1f26;
+  --surface: #181b20;
+  --surface-raised: #1e2229;
+  --surface-sunken: #131519;
+  --surface-inset: #121417;
+
+  --shadow-raised-xs: 2px 2px 6px #0d0f12, -2px -2px 6px #23272f;
+  --shadow-raised: 8px 8px 18px #0e1013, -8px -8px 18px #22262d;
+  --shadow-raised-sm: 4px 4px 10px #0e1013, -4px -4px 10px #22262d;
+  --shadow-raised-lg: 16px 16px 34px #090b0d, -14px -14px 30px #272c35;
+  --shadow-inset: inset 4px 4px 9px #0e1013, inset -4px -4px 9px #22262d;
+  --shadow-inset-sm: inset 2px 2px 5px #0e1013, inset -2px -2px 5px #22262d;
+
+  --border: 1px solid rgba(255, 255, 255, 0.07);
+  --border-subtle: 1px solid rgba(255, 255, 255, 0.05);
+  --divider: rgba(255, 255, 255, 0.09);
+
+  --text-title: #f1f5f9;
+  --text-primary: #e2e8f0;
+  --text-secondary: #b3c0d1;
+  --text-muted: #8b98ab;
+  --text-caption: #7d8ca3;
+
+  --accent: var(--amber-dark);
+  --accent-hover: var(--amber-dark-hover);
+  --accent-soft: rgba(245, 158, 11, 0.16);
+  --accent-glow: 0 0 22px rgba(245, 158, 11, 0.28);
+  /* Âmbar claro precisa de texto escuro: branco sobre #f59e0b tem ~2:1.
+     Regra idêntica à do app (.flyout-btn-primary). */
+  --on-accent: #141619;
+
+  --ok: var(--success-dark);
+  --ok-soft: rgba(16, 185, 129, 0.15);
+  --warn: var(--warn-dark);
+  --warn-soft: rgba(251, 191, 36, 0.15);
+  --danger: var(--danger-dark);
+  --danger-soft: rgba(248, 113, 113, 0.15);
+  --signal-secondary: var(--rail-dark);
+  --signal-soft: rgba(141, 169, 191, 0.15);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Link de salto: invisível até receber foco pelo teclado. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 12px 20px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  border-radius: 0 0 12px 0;
+}
+.skip-link:focus { left: 0; }
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 92px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  transition: background-color 0.25s var(--ease), color 0.25s var(--ease);
+}
+
+::selection { background: var(--accent); color: var(--on-accent); }
+
+img, svg { display: block; max-width: 100%; }
+
+a { color: inherit; text-decoration: none; }
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+h1, h2, h3, h4 {
+  color: var(--text-title);
+  font-family: var(--font-display);
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+/* ---------- utilidades ---------- */
+
+.container {
+  width: 100%;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+.mono { font-family: var(--font-mono); }
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.eyebrow::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.section-lead {
+  color: var(--text-secondary);
+  max-width: 64ch;
+  font-size: 1.04rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- revelação ao rolar (respeita reduced-motion) ---------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-reveal] {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.55s var(--ease), transform 0.55s var(--ease);
+  }
+  [data-reveal].is-visible {
+    opacity: 1;
+    transform: none;
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "pulse-lp",
+  "main": "worker.js",
+  "compatibility_date": "2026-08-26",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": [
+      "/*"
+    ]
+  },
+  "observability": {
+    "enabled": true
+  },
+  "routes": [
+    {
+      "pattern": "pulse.lagrimante.com.br",
+      "zone_name": "lagrimante.com.br",
+      "custom_domain": true
+    }
+  ]
+}
