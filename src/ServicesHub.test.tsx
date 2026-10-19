@@ -757,4 +757,70 @@ describe("atualizações em paralelo", () => {
     expect(formatElapsed(65_000)).toBe("01:05");
     expect(formatElapsed(600_000)).toBe("10:00");
   });
+
+  it("exibe skeletons e banner de loading enquanto consulta atualizações", async () => {
+    const pendente = new Promise(() => {});
+    vi.mocked(invoke).mockImplementation((cmd: string) =>
+      cmd === "list_pending_updates" ? pendente : Promise.resolve(defaultInvoke(cmd)),
+    );
+    render(<ServicesHub />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Carregando lista de atualizações")).toBeTruthy();
+    });
+    expect(screen.getByText(/Consultando repositório oficial/i)).toBeTruthy();
+  });
+
+  it("campo de busca na aba de atualizações filtra itens por nome ou ID", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) =>
+      Promise.resolve(
+        cmd === "list_pending_updates"
+          ? updatesSnapshot({
+              updates: [
+                { id: "Docker.DockerDesktop", name: "Docker Desktop", currentVersion: "4.35.1", availableVersion: "4.36.0", source: "winget" },
+                { id: "Anki.Anki", name: "Anki Launcher", currentVersion: "25.09", availableVersion: "26.09.3", source: "winget" },
+              ],
+              totalCount: 2,
+            })
+          : defaultInvoke(cmd),
+      ),
+    );
+    render(<ServicesHub />);
+    await waitFor(() => expect(screen.getByText("Docker Desktop")).toBeTruthy());
+    expect(screen.getByText("Anki Launcher")).toBeTruthy();
+
+    const searchInput = screen.getByLabelText("Buscar aplicativo por nome, ID ou versão");
+    fireEvent.change(searchInput, { target: { value: "anki" } });
+
+    expect(screen.queryByText("Docker Desktop")).toBeNull();
+    expect(screen.getByText("Anki Launcher")).toBeTruthy();
+
+    fireEvent.change(searchInput, { target: { value: "inexistente" } });
+    expect(screen.getByText("Nenhum aplicativo corresponde aos filtros aplicados.")).toBeTruthy();
+  });
+
+  it("botão VERIFICAR reconsulta a lista de atualizações pendentes", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) =>
+      Promise.resolve(
+        cmd === "list_pending_updates"
+          ? updatesSnapshot({
+              updates: [
+                { id: "Docker.DockerDesktop", name: "Docker Desktop", currentVersion: "4.35.1", availableVersion: "4.36.0", source: "winget" },
+              ],
+              totalCount: 1,
+            })
+          : defaultInvoke(cmd),
+      ),
+    );
+    render(<ServicesHub />);
+    await waitFor(() => expect(screen.getByText("Docker Desktop")).toBeTruthy());
+
+    const before = vi.mocked(invoke).mock.calls.filter(call => call[0] === "list_pending_updates").length;
+    const btnVerificar = screen.getByRole("button", { name: "VERIFICAR" });
+    fireEvent.click(btnVerificar);
+
+    await waitFor(() => {
+      const after = vi.mocked(invoke).mock.calls.filter(call => call[0] === "list_pending_updates").length;
+      expect(after).toBeGreaterThan(before);
+    });
+  });
 });

@@ -51,6 +51,7 @@ export type PendingUpdate = {
   currentVersion: string;
   availableVersion: string;
   source: string;
+  icon?: string | null;
 };
 
 export type UpdatesSnapshot = {
@@ -277,6 +278,7 @@ export function ServicesHub() {
   const [updatesState, setUpdatesState] = useState<LoadState>("idle");
   const [updatesError, setUpdatesError] = useState("");
 
+  const [updatesQuery, setUpdatesQuery] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ServiceFilter>("all");
   const [category, setCategory] = useState<ServiceCategoryFilter>("all");
@@ -390,6 +392,26 @@ export function ServicesHub() {
     () => filterServices(services?.services ?? [], query, filter, category),
     [services, query, filter, category],
   );
+
+  const visibleUpdates = useMemo(() => {
+    if (!updates) return [];
+    const q = updatesQuery.trim().toLowerCase();
+    if (!q) return updates.updates;
+    return updates.updates.filter(
+      u =>
+        u.name.toLowerCase().includes(q) ||
+        u.id.toLowerCase().includes(q) ||
+        u.source.toLowerCase().includes(q) ||
+        u.currentVersion.toLowerCase().includes(q) ||
+        u.availableVersion.toLowerCase().includes(q),
+    );
+  }, [updates, updatesQuery]);
+
+  const updateSourcesLabel = useMemo(() => {
+    if (!updates || updates.updates.length === 0) return "Repositório winget";
+    const sources = Array.from(new Set(updates.updates.map(u => u.source).filter(Boolean)));
+    return sources.length > 0 ? sources.join(", ") : "winget oficial";
+  }, [updates]);
 
   const runServiceAction = async (service: WindowsService, action: "start" | "stop") => {
     setBusyService(service.name);
@@ -613,7 +635,33 @@ export function ServicesHub() {
           )}
 
           {servicesState === "loading" && services == null && (
-            <div className="pulse-loading sh-loading">CARREGANDO SERVIÇOS…</div>
+            <>
+              <div className="sh-loading-banner" role="status" aria-live="polite">
+                <span className="sh-loading-spinner" aria-hidden="true" />
+                <div className="sh-loading-text">
+                  <strong>Consultando Gerenciador de Controle de Serviços (SCM)…</strong>
+                  <small>Classificando serviços por conta de execução, diretório e integridade</small>
+                </div>
+              </div>
+              <div className="sh-list sh-skeleton-list" aria-busy="true" aria-label="Carregando lista de serviços">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <article className="sh-item sh-skeleton-item" key={`service-skeleton-${i}`} aria-hidden="true">
+                    <div className="sh-skeleton-box sh-skeleton-icon" />
+                    <div className="sh-item-main">
+                      <div className="sh-skeleton-box sh-skeleton-title" />
+                      <div className="sh-skeleton-box sh-skeleton-sub" />
+                      <div className="sh-skeleton-box sh-skeleton-path" />
+                    </div>
+                    <div className="sh-item-meta">
+                      <div className="sh-skeleton-box sh-skeleton-badge" />
+                      <div className="sh-skeleton-box sh-skeleton-status" />
+                      <div className="sh-skeleton-box sh-skeleton-pid" />
+                    </div>
+                    <div className="sh-skeleton-box sh-skeleton-btn" />
+                  </article>
+                ))}
+              </div>
+            </>
           )}
 
           {servicesState === "ready" && services != null && !servicesUnavailable && (
@@ -692,24 +740,76 @@ export function ServicesHub() {
           <div className="sh-stats">
             <article className="sh-stat">
               <span className="stat-label">ATUALIZAÇÕES PENDENTES</span>
-              <span className="stat-value">{updates ? formatCount(updates.totalCount) : "—"}</span>
+              <span className="stat-value">
+                {updates ? (
+                  formatCount(updates.totalCount)
+                ) : (
+                  <span className="sh-skeleton-box sh-skeleton-stat-num" aria-hidden="true" />
+                )}
+              </span>
+            </article>
+            <article className="sh-stat">
+              <span className="stat-label">EM SEGUNDO PLANO</span>
+              <span className="stat-value">
+                {busyAll ? "1 em lote" : formatCount(runningCount)}
+              </span>
+            </article>
+            <article className="sh-stat">
+              <span className="stat-label">REPOSITÓRIO</span>
+              <span className="stat-value sh-stat-compact">
+                {updates ? (
+                  updateSourcesLabel
+                ) : (
+                  <span className="sh-skeleton-box sh-skeleton-stat-num" aria-hidden="true" />
+                )}
+              </span>
+            </article>
+            <article className="sh-stat">
+              <span className="stat-label">STATUS DO SISTEMA</span>
+              <span className="stat-value sh-stat-compact">
+                {updatesState === "loading"
+                  ? "Verificando…"
+                  : updates && updates.totalCount > 0
+                    ? `${updates.totalCount} pendente(s)`
+                    : "Em dia"}
+              </span>
             </article>
           </div>
 
           <div className="sh-toolbar">
-            <button
-              type="button"
-              className="btn-primary disk-scan-btn"
-              onClick={() => void runUpgradeAll()}
-              disabled={
-                busyAll ||
-                updatesState === "loading" ||
-                updates == null ||
-                updates.totalCount === 0
-              }
-            >
-              {busyAll ? "ATUALIZANDO TUDO…" : "ATUALIZAR TUDO"}
-            </button>
+            <input
+              type="search"
+              className="sh-search"
+              placeholder="Buscar aplicativo desatualizado (nome, ID ou versão)"
+              aria-label="Buscar aplicativo por nome, ID ou versão"
+              value={updatesQuery}
+              onChange={event => setUpdatesQuery(event.target.value)}
+              disabled={updatesState === "loading" && updates == null}
+            />
+            <div className="sh-toolbar-actions">
+              <button
+                type="button"
+                className="btn-primary disk-scan-btn sh-btn-secondary"
+                onClick={() => void loadUpdates(true)}
+                disabled={updatesState === "loading" || busyAll}
+                title="Reconsultar atualizações disponíveis no winget"
+              >
+                {updatesState === "loading" ? "VERIFICANDO…" : "VERIFICAR"}
+              </button>
+              <button
+                type="button"
+                className="btn-primary disk-scan-btn"
+                onClick={() => void runUpgradeAll()}
+                disabled={
+                  busyAll ||
+                  updatesState === "loading" ||
+                  updates == null ||
+                  updates.totalCount === 0
+                }
+              >
+                {busyAll ? "ATUALIZANDO TUDO…" : "ATUALIZAR TUDO"}
+              </button>
+            </div>
           </div>
 
           {busyAll && (
@@ -754,15 +854,41 @@ export function ServicesHub() {
           )}
 
           {updatesState === "loading" && updates == null && (
-            <div className="pulse-loading sh-loading">CONSULTANDO ATUALIZAÇÕES…</div>
+            <>
+              <div className="sh-loading-banner" role="status" aria-live="polite">
+                <span className="sh-loading-spinner" aria-hidden="true" />
+                <div className="sh-loading-text">
+                  <strong>Consultando repositório oficial do Gerenciador de Pacotes do Windows (winget)…</strong>
+                  <small>Comparando versões instaladas com manifestos recentes do repositório</small>
+                </div>
+              </div>
+              <div className="sh-list sh-skeleton-list" aria-busy="true" aria-label="Carregando lista de atualizações">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <article className="sh-item sh-skeleton-item" key={`update-skeleton-${i}`} aria-hidden="true">
+                    <div className="sh-skeleton-box sh-skeleton-icon" />
+                    <div className="sh-item-main">
+                      <div className="sh-skeleton-box sh-skeleton-title" />
+                      <div className="sh-skeleton-box sh-skeleton-sub" />
+                      <div className="sh-skeleton-box sh-skeleton-path" />
+                    </div>
+                    <div className="sh-item-meta">
+                      <div className="sh-skeleton-box sh-skeleton-version" />
+                    </div>
+                    <div className="sh-skeleton-box sh-skeleton-btn" />
+                  </article>
+                ))}
+              </div>
+            </>
           )}
 
           {updatesState === "ready" && updates != null && !updatesUnavailable && (
             <div className="sh-list" role="list">
               {updates.updates.length === 0 ? (
                 <p className="sh-empty muted">Nenhuma atualização pendente no momento.</p>
+              ) : visibleUpdates.length === 0 ? (
+                <p className="sh-empty muted">Nenhum aplicativo corresponde aos filtros aplicados.</p>
               ) : (
-                updates.updates.map(update => {
+                visibleUpdates.map(update => {
                   const job = updateJobs[update.id];
                   const running = job?.state === "running";
                   const done = job?.state === "done";
@@ -772,6 +898,21 @@ export function ServicesHub() {
                       key={`${update.source}:${update.id}`}
                       role="listitem"
                     >
+                      <div className="sh-item-icon-wrapper" aria-hidden="true">
+                        {update.icon ? (
+                          <img
+                            className="sh-item-icon"
+                            src={update.icon}
+                            alt=""
+                            width={22}
+                            height={22}
+                          />
+                        ) : (
+                          <span className="sh-item-monogram">
+                            {update.name.slice(0, 2).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
                       <div className="sh-item-main">
                         <strong>{update.name}</strong>
                         <small className="sh-item-name">{update.id}</small>

@@ -53,6 +53,7 @@ pub struct PendingUpdate {
     pub current_version: String,
     pub available_version: String,
     pub source: String,
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -187,10 +188,34 @@ pub fn parse_winget_upgrades(output: &str) -> Vec<PendingUpdate> {
             } else {
                 source.to_string()
             },
+            icon: None,
         });
     }
 
     updates
+}
+
+/// Enriquece os pacotes do winget com os ícones dos aplicativos instalados no sistema.
+pub fn enrich_updates_with_icons(updates: &mut [PendingUpdate]) {
+    let installed = crate::uninstall::installed::collect_cached().apps;
+    for update in updates.iter_mut() {
+        let name_lower = update.name.trim().to_lowercase();
+        let id_lower = update.id.trim().to_lowercase();
+
+        for app in &installed {
+            let app_name_lower = app.display_name.trim().to_lowercase();
+            if app_name_lower == name_lower
+                || (app_name_lower.contains(&name_lower) && !name_lower.is_empty())
+                || (name_lower.contains(&app_name_lower) && !app_name_lower.is_empty())
+                || app.id.to_lowercase().contains(&id_lower)
+            {
+                if let Some(icon) = &app.icon {
+                    update.icon = Some(icon.clone());
+                    break;
+                }
+            }
+        }
+    }
 }
 
 /// Posições de início de cada coluna, em **caracteres**, derivadas dos tokens
@@ -570,7 +595,8 @@ fn collect_updates() -> UpdatesSnapshot {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{stdout}\n{stderr}");
 
-    let updates = parse_winget_upgrades(&combined);
+    let mut updates = parse_winget_upgrades(&combined);
+    enrich_updates_with_icons(&mut updates);
     if updates.is_empty() && !combined.contains("atualiza") && parse_footer_total(&combined).is_none()
     {
         return unavailable(format!(

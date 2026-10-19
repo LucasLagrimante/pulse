@@ -186,6 +186,31 @@
   image-rendering: pixelated;
 }
 
+.sh-item-icon-wrapper {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid var(--neu-divider);
+  background: var(--neu-surface-sunken);
+  overflow: hidden;
+}
+
+.sh-item-monogram {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--neu-signal-secondary);
+}
+
+.sh-item-icon-wrapper .sh-item-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
 .sh-item-main {
   display: flex;
   flex-direction: column;
@@ -416,12 +441,194 @@
   color: var(--neu-success);
 }
 
+.sh-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.sh-btn-secondary {
+  background: var(--neu-surface) !important;
+  color: var(--neu-text-secondary) !important;
+  border: 1px solid var(--neu-divider) !important;
+  box-shadow: var(--neu-shadow-raised-xs) !important;
+}
+
+.sh-btn-secondary:hover:not(:disabled) {
+  background: var(--neu-surface-hover) !important;
+  border-color: var(--neu-accent) !important;
+  color: var(--neu-text-title) !important;
+}
+
+.sh-stat-compact {
+  font-size: 0.78rem !important;
+  font-weight: 500 !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sh-running-note {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .62rem;
   color: var(--neu-success);
   margin: 0;
   flex-shrink: 0;
+}
+
+/* Banner e feedback sutil durante carregamento */
+.sh-loading-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--neu-surface-sunken);
+  border: 1px solid var(--neu-divider);
+  border-radius: 6px;
+  box-shadow: var(--neu-shadow-inset-xs);
+  flex-shrink: 0;
+}
+
+.sh-loading-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid color-mix(in srgb, var(--neu-accent) 25%, transparent);
+  border-top-color: var(--neu-accent);
+  border-radius: 50%;
+  animation: sh-spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes sh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sh-loading-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sh-loading-text strong {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--neu-text-title);
+}
+
+.sh-loading-text small {
+  font-size: 0.65rem;
+  color: var(--neu-text-muted);
+}
+
+/* Skeletons de Alta Fidelidade (sem cores hardcoded, 100% responsivos ao tema) */
+.sh-skeleton-list {
+  overflow-y: hidden;
+  pointer-events: none;
+}
+
+.sh-skeleton-item {
+  opacity: 0.85;
+  border-color: var(--neu-divider);
+}
+
+.sh-skeleton-box {
+  position: relative;
+  overflow: hidden;
+  background: var(--neu-surface-sunken);
+  border-radius: 4px;
+  box-shadow: var(--neu-shadow-inset-xs);
+}
+
+.sh-skeleton-box::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--neu-text-primary) 8%, transparent) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: sh-skeleton-sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes sh-skeleton-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sh-skeleton-box::after {
+    animation: none;
+    background: color-mix(in srgb, var(--neu-text-primary) 5%, transparent);
+  }
+}
+
+.sh-skeleton-title {
+  width: 180px;
+  height: 14px;
+  margin-bottom: 4px;
+}
+
+.sh-skeleton-sub {
+  width: 130px;
+  height: 10px;
+  margin-bottom: 2px;
+}
+
+.sh-skeleton-path {
+  width: 220px;
+  height: 10px;
+}
+
+.sh-skeleton-version {
+  width: 140px;
+  height: 14px;
+}
+
+.sh-skeleton-btn {
+  width: 92px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.sh-skeleton-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.sh-skeleton-badge {
+  width: 50px;
+  height: 14px;
+}
+
+.sh-skeleton-status {
+  width: 70px;
+  height: 14px;
+}
+
+.sh-skeleton-pid {
+  width: 48px;
+  height: 12px;
+}
+
+.sh-skeleton-stat-num {
+  display: inline-block;
+  width: 46px;
+  height: 18px;
+  margin-top: 2px;
 }
 
 .sh-item-update.is-running { border-color: color-mix(in srgb, var(--neu-success) 35%, var(--neu-divider)); }
