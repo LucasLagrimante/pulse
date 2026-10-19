@@ -8,10 +8,12 @@
 !macro NSIS_HOOK_PREINSTALL
   ; Encerra instância antiga antes de copiar os arquivos novos.
   ; taskkill retorna nonzero se não houver processo — sem abortar.
+  ExecWait '"$SYSDIR\taskkill.exe" /F /IM pulse-windows.exe /T'
   ExecWait '"$SYSDIR\taskkill.exe" /F /IM Pulse.exe /T'
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
   ; Garante que o exe não esteja travado ao remover os arquivos.
+  ExecWait '"$SYSDIR\taskkill.exe" /F /IM pulse-windows.exe /T'
   ExecWait '"$SYSDIR\taskkill.exe" /F /IM Pulse.exe /T'
 !macroend
