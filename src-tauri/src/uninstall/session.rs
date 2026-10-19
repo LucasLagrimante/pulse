@@ -487,6 +487,9 @@ fn wait_for_uninstaller(
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
+            if is_elevation_required_error(&error) {
+                return wait_for_elevated_uninstaller(program, args, started_at, app_id);
+            }
             return RunOutcome {
                 started: false,
                 exit_code: None,
@@ -498,7 +501,7 @@ fn wait_for_uninstaller(
                     describe_spawn_error(&error, program)
                 )),
                 messages: Vec::new(),
-            }
+            };
         }
     };
 
@@ -561,6 +564,165 @@ fn wait_for_uninstaller(
     }
 }
 
+pub fn is_elevation_required_error(error: &std::io::Error) -> bool {
+    // Código Win32 740 = ERROR_ELEVATION_REQUIRED
+    error.raw_os_error() == Some(740) || error.kind() == std::io::ErrorKind::PermissionDenied
+}
+
+pub fn format_command_line_args(args: &[String]) -> String {
+    args.iter()
+        .map(|arg| {
+            if arg.contains(' ') || arg.contains('\t') || arg.contains('"') || arg.is_empty() {
+                let escaped = arg.replace('"', "\\\"");
+                format!("\"{}\"", escaped)
+            } else {
+                arg.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(windows)]
+fn wait_for_elevated_uninstaller(
+    program: &str,
+    args: &[String],
+    started_at: Instant,
+    app_id: &str,
+) -> RunOutcome {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{CloseHandle, ERROR_CANCELLED, HANDLE, WAIT_OBJECT_0};
+    use windows::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
+    use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let verb: Vec<u16> = std::ffi::OsStr::new("runas")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let file: Vec<u16> = std::ffi::OsStr::new(program)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let formatted_args = format_command_line_args(args);
+    let params: Vec<u16> = std::ffi::OsStr::new(&formatted_args)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let mut info = SHELLEXECUTEINFOW::default();
+    info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+    info.fMask = SEE_MASK_NOCLOSEPROCESS;
+    info.lpVerb = PCWSTR(verb.as_ptr());
+    info.lpFile = PCWSTR(file.as_ptr());
+    info.lpParameters = PCWSTR(params.as_ptr());
+    info.nShow = SW_SHOWNORMAL.0;
+
+    if let Err(err) = unsafe { ShellExecuteExW(&mut info) } {
+        let code = err.code().0 as u32;
+        let note = if code == 1223 || code == 0x8007_04C7 || err.code() == ERROR_CANCELLED.to_hresult() {
+            "A solicitação de permissão de administrador (UAC) foi cancelada pelo usuário.".to_string()
+        } else {
+            format!("Não foi possível executar {} com elevação: {}", program, err)
+        };
+        return RunOutcome {
+            started: false,
+            exit_code: None,
+            timed_out: false,
+            entry_removed: false,
+            detection_note: Some(note),
+            messages: Vec::new(),
+        };
+    }
+
+    let h_process = info.hProcess;
+    let mut exit_code = None;
+    let mut timed_out = false;
+
+    if !h_process.is_invalid() {
+        loop {
+            let wait_res = unsafe { WaitForSingleObject(h_process, 700) };
+            if wait_res == WAIT_OBJECT_0 {
+                let mut code: u32 = 0;
+                if unsafe { GetExitCodeProcess(h_process, &mut code) }.is_ok() {
+                    exit_code = Some(code as i32);
+                }
+                break;
+            }
+            if started_at.elapsed() >= UNINSTALLER_TIMEOUT {
+                timed_out = true;
+                break;
+            }
+        }
+        unsafe {
+            let _ = CloseHandle(h_process);
+        }
+    } else {
+        // Se hProcess for inválido (processo delegado pelo shell), aguarda pela chave de registro
+        let deadline = started_at + UNINSTALLER_TIMEOUT;
+        loop {
+            if !app_entry_exists(app_id) {
+                break;
+            }
+            if Instant::now() >= deadline {
+                timed_out = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(700));
+        }
+    }
+
+    let mut messages = exit_code.map(describe_exit_code).unwrap_or_default();
+    if timed_out {
+        messages.push(
+            "O desinstalador continua em execução e o Pulse parou de aguardá-lo. Confira na tela se a remoção terminou.".to_string(),
+        );
+    }
+
+    let entry_removed = if timed_out {
+        false
+    } else {
+        wait_for_entry_removal(app_id)
+    };
+    let detection_note = if entry_removed || timed_out {
+        None
+    } else {
+        Some(
+            "A janela do desinstalador fechou, mas o Windows ainda lista este programa. A limpeza de resíduos não foi recomendada.".to_string(),
+        )
+    };
+
+    RunOutcome {
+        started: true,
+        exit_code,
+        timed_out,
+        entry_removed,
+        detection_note,
+        messages,
+    }
+}
+
+#[cfg(not(windows))]
+fn wait_for_elevated_uninstaller(
+    program: &str,
+    _args: &[String],
+    _started_at: Instant,
+    _app_id: &str,
+) -> RunOutcome {
+    RunOutcome {
+        started: false,
+        exit_code: None,
+        timed_out: false,
+        entry_removed: false,
+        detection_note: Some(format!(
+            "Não foi possível executar {}: a operação requer elevação (não suportada nesta plataforma)",
+            program
+        )),
+        messages: Vec::new(),
+    }
+}
+
 fn describe_spawn_error(error: &std::io::Error, program: &str) -> String {
     use std::io::ErrorKind;
     match error.kind() {
@@ -569,7 +731,7 @@ fn describe_spawn_error(error: &std::io::Error, program: &str) -> String {
             program
         ),
         ErrorKind::PermissionDenied => {
-            "o Windows exigiu elevação e o Pulse não está como administrador".to_string()
+            "o Windows exigiu elevação e a permissão não foi concedida".to_string()
         }
         _ => format!("{}", error),
     }
@@ -908,5 +1070,33 @@ mod tests {
         assert!(describe_exit_code(3010)[0].contains("reiniciar"));
         assert!(describe_exit_code(1603)[0].contains("Windows Installer"));
         assert!(describe_exit_code(9999)[0].contains("9999"));
+    }
+
+    #[test]
+    fn format_args_escapa_espacos_e_aspas() {
+        let args = vec![
+            "/flag".to_string(),
+            "C:\\Program Files\\App".to_string(),
+            "with \"quotes\"".to_string(),
+            "".to_string(),
+            "normal".to_string(),
+        ];
+        let formatted = format_command_line_args(&args);
+        assert_eq!(
+            formatted,
+            r#"/flag "C:\Program Files\App" "with \"quotes\"" "" normal"#
+        );
+    }
+
+    #[test]
+    fn deteccao_de_erro_de_elevacao() {
+        let err_740 = std::io::Error::from_raw_os_error(740);
+        assert!(is_elevation_required_error(&err_740));
+
+        let err_perm = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "access denied");
+        assert!(is_elevation_required_error(&err_perm));
+
+        let err_other = std::io::Error::new(std::io::ErrorKind::NotFound, "not found");
+        assert!(!is_elevation_required_error(&err_other));
     }
 }
