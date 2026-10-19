@@ -4,7 +4,7 @@
 
 - Versão atual: 1.0.0
 - Instalador Windows 11 x64: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe (instalador NSIS de 3,5 MB)
-- SHA-256: `f95f05f97cbba18cce85241fac1e1e055bc623f763aa8d4ebe7a2f5f1f98edf5`
+- SHA-256: `39bbdee8fb0690b44a683bd788e53fff20b1d83d48a5a0b7db7d3e256776381d`
 
 ## O que é
 

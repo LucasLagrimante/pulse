@@ -5,9 +5,9 @@
   "installer": {
     "filename": "Pulse-latest-x64-setup.exe",
     "url": "https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe",
-    "sizeBytes": 3657903,
+    "sizeBytes": 3664123,
     "sizeFormatted": "3,5 MB",
-    "sha256": "f95f05f97cbba18cce85241fac1e1e055bc623f763aa8d4ebe7a2f5f1f98edf5"
+    "sha256": "39bbdee8fb0690b44a683bd788e53fff20b1d83d48a5a0b7db7d3e256776381d"
   },
   "updatedAt": "2026-10-19"
 }
