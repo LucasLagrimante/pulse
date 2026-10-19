@@ -156,6 +156,8 @@ export type TopProcess = {
   publisher?: string | null;
   cpuPercent?: number | null;
   gpuPercent?: number | null;
+  icon?: string | null;
+  path?: string | null;
 };
 
 export type ProcessSortColumn = "memory" | "cpu" | "gpu";
@@ -620,6 +622,24 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
   }
 }
 
+export function ProcessFallbackIcon() {
+  return (
+    <svg
+      className="process-fallback-symbol"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <path d="M3 9h18 M9 21V9" />
+    </svg>
+  );
+}
+
 export function ProcessList({
   processes,
   onTerminate,
@@ -690,13 +710,22 @@ export function ProcessList({
         {processes.slice(0, TOP_PROCESS_LIMIT).map((p, i) => (
           <li key={`${p.id}-${p.name}`}>
             <span className="process-rank">{String(i + 1).padStart(2, "0")}</span>
-            <span className="process-name" title={[p.displayName || p.name, p.name, p.publisher].filter(Boolean).join(" · ")}>
-              {p.displayName || p.name}
-              <small>
-                {[p.name, p.publisher].filter(Boolean).join(" · ") || `PID ${p.id}`}
-                {(p.processCount ?? 1) > 1 ? ` · ${p.processCount} processos` : ""}
-              </small>
-            </span>
+            <div className="process-identity">
+              <span className={`process-icon ${p.icon ? "" : "process-icon-empty"}`} aria-hidden="true">
+                {p.icon ? (
+                  <img src={p.icon} alt="" className="process-icon-img" />
+                ) : (
+                  <ProcessFallbackIcon />
+                )}
+              </span>
+              <span className="process-name" title={[p.displayName || p.name, p.name, p.publisher].filter(Boolean).join(" · ")}>
+                <strong>{p.displayName || p.name}</strong>
+                <small>
+                  {[p.name, p.publisher].filter(Boolean).join(" · ") || `PID ${p.id}`}
+                  {(p.processCount ?? 1) > 1 ? ` · ${p.processCount} processos` : ""}
+                </small>
+              </span>
+            </div>
             <span className="process-memory">{metric(p.memoryMb, " MB")}</span>
             {showUsage && (
               <>
@@ -875,6 +904,154 @@ export function ScanFoldersBar({
   );
 }
 
+export function FileTypeIcon({ category }: { category: string }) {
+  switch (category) {
+    case "image":
+      return (
+        <svg
+          className="file-symbol"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <polyline points="21 15 16 10 5 21" />
+        </svg>
+      );
+    case "code":
+      return (
+        <svg
+          className="file-symbol"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <polyline points="16 18 22 12 16 6" />
+          <polyline points="8 6 2 12 8 18" />
+        </svg>
+      );
+    case "document":
+      return (
+        <svg
+          className="file-symbol"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="16" y1="13" x2="8" y2="13" />
+          <line x1="16" y1="17" x2="8" y2="17" />
+          <line x1="10" y1="9" x2="8" y2="9" />
+        </svg>
+      );
+    case "media":
+      return (
+        <svg
+          className="file-symbol"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <polygon points="5 3 19 12 5 21 5 3" />
+        </svg>
+      );
+    case "installer":
+    case "archive":
+      return (
+        <svg
+          className="file-symbol"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+          <line x1="12" y1="22.08" x2="12" y2="12" />
+        </svg>
+      );
+    default:
+      return (
+        <svg
+          className="file-symbol"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+          <polyline points="13 2 13 9 20 9" />
+        </svg>
+      );
+  }
+}
+
+export function FileThumbnail({ file }: { file: RecentFile }) {
+  const isImage = file.category === "image";
+  const [preview, setPreview] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!isImage) return;
+    let active = true;
+    invoke<string | null>("get_image_preview", { path: file.path })
+      .then(res => {
+        if (active && res) {
+          setPreview(res);
+        }
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [file.path, isImage]);
+
+  if (isImage && preview && !failed) {
+    return (
+      <span className="file-badge file-badge-image has-preview" aria-hidden="true">
+        <img
+          src={preview}
+          alt=""
+          className="file-preview-img"
+          onError={() => setFailed(true)}
+        />
+      </span>
+    );
+  }
+
+  return (
+    <span className={`file-badge file-badge-${file.category || "generic"}`} aria-hidden="true">
+      <FileTypeIcon category={file.category} />
+    </span>
+  );
+}
+
 export function FileList({
   files,
   busy,
@@ -946,10 +1123,15 @@ export function FileList({
             {[1, 2, 3, 4, 5].map(i => (
               <div className="file-row skeleton-row" key={i}>
                 <div className="file-main">
-                  <div className="skeleton-line skeleton-line-title" />
-                  <div className="file-meta">
-                    <div className="skeleton-line skeleton-line-tag" />
-                    <div className="skeleton-line skeleton-line-size" />
+                  <div className="file-entry-group">
+                    <div className="skeleton-file-badge" />
+                    <div className="file-info">
+                      <div className="skeleton-line skeleton-line-title" />
+                      <div className="file-meta">
+                        <div className="skeleton-line skeleton-line-tag" />
+                        <div className="skeleton-line skeleton-line-size" />
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="file-date-block">
@@ -968,12 +1150,17 @@ export function FileList({
             return (
               <div className="file-row" key={file.path}>
                 <div className="file-main">
-                  <span className="file-name" title={file.path}>
-                    {file.name}
-                  </span>
-                  <div className="file-meta">
-                    <span className="file-category-tag">{file.category}</span>
-                    <span className="file-size">{formatFileSize(file.sizeBytes)}</span>
+                  <div className="file-entry-group">
+                    <FileThumbnail file={file} />
+                    <div className="file-info">
+                      <span className="file-name" title={file.path}>
+                        {file.name}
+                      </span>
+                      <div className="file-meta">
+                        <span className="file-category-tag">{file.category}</span>
+                        <span className="file-size">{formatFileSize(file.sizeBytes)}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="file-date-block" title={`Modificado em: ${fullDate}`}>
@@ -1874,13 +2061,18 @@ export function TrayFlyout({
             overview.topProcesses.slice(0, 5).map((p, i) => (
               <li key={p.id}>
                 <span className="flyout-process-rank">{String(i + 1).padStart(2, "0")}</span>
-                <span className="flyout-process-name" title={[p.displayName || p.name, p.name, p.publisher].filter(Boolean).join(" · ")}>
-                  <strong>{p.displayName || p.name}</strong>
-                  <small>
-                    {[p.name, p.publisher].filter(Boolean).join(" · ") || `PID ${p.id}`}
-                    {(p.processCount ?? 1) > 1 ? ` · ${p.processCount} processos` : ""}
-                  </small>
-                </span>
+                <div className="flyout-process-identity">
+                  <span className={`flyout-process-icon ${p.icon ? "" : "flyout-process-icon-empty"}`} aria-hidden="true">
+                    {p.icon ? <img src={p.icon} alt="" /> : <ProcessFallbackIcon />}
+                  </span>
+                  <span className="flyout-process-name" title={[p.displayName || p.name, p.name, p.publisher].filter(Boolean).join(" · ")}>
+                    <strong>{p.displayName || p.name}</strong>
+                    <small>
+                      {[p.name, p.publisher].filter(Boolean).join(" · ") || `PID ${p.id}`}
+                      {(p.processCount ?? 1) > 1 ? ` · ${p.processCount} processos` : ""}
+                    </small>
+                  </span>
+                </div>
                 <span className="flyout-process-mem">{metric(p.memoryMb, " MB")}</span>
                 <button
                   type="button"

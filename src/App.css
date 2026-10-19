@@ -640,7 +640,38 @@ h1 {
   font-weight: 600;
 }
 
+.process-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.process-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.process-icon img,
+.process-icon-img {
+  display: block;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.process-fallback-symbol {
+  width: 16px;
+  height: 16px;
+}
+
 .process-name {
+  flex: 1;
   display: grid;
   gap: 2px;
   min-width: 0;
@@ -764,9 +795,50 @@ h1 {
 }
 
 .file-main {
+  min-width: 0;
+}
+
+.file-entry-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.file-info {
   display: grid;
   gap: 3px;
   min-width: 0;
+  flex: 1;
+}
+
+.file-badge {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.file-badge .file-symbol {
+  width: 18px;
+  height: 18px;
+}
+
+.file-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.skeleton-file-badge {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
 }
 
 .file-name {
@@ -3116,7 +3188,37 @@ h1 {
   font-weight: 600;
 }
 
+.flyout-process-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.flyout-process-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.flyout-process-icon img {
+  display: block;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.flyout-process-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
 .flyout-process-name {
+  flex: 1;
   display: grid;
   gap: 1px;
   color: #dfe4db;

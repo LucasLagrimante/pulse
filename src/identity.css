@@ -3300,3 +3300,75 @@ body:has(.tray-flyout-container),
   color: var(--neu-warning) !important;
 }
 
+/* Ícones de Aplicativos em Execução (Processos) e Miniaturas de Arquivos Recentes */
+[data-theme] .process-icon {
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-inset-xs);
+  border: 1px solid var(--neu-border-subtle);
+}
+
+[data-theme] .process-icon svg,
+[data-theme] .process-fallback-symbol {
+  color: var(--neu-text-muted);
+}
+
+[data-theme] .process-icon-empty {
+  opacity: 0.75;
+}
+
+[data-theme] .flyout-process-icon {
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-inset-xs);
+  border: 1px solid var(--neu-border-subtle);
+}
+
+[data-theme] .flyout-process-icon svg {
+  color: var(--neu-text-muted);
+}
+
+[data-theme] .flyout-process-icon-empty {
+  opacity: 0.75;
+}
+
+[data-theme] .file-badge {
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-inset-xs);
+  border: 1px solid var(--neu-border-subtle);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+[data-theme] .file-badge .file-symbol {
+  color: var(--neu-text-muted);
+}
+
+[data-theme] .file-badge-image .file-symbol {
+  color: var(--neu-signal-secondary);
+}
+
+[data-theme] .file-badge-code .file-symbol {
+  color: var(--neu-success);
+}
+
+[data-theme] .file-badge-document .file-symbol {
+  color: var(--neu-info);
+}
+
+[data-theme] .file-badge-media .file-symbol {
+  color: var(--neu-accent);
+}
+
+[data-theme] .file-badge-installer .file-symbol,
+[data-theme] .file-badge-archive .file-symbol {
+  color: var(--neu-warning);
+}
+
+[data-theme] .file-badge.has-preview {
+  padding: 0;
+  border-color: var(--neu-divider);
+}
+
+[data-theme] .skeleton-file-badge {
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-inset-xs);
+}
+

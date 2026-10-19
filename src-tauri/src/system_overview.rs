@@ -21,6 +21,10 @@ pub struct TopProcess {
     pub cpu_percent: Option<f64>,
     #[serde(default)]
     pub gpu_percent: Option<f64>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 fn default_process_count() -> usize {
@@ -104,10 +108,12 @@ $cpuAverage = if ($cpuSamples.Count -gt 0) { [math]::Round((($cpuSamples | Measu
 $enrichedProcesses = @($processes | ForEach-Object {
   $displayName = [string]$_.name
   $publisher = $null
+  $procPath = $null
   try {
     $nativeProcess = Get-Process -Id ([int]$_.id) -ErrorAction Stop
     $path = $nativeProcess.Path
     if ($path) {
+      $procPath = [string]$path
       $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($path)
       if ($versionInfo.FileDescription) { $displayName = [string]$versionInfo.FileDescription }
       if ($versionInfo.CompanyName) { $publisher = [string]$versionInfo.CompanyName }
@@ -121,6 +127,7 @@ $enrichedProcesses = @($processes | ForEach-Object {
     memoryMb = $_.memoryMb
     displayName = $displayName
     publisher = $publisher
+    path = $procPath
   }
 })
 @{
@@ -178,6 +185,37 @@ fn attach_usage_metrics(processes: &mut [TopProcess]) -> Option<f64> {
     {
         let _ = processes;
         None
+    }
+}
+
+/// Extrai e anexa o ícone PNG do aplicativo para cada processo em execução.
+/// Utiliza o cache compartilhado em `app_icons` para evitar reprocessamento GDI.
+fn attach_process_icons(processes: &mut [TopProcess]) {
+    #[cfg(windows)]
+    {
+        for process in processes.iter_mut() {
+            if process.icon.is_some() {
+                continue;
+            }
+            if let Some(path_str) = &process.path {
+                let path = std::path::Path::new(path_str);
+                if let Some(icon) = crate::app_icons::icon_for_path(path) {
+                    process.icon = Some(icon);
+                    continue;
+                }
+            }
+            let exe_name = if process.name.to_lowercase().ends_with(".exe") {
+                process.name.clone()
+            } else {
+                format!("{}.exe", process.name)
+            };
+            process.icon = crate::app_icons::icon_for_command(&exe_name);
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = processes;
     }
 }
 
@@ -410,6 +448,7 @@ pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
                     // Uso por processo é uma janela de delta: recalcular a cada
                     // entrega mantém CPU/GPU atuais mesmo vindo do cache.
                     fresh.gpu_percent = attach_usage_metrics(&mut fresh.top_processes);
+                    attach_process_icons(&mut fresh.top_processes);
                     return Ok(fresh);
                 }
                 #[cfg(not(windows))]
@@ -457,6 +496,7 @@ pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
             }
 
             overview.gpu_percent = attach_usage_metrics(&mut overview.top_processes);
+            attach_process_icons(&mut overview.top_processes);
 
             Ok(overview)
         }
@@ -741,5 +781,13 @@ mod tests {
             OVERVIEW_SCRIPT.contains("$_.ProcessName.ToLowerInvariant() -ne \"msedgewebview2\"")
         );
         assert!(!OVERVIEW_SCRIPT.contains("Group-Object { $_.ProcessName.ToLowerInvariant() }"));
+    }
+
+    #[test]
+    fn overview_preserves_optional_process_icon_and_path() {
+        let payload = r#"{"cpuPercent":1,"memoryUsedGb":1,"memoryTotalGb":2,"diskUsedGb":3,"diskTotalGb":4,"startupItemCount":0,"topProcesses":[{"name":"app","id":42,"memoryMb":100.0,"path":"C:\\app.exe","icon":"data:image/png;base64,abc"}]}"#;
+        let process = &parse_overview(payload, 123).unwrap().top_processes[0];
+        assert_eq!(process.path.as_deref(), Some("C:\\app.exe"));
+        assert_eq!(process.icon.as_deref(), Some("data:image/png;base64,abc"));
     }
 }

@@ -102,6 +102,7 @@ pub fn run() {
             recent_files::refresh_recent_files,
             recent_files::open_recent_file,
             recent_files::open_recent_file_location,
+            recent_files::get_image_preview,
             recent_files::get_custom_scan_folders,
             recent_files::add_custom_scan_folder,
             recent_files::remove_custom_scan_folder,

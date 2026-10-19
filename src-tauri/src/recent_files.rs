@@ -455,6 +455,48 @@ pub fn remove_custom_scan_folder(path: String) -> Result<Vec<String>, String> {
     Ok(folders)
 }
 
+/// Limite máximo de tamanho de imagem para gerar preview (5 MB)
+const MAX_IMAGE_PREVIEW_BYTES: u64 = 5 * 1024 * 1024;
+
+/// Retorna data URI em base64 da imagem para pré-visualização no Pulse.
+/// Retorna `None` se o arquivo não for imagem suportada, se exceder 5 MB ou se falhar a leitura.
+pub fn get_image_preview_sync(path_str: &str) -> Option<String> {
+    let path = Path::new(path_str);
+    if !path.is_file() {
+        return None;
+    }
+
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
+        _ => return None,
+    };
+
+    let meta = fs::metadata(path).ok()?;
+    if meta.len() == 0 || meta.len() > MAX_IMAGE_PREVIEW_BYTES {
+        return None;
+    }
+
+    let bytes = fs::read(path).ok()?;
+    use base64::engine::general_purpose::STANDARD as BASE64;
+    use base64::Engine as _;
+    let encoded = BASE64.encode(&bytes);
+    Some(format!("data:{mime};base64,{encoded}"))
+}
+
+#[tauri::command]
+pub async fn get_image_preview(path: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || get_image_preview_sync(&path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -533,5 +575,31 @@ mod tests {
             explorer_select_argument(path),
             r#"/select,"D:\Images\Screenshots\Captura de tela 2026-09-14 164716.png""#
         );
+    }
+
+    #[test]
+    fn image_preview_returns_none_for_non_existent_file() {
+        assert_eq!(get_image_preview_sync("non_existent_file_xyz.png"), None);
+    }
+
+    #[test]
+    fn image_preview_returns_none_for_non_image_extension() {
+        let temp_dir = std::env::temp_dir();
+        let file = temp_dir.join("pulse_test_doc.txt");
+        let _ = std::fs::write(&file, "hello world");
+        assert_eq!(get_image_preview_sync(&file.to_string_lossy()), None);
+        let _ = std::fs::remove_file(file);
+    }
+
+    #[test]
+    fn image_preview_generates_valid_data_uri_for_image() {
+        let temp_dir = std::env::temp_dir();
+        let file = temp_dir.join("pulse_test_img.svg");
+        let _ = std::fs::write(&file, "<svg></svg>");
+        let res = get_image_preview_sync(&file.to_string_lossy());
+        assert!(res.is_some());
+        let uri = res.unwrap();
+        assert!(uri.starts_with("data:image/svg+xml;base64,"));
+        let _ = std::fs::remove_file(file);
     }
 }

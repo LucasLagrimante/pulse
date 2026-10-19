@@ -2739,4 +2739,112 @@ describe("Pulse application shell", () => {
       expect(screen.queryByText("Nenhum arquivo encontrado.")).not.toBeInTheDocument();
     });
   });
+
+  describe("ProcessList app icons and fallbacks", () => {
+    it("renders app icon when provided and fallback icon when missing", () => {
+      const processes = [
+        {
+          name: "code.exe",
+          id: 10,
+          memoryMb: 450,
+          displayName: "Visual Studio Code",
+          icon: "data:image/png;base64,mockCodeIcon",
+        },
+        {
+          name: "unknown.exe",
+          id: 20,
+          memoryMb: 120,
+          displayName: "Unknown Process",
+          icon: null,
+        },
+      ];
+
+      render(<ProcessList processes={processes} />);
+
+      const images = document.querySelectorAll(".process-icon-img");
+      expect(images.length).toBe(1);
+      expect(images[0]?.getAttribute("src")).toBe("data:image/png;base64,mockCodeIcon");
+
+      const fallbacks = document.querySelectorAll(".process-fallback-symbol");
+      expect(fallbacks.length).toBe(1);
+    });
+  });
+
+  describe("FileList file icons and image previews", () => {
+    it("renders specific category icons and loads image preview via invoke", async () => {
+      const mockInvoke = vi.mocked(invoke);
+      mockInvoke.mockImplementation((cmd, args) => {
+        if (cmd === "get_image_preview" && (args as { path: string })?.path?.endsWith("foto.png")) {
+          return Promise.resolve("data:image/png;base64,mockThumbnail");
+        }
+        return Promise.resolve(null);
+      });
+
+      const files = [
+        {
+          path: "C:\\Users\\User\\Pictures\\foto.png",
+          name: "foto.png",
+          category: "image",
+          sizeBytes: 1024,
+          modifiedAtUnixMs: Date.now(),
+        },
+        {
+          path: "C:\\Users\\User\\Documents\\script.ts",
+          name: "script.ts",
+          category: "code",
+          sizeBytes: 2048,
+          modifiedAtUnixMs: Date.now(),
+        },
+        {
+          path: "C:\\Users\\User\\Documents\\manual.pdf",
+          name: "manual.pdf",
+          category: "document",
+          sizeBytes: 4096,
+          modifiedAtUnixMs: Date.now(),
+        },
+        {
+          path: "C:\\Users\\User\\Music\\song.mp3",
+          name: "song.mp3",
+          category: "media",
+          sizeBytes: 8192,
+          modifiedAtUnixMs: Date.now(),
+        },
+        {
+          path: "C:\\Users\\User\\Downloads\\pack.zip",
+          name: "pack.zip",
+          category: "archive",
+          sizeBytes: 16384,
+          modifiedAtUnixMs: Date.now(),
+        },
+      ];
+
+      render(
+        <FileList
+          files={files}
+          busy={false}
+          fileQuery=""
+          fileCategory=""
+          fileSort="recent"
+          onQueryChange={vi.fn()}
+          onCategoryChange={vi.fn()}
+          onSortChange={vi.fn()}
+          onRefresh={vi.fn()}
+          onOpen={vi.fn()}
+        />,
+      );
+
+      // Aguarda carregamento do preview da imagem
+      await waitFor(() => {
+        const previewImg = document.querySelector(".file-preview-img");
+        expect(previewImg).toBeInTheDocument();
+        expect(previewImg?.getAttribute("src")).toBe("data:image/png;base64,mockThumbnail");
+      });
+
+      // Valida que badges de categorias estão presentes
+      expect(document.querySelector(".file-badge-code")).toBeInTheDocument();
+      expect(document.querySelector(".file-badge-document")).toBeInTheDocument();
+      expect(document.querySelector(".file-badge-media")).toBeInTheDocument();
+      expect(document.querySelector(".file-badge-archive")).toBeInTheDocument();
+    });
+  });
 });
