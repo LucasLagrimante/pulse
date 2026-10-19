@@ -6,7 +6,7 @@ Central nativa de observabilidade, diagnóstico e controle local para Windows 11
 - **100% local**: sem conta, sem telemetria, sem nuvem
 - **Windows 11 x64**, instalador NSIS de 3,5 MB
 - Versão atual: 1.0.0
-- SHA-256: `d1c034853020fbd0663fab244f886456bd82c24aa8e6e53889af6c8c6002d06a`
+- SHA-256: `f95f05f97cbba18cce85241fac1e1e055bc623f763aa8d4ebe7a2f5f1f98edf5`
 - Site: https://pulse.lagrimante.com.br/
 - Download direto: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe
 
