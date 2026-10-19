@@ -24,6 +24,7 @@ export type InstalledApp = {
   estimatedSizeKb?: number | null;
   uninstallString?: string | null;
   isMsi: boolean;
+  icon?: string | null;
 };
 
 export type InstalledAppsSnapshot = {
@@ -469,7 +470,13 @@ export function UninstallHub() {
         {apps.map(item => (
           <li key={item.id}>
             <button type="button" className="un-item" onClick={() => void openApp(item)}>
-              <span className="un-monogram" aria-hidden="true">{monogram(item)}</span>
+              <span className="un-monogram" aria-hidden="true">
+                {item.icon ? (
+                  <img src={item.icon} alt="" className="un-item-icon" />
+                ) : (
+                  monogram(item)
+                )}
+              </span>
               <span className="un-item-text">
                 <strong>{item.displayName}</strong>
                 <small>
@@ -495,11 +502,16 @@ export function UninstallHub() {
         <div className="un-modal-backdrop">
           <div className="un-modal" role="dialog" aria-modal="true" aria-labelledby="un-modal-title">
             <header className="un-modal-header">
-              <div>
-                <span className="eyebrow">
-                  ETAPA {stage === "restore" ? 1 : stage === "running" ? 2 : stage === "registry" ? 3 : 4} DE 4
-                </span>
-                <h3 id="un-modal-title">{modalTitle}</h3>
+              <div className="un-modal-header-info">
+                {app.icon && (
+                  <img src={app.icon} alt="" className="un-modal-app-icon" aria-hidden="true" />
+                )}
+                <div>
+                  <span className="eyebrow">
+                    ETAPA {stage === "restore" ? 1 : stage === "running" ? 2 : stage === "registry" ? 3 : 4} DE 4
+                  </span>
+                  <h3 id="un-modal-title">{modalTitle}</h3>
+                </div>
               </div>
               <span className="un-modal-stage">{stageLabel(stage)}</span>
             </header>

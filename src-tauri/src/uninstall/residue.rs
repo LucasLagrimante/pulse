@@ -1210,6 +1210,7 @@ mod tests {
                 r"C:\Program Files\Foto\unins000.exe".to_string(),
             ),
             is_msi: false,
+            icon: None,
         };
         let names = candidate_names(&app);
         assert!(names.contains(&"Foto".to_string()));
@@ -1231,6 +1232,7 @@ mod tests {
             estimated_size_kb: None,
             uninstall_string: None,
             is_msi: false,
+            icon: None,
         };
         assert!(candidate_names(&app).is_empty());
     }

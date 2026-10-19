@@ -41,6 +41,8 @@ pub struct InstalledApp {
     /// `MsiExec.exe` quando o produto é MSI: o desinstalador padrão é o
     /// próprio Windows Installer e a remoção de registro é determinística.
     pub is_msi: bool,
+    /// Data URI em PNG com o ícone do aplicativo extraído do DisplayIcon ou executável.
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -270,6 +272,66 @@ fn collect_user_hives(apps: &mut Vec<InstalledApp>, problems: &mut Vec<String>) 
     scanned
 }
 
+fn clean_display_icon(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().trim_matches('"');
+    if trimmed.is_empty() {
+        return None;
+    }
+    // Remove vírgula de índice de ícone no final (ex: "C:\App\app.exe,0" ou ",-1")
+    if let Some((path, _)) = trimmed.rsplit_once(',') {
+        let candidate = path.trim().trim_matches('"');
+        if !candidate.is_empty() {
+            return Some(candidate.to_string());
+        }
+    }
+    Some(trimmed.to_string())
+}
+
+fn resolve_app_icon(
+    display_icon: Option<&str>,
+    uninstall_string: Option<&str>,
+    install_location: Option<&str>,
+) -> Option<String> {
+    if let Some(raw) = display_icon {
+        if let Some(clean) = clean_display_icon(raw) {
+            if let Some(icon) = crate::app_icons::icon_for_command(&clean) {
+                return Some(icon);
+            }
+            if let Some(icon) = crate::app_icons::icon_for_path(std::path::Path::new(&clean)) {
+                return Some(icon);
+            }
+        }
+    }
+    if let Some(uninst) = uninstall_string {
+        if let Some(icon) = crate::app_icons::icon_for_command(uninst) {
+            return Some(icon);
+        }
+    }
+    if let Some(loc) = install_location {
+        let loc_path = std::path::Path::new(loc);
+        if loc_path.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(loc_path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() {
+                        let ext = path
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        if ext == "exe" || ext == "ico" {
+                            if let Some(icon) = crate::app_icons::icon_for_path(&path) {
+                                return Some(icon);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 fn read_app(hive: Hive, view: RegistryView, subkey: &str) -> Option<InstalledApp> {
     let handle = RegHandle::open(hive, subkey, view).ok()?;
     let display_name = handle.query_string("DisplayName")?;
@@ -283,6 +345,14 @@ fn read_app(hive: Hive, view: RegistryView, subkey: &str) -> Option<InstalledApp
         return None;
     }
     let uninstall_string = handle.query_string("UninstallString");
+    let display_icon = handle.query_string("DisplayIcon");
+    let install_location = handle.query_string("InstallLocation");
+    let icon = resolve_app_icon(
+        display_icon.as_deref(),
+        uninstall_string.as_deref(),
+        install_location.as_deref(),
+    );
+
     Some(InstalledApp {
         id: build_app_id(hive, view, subkey),
         hive: hive.label().to_string(),
@@ -292,10 +362,11 @@ fn read_app(hive: Hive, view: RegistryView, subkey: &str) -> Option<InstalledApp
         publisher: handle.query_string("Publisher"),
         version: handle.query_string("DisplayVersion"),
         install_date: handle.query_string("InstallDate"),
-        install_location: handle.query_string("InstallLocation"),
+        install_location,
         estimated_size_kb: handle.query_u32("EstimatedSize").map(|kb| kb as u64),
         is_msi: detect_msi(uninstall_string.as_deref()),
         uninstall_string,
+        icon,
     })
 }
 
@@ -363,6 +434,9 @@ fn merge_app_info(target: &mut InstalledApp, incoming: InstalledApp) {
     if target.uninstall_string.is_none() && incoming.uninstall_string.is_some() {
         target.uninstall_string = incoming.uninstall_string;
         target.is_msi = incoming.is_msi;
+    }
+    if target.icon.is_none() && incoming.icon.is_some() {
+        target.icon = incoming.icon;
     }
 }
 
@@ -548,6 +622,7 @@ mod tests {
                 estimated_size_kb: Some(120000),
                 uninstall_string: Some("C:\\Users\\Update.exe --uninstall".to_string()),
                 is_msi: false,
+                icon: None,
             },
             InstalledApp {
                 id: "HKU|S-1-5-21-...|32".to_string(),
@@ -562,6 +637,7 @@ mod tests {
                 estimated_size_kb: Some(120000),
                 uninstall_string: Some("C:\\Users\\Update.exe --uninstall".to_string()),
                 is_msi: false,
+                icon: None,
             },
         ];
 
@@ -586,6 +662,7 @@ mod tests {
                 estimated_size_kb: None,
                 uninstall_string: None,
                 is_msi: false,
+                icon: None,
             },
             InstalledApp {
                 id: "HKLM|SOFTWARE\\...\\Chrome|64".to_string(),
@@ -600,6 +677,7 @@ mod tests {
                 estimated_size_kb: Some(350000),
                 uninstall_string: Some("setup.exe --uninstall".to_string()),
                 is_msi: false,
+                icon: None,
             },
         ];
 

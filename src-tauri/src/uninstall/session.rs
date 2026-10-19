@@ -487,8 +487,18 @@ fn wait_for_uninstaller(
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
-            if is_elevation_required_error(&error) {
-                return wait_for_elevated_uninstaller(program, args, started_at, app_id);
+            // Se o spawn falhou (ex.: erro 740 ERROR_ELEVATION_REQUIRED, PermissionDenied ou
+            // qualquer restrição de contexto), tenta invocar com elevação administrativa (UAC).
+            let elevated = wait_for_elevated_uninstaller(program, args, started_at, app_id);
+            if elevated.started {
+                return elevated;
+            }
+            // Se o usuário cancelou o UAC ou houve erro específico na tentativa de elevação,
+            // reporta a nota gerada pelo fallback.
+            if let Some(ref note) = elevated.detection_note {
+                if note.contains("UAC") || note.contains("administrador") || note.contains("elevação") {
+                    return elevated;
+                }
             }
             return RunOutcome {
                 started: false,
@@ -592,7 +602,7 @@ fn wait_for_elevated_uninstaller(
 ) -> RunOutcome {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{CloseHandle, ERROR_CANCELLED, HANDLE, WAIT_OBJECT_0};
+    use windows::Win32::Foundation::{CloseHandle, ERROR_CANCELLED, WAIT_OBJECT_0};
     use windows::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
     use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
     use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
@@ -610,13 +620,26 @@ fn wait_for_elevated_uninstaller(
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
+    let dir: Option<Vec<u16>> = std::path::Path::new(program).parent().map(|p| {
+        p.as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    });
 
     let mut info = SHELLEXECUTEINFOW::default();
     info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
     info.fMask = SEE_MASK_NOCLOSEPROCESS;
     info.lpVerb = PCWSTR(verb.as_ptr());
     info.lpFile = PCWSTR(file.as_ptr());
-    info.lpParameters = PCWSTR(params.as_ptr());
+    info.lpParameters = if formatted_args.is_empty() {
+        PCWSTR::null()
+    } else {
+        PCWSTR(params.as_ptr())
+    };
+    if let Some(dir_utf16) = &dir {
+        info.lpDirectory = PCWSTR(dir_utf16.as_ptr());
+    }
     info.nShow = SW_SHOWNORMAL.0;
 
     if let Err(err) = unsafe { ShellExecuteExW(&mut info) } {

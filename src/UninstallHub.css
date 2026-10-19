@@ -183,6 +183,14 @@
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 12px;
   font-weight: 600;
+  overflow: hidden;
+}
+
+.un-item-icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
 }
 
 .un-item-text {
@@ -255,6 +263,19 @@
   padding: 16px 20px;
   border-bottom: 1px solid var(--neu-divider);
   background: var(--neu-surface);
+  flex-shrink: 0;
+}
+
+.un-modal-header-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.un-modal-app-icon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
   flex-shrink: 0;
 }
 
