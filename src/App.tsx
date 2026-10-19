@@ -2511,7 +2511,8 @@ function App() {
       .then(res => {
         setStartupItems(xs =>
           xs.map(x =>
-            x.name.toLowerCase() === item.name.toLowerCase()
+            x.name.toLowerCase() === item.name.toLowerCase() &&
+            x.origin.toLowerCase() === item.origin.toLowerCase()
               ? { ...x, enabled: res?.enabled ?? nextChecked }
               : x,
           ),

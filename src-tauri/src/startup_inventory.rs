@@ -1,14 +1,33 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const HKCU_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const HKLM_RUN_KEY: &str = r"HKLM\Software\Microsoft\Windows\CurrentVersion\Run";
-const HKCU_APPROVED_KEY: &str =
+const HKLM_RUN32_KEY: &str = r"HKLM\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run";
+
+pub const HKCU_APPROVED_KEY: &str =
     r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
-const HKLM_APPROVED_KEY: &str =
+pub const HKLM_APPROVED_KEY: &str =
     r"HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+
+const HKCU_APPROVED_RUN: &str = HKCU_APPROVED_KEY;
+const HKLM_APPROVED_RUN: &str = HKLM_APPROVED_KEY;
+
+const HKCU_APPROVED_RUN32: &str =
+    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32";
+const HKLM_APPROVED_RUN32: &str =
+    r"HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32";
+
+const HKCU_APPROVED_STARTUP_FOLDER: &str =
+    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder";
+const HKLM_APPROVED_STARTUP_FOLDER: &str =
+    r"HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder";
+
+const APPMODEL_APPDATA_KEY: &str =
+    r"HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData";
 
 // Cache de itens de inicialização com TTL de 10s para evitar subprocessos repetidos
 struct StartupCache {
@@ -223,7 +242,7 @@ fn get_approved_maps() -> (HashMap<String, bool>, HashMap<String, bool>) {
 
     // 1. HKLM StartupApproved\Run
     if let Ok(out) = crate::process::hidden_command("reg.exe")
-        .args(["query", HKLM_APPROVED_KEY])
+        .args(["query", HKLM_APPROVED_RUN])
         .output()
     {
         if out.status.success() {
@@ -233,7 +252,7 @@ fn get_approved_maps() -> (HashMap<String, bool>, HashMap<String, bool>) {
 
     // 2. HKCU StartupApproved\Run (prioridade sobre HKLM para o usuário atual)
     if let Ok(out) = crate::process::hidden_command("reg.exe")
-        .args(["query", HKCU_APPROVED_KEY])
+        .args(["query", HKCU_APPROVED_RUN])
         .output()
     {
         if out.status.success() {
@@ -242,6 +261,416 @@ fn get_approved_maps() -> (HashMap<String, bool>, HashMap<String, bool>) {
     }
 
     (hkcu, hklm)
+}
+
+fn get_run32_approved_maps() -> HashMap<String, bool> {
+    let mut map = HashMap::new();
+
+    if let Ok(out) = crate::process::hidden_command("reg.exe")
+        .args(["query", HKLM_APPROVED_RUN32])
+        .output()
+    {
+        if out.status.success() {
+            map = parse_approved_entries(&String::from_utf8_lossy(&out.stdout));
+        }
+    }
+
+    if let Ok(out) = crate::process::hidden_command("reg.exe")
+        .args(["query", HKCU_APPROVED_RUN32])
+        .output()
+    {
+        if out.status.success() {
+            let user_map = parse_approved_entries(&String::from_utf8_lossy(&out.stdout));
+            for (k, v) in user_map {
+                map.insert(k, v);
+            }
+        }
+    }
+
+    map
+}
+
+fn get_folder_approved_maps() -> HashMap<String, bool> {
+    let mut map = HashMap::new();
+
+    if let Ok(out) = crate::process::hidden_command("reg.exe")
+        .args(["query", HKLM_APPROVED_STARTUP_FOLDER])
+        .output()
+    {
+        if out.status.success() {
+            map = parse_approved_entries(&String::from_utf8_lossy(&out.stdout));
+        }
+    }
+
+    if let Ok(out) = crate::process::hidden_command("reg.exe")
+        .args(["query", HKCU_APPROVED_STARTUP_FOLDER])
+        .output()
+    {
+        if out.status.success() {
+            let user_map = parse_approved_entries(&String::from_utf8_lossy(&out.stdout));
+            for (k, v) in user_map {
+                map.insert(k, v);
+            }
+        }
+    }
+
+    map
+}
+
+pub fn parse_appx_state_output(output: &str) -> Vec<(String, String, bool)> {
+    let mut items = Vec::new();
+    let mut current_key: Option<String> = None;
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("HKEY_CURRENT_USER\\") || trimmed.starts_with("HKEY_LOCAL_MACHINE\\") {
+            current_key = Some(trimmed.to_string());
+            continue;
+        }
+
+        if let Some(ref key) = current_key {
+            if let Some((name, val)) = parse_reg_line(line) {
+                if name.eq_ignore_ascii_case("State") {
+                    let hex_str = val.trim().trim_start_matches("0x");
+                    let state_code = u32::from_str_radix(hex_str, 16).unwrap_or(0);
+                    let enabled = state_code == 2;
+
+                    let parts: Vec<&str> = key.split('\\').collect();
+                    if parts.len() >= 2 {
+                        let task_id = parts[parts.len() - 1].to_string();
+                        let package_family = parts[parts.len() - 2].to_string();
+
+                        let is_metadata = task_id.eq_ignore_ascii_case("Schemas")
+                            || task_id.eq_ignore_ascii_case("HAM")
+                            || task_id.eq_ignore_ascii_case("PSR")
+                            || task_id.eq_ignore_ascii_case("SplashScreen")
+                            || task_id.eq_ignore_ascii_case("AppUriHandlers")
+                            || task_id.eq_ignore_ascii_case("PersistedStorageItemTable");
+
+                        if !is_metadata {
+                            items.push((package_family, task_id, enabled));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    items
+}
+
+pub fn parse_appx_values_by_family(output: &str, target_val_name: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let mut current_key: Option<String> = None;
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("HKEY_CURRENT_USER\\") || trimmed.starts_with("HKEY_LOCAL_MACHINE\\") {
+            current_key = Some(trimmed.to_string());
+            continue;
+        }
+
+        if let Some(ref key) = current_key {
+            if let Some((name, val)) = parse_reg_line(line) {
+                if name.eq_ignore_ascii_case(target_val_name) {
+                    if let Some(idx) = key.find(r"AppModel\SystemAppData\") {
+                        let sub = &key[idx + r"AppModel\SystemAppData\".len()..];
+                        let family = sub.split('\\').next().unwrap_or(sub);
+                        if !family.is_empty() {
+                            map.insert(family.to_lowercase(), val.trim().to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    map
+}
+
+pub fn clean_appx_display_name(
+    raw_name: Option<&str>,
+    package_family: &str,
+    task_id: &str,
+) -> String {
+    if let Some(name) = raw_name {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() && !trimmed.starts_with("ms-resource:") && !trimmed.starts_with("@{") {
+            if trimmed.eq_ignore_ascii_case("ChatGPT Classic") {
+                return "ChatGPT".to_string();
+            }
+            return trimmed.to_string();
+        }
+    }
+
+    let lower_task = task_id.to_lowercase();
+    if lower_task.contains("chatgpt") {
+        return "ChatGPT".to_string();
+    }
+    if lower_task.contains("claude") {
+        return "Claude".to_string();
+    }
+    if lower_task.contains("spotify") {
+        return "Spotify".to_string();
+    }
+    if lower_task.contains("whatsapp") {
+        return "WhatsApp".to_string();
+    }
+
+    let base = package_family.split('_').next().unwrap_or(package_family);
+    let name_part = base.rsplit('.').next().unwrap_or(base);
+    let cleaned = name_part
+        .strip_suffix("-Desktop")
+        .or_else(|| name_part.strip_suffix("Desktop"))
+        .unwrap_or(name_part);
+
+    let mut result = String::new();
+    let mut prev_is_lower = false;
+    for ch in cleaned.chars() {
+        if ch.is_uppercase() && prev_is_lower {
+            result.push(' ');
+        }
+        result.push(ch);
+        prev_is_lower = ch.is_lowercase();
+    }
+
+    if result.is_empty() {
+        task_id.to_string()
+    } else {
+        result
+    }
+}
+
+fn search_folder_for_icon(base: &Path) -> Option<String> {
+    if !base.is_dir() {
+        return None;
+    }
+
+    let candidates = [base.join("assets"), base.to_path_buf()];
+    let icon_filenames = [
+        "AppList.targetsize-48.png",
+        "AppList.targetsize-32.png",
+        "Square44x44Logo.targetsize-48.png",
+        "Square44x44Logo.targetsize-32.png",
+        "Square44x44Logo.png",
+        "StoreLogo.scale-100.png",
+        "StoreLogo.png",
+    ];
+
+    for folder in &candidates {
+        if !folder.is_dir() {
+            continue;
+        }
+
+        for fname in &icon_filenames {
+            let p = folder.join(fname);
+            if p.is_file() {
+                if let Ok(bytes) = std::fs::read(&p) {
+                    use base64::Engine;
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                    return Some(format!("data:image/png;base64,{b64}"));
+                }
+            }
+        }
+
+        if let Ok(entries) = std::fs::read_dir(folder) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                    if ext == "ico" {
+                        if let Some(icon) = crate::app_icons::icon_for_path(&p) {
+                            return Some(icon);
+                        }
+                    } else if ext == "png" {
+                        let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                        if stem.contains("logo") || stem.contains("targetsize-48") || stem.contains("targetsize-32") {
+                            if let Ok(bytes) = std::fs::read(&p) {
+                                use base64::Engine;
+                                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                                return Some(format!("data:image/png;base64,{b64}"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn find_appx_icon(package_family: &str, package_full_name: Option<&str>) -> Option<String> {
+    if let Some(full_name) = package_full_name {
+        let win_apps = PathBuf::from(r"C:\Program Files\WindowsApps").join(full_name);
+        if let Some(icon) = search_folder_for_icon(&win_apps) {
+            return Some(icon);
+        }
+    }
+
+    if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
+        let pkg_folder = PathBuf::from(local_appdata).join("Packages").join(package_family);
+        if let Some(icon) = search_folder_for_icon(&pkg_folder) {
+            return Some(icon);
+        }
+    }
+
+    None
+}
+
+pub fn parse_startup_folder(
+    dir: &Path,
+    origin: &str,
+    approved_map: &HashMap<String, bool>,
+    durations_map: &HashMap<String, u64>,
+) -> Vec<StartupItem> {
+    let mut items = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return items;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if file_name.is_empty() || file_name.eq_ignore_ascii_case("desktop.ini") {
+            continue;
+        }
+
+        let display_name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(file_name)
+            .to_string();
+
+        let lower_file = file_name.to_lowercase();
+        let lower_display = display_name.to_lowercase();
+
+        let enabled = approved_map
+            .get(&lower_file)
+            .or_else(|| approved_map.get(&lower_display))
+            .copied()
+            .unwrap_or(true);
+
+        let command = path.to_string_lossy().into_owned();
+        let (impact, startup_time_ms) = determine_impact(&display_name, &command, durations_map);
+        let icon = crate::app_icons::icon_for_command(&command)
+            .or_else(|| crate::app_icons::icon_for_path(&path));
+
+        items.push(StartupItem {
+            name: display_name,
+            command,
+            origin: origin.to_string(),
+            enabled,
+            can_change: true,
+            unavailable_reason: None,
+            impact,
+            startup_time_ms,
+            icon,
+        });
+    }
+
+    items
+}
+
+fn resolve_startup_folder_filename(name: &str) -> String {
+    let user_folder = dirs::data_dir().map(|p| p.join(r"Microsoft\Windows\Start Menu\Programs\Startup"));
+    let common_folder = std::env::var_os("ProgramData")
+        .map(|p| PathBuf::from(p).join(r"Microsoft\Windows\Start Menu\Programs\Startup"));
+
+    for folder in [user_folder, common_folder].into_iter().flatten() {
+        if let Ok(entries) = std::fs::read_dir(folder) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    let fstem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    if fname.eq_ignore_ascii_case(name) || fstem.eq_ignore_ascii_case(name) {
+                        return fname.to_string();
+                    }
+                }
+            }
+        }
+    }
+
+    if name.to_lowercase().ends_with(".lnk") || name.to_lowercase().ends_with(".url") {
+        name.to_string()
+    } else {
+        format!("{name}.lnk")
+    }
+}
+
+fn load_appx_startup_items(durations_map: &HashMap<String, u64>) -> Vec<StartupItem> {
+    let mut items = Vec::new();
+
+    let Ok(state_out) = crate::process::hidden_command("reg.exe")
+        .args(["query", APPMODEL_APPDATA_KEY, "/s", "/v", "State"])
+        .output()
+    else {
+        return items;
+    };
+
+    if !state_out.status.success() {
+        return items;
+    }
+
+    let state_text = String::from_utf8_lossy(&state_out.stdout);
+    let appx_entries = parse_appx_state_output(&state_text);
+    if appx_entries.is_empty() {
+        return items;
+    }
+
+    let mut full_names_map = HashMap::new();
+    if let Ok(fn_out) = crate::process::hidden_command("reg.exe")
+        .args(["query", APPMODEL_APPDATA_KEY, "/s", "/v", "PackageFullName"])
+        .output()
+    {
+        if fn_out.status.success() {
+            full_names_map = parse_appx_values_by_family(
+                &String::from_utf8_lossy(&fn_out.stdout),
+                "PackageFullName",
+            );
+        }
+    }
+
+    let mut app_names_map = HashMap::new();
+    if let Ok(an_out) = crate::process::hidden_command("reg.exe")
+        .args(["query", APPMODEL_APPDATA_KEY, "/s", "/v", "AppName"])
+        .output()
+    {
+        if an_out.status.success() {
+            app_names_map = parse_appx_values_by_family(
+                &String::from_utf8_lossy(&an_out.stdout),
+                "AppName",
+            );
+        }
+    }
+
+    for (pkg_family, task_id, enabled) in appx_entries {
+        let raw_app_name = app_names_map.get(&pkg_family.to_lowercase()).map(|s| s.as_str());
+        let display_name = clean_appx_display_name(raw_app_name, &pkg_family, &task_id);
+        let pkg_full_name = full_names_map.get(&pkg_family.to_lowercase()).map(|s| s.as_str());
+        let icon = find_appx_icon(&pkg_family, pkg_full_name);
+        let command = format!("{pkg_family}!{task_id}");
+        let (impact, startup_time_ms) = determine_impact(&display_name, &command, durations_map);
+
+        items.push(StartupItem {
+            name: display_name,
+            command,
+            origin: "Pacote Windows (AppX)".to_string(),
+            enabled,
+            can_change: true,
+            unavailable_reason: None,
+            impact,
+            startup_time_ms,
+            icon,
+        });
+    }
+
+    items
 }
 
 #[tauri::command]
@@ -256,6 +685,8 @@ pub fn list_startup_items() -> Result<Vec<StartupItem>, String> {
     }
 
     let (hkcu_approved, hklm_approved) = get_approved_maps();
+    let run32_approved = get_run32_approved_maps();
+    let folder_approved = get_folder_approved_maps();
     let durations_map = get_diagnostics_boot_durations();
     let mut items = Vec::new();
 
@@ -291,6 +722,48 @@ pub fn list_startup_items() -> Result<Vec<StartupItem>, String> {
         }
     }
 
+    // 3. HKLM\Run (32-bit / WOW6432Node)
+    if let Ok(out) = crate::process::hidden_command("reg.exe")
+        .args(["query", HKLM_RUN32_KEY])
+        .output()
+    {
+        if out.status.success() {
+            let wow_items = parse_run_entries_with_meta(
+                &String::from_utf8_lossy(&out.stdout),
+                "HKLM\\Run (32-bit)",
+                &run32_approved,
+                &durations_map,
+            );
+            items.extend(wow_items);
+        }
+    }
+
+    // 4. Pasta Inicializar do Usuário (%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup)
+    if let Some(user_startup) = dirs::data_dir().map(|p| p.join(r"Microsoft\Windows\Start Menu\Programs\Startup")) {
+        if user_startup.is_dir() {
+            let folder_items = parse_startup_folder(&user_startup, "Startup (Usuário)", &folder_approved, &durations_map);
+            items.extend(folder_items);
+        }
+    }
+
+    // 5. Pasta Inicializar Comum (%PROGRAMDATA%\Microsoft\Windows\Start Menu\Programs\Startup)
+    if let Some(common_startup) = std::env::var_os("ProgramData")
+        .map(|p| PathBuf::from(p).join(r"Microsoft\Windows\Start Menu\Programs\Startup"))
+    {
+        if common_startup.is_dir() {
+            let common_items = parse_startup_folder(&common_startup, "Startup (Comum)", &folder_approved, &durations_map);
+            items.extend(common_items);
+        }
+    }
+
+    // 6. Pacotes Windows (AppX / MSIX / UWP como ChatGPT, Claude, Spotify)
+    let appx_items = load_appx_startup_items(&durations_map);
+    items.extend(appx_items);
+
+    // Deduplicação preservando a primeira ocorrência por (origem, nome)
+    let mut seen = std::collections::HashSet::new();
+    items.retain(|item| seen.insert((item.origin.to_lowercase(), item.name.to_lowercase())));
+
     // Persiste no cache
     if let Ok(mut guard) = STARTUP_CACHE.lock() {
         *guard = Some(StartupCache {
@@ -315,33 +788,110 @@ pub fn set_startup_item_enabled(
         return Err("Nome de entrada inválido".into());
     }
 
-    let approved_key = match origin.as_str() {
-        "HKCU\\Run" => HKCU_APPROVED_KEY,
-        "HKLM\\Run" => HKLM_APPROVED_KEY,
-        _ => return Err("Origem de inicialização inválida".into()),
-    };
+    let origin_str = origin.as_str();
 
-    // No Windows, o Task Manager grava 02 no primeiro byte para Ativado
-    // e 03 no primeiro byte para Desativado em HKCU\...\StartupApproved\Run
-    let hex_val = startup_approved_hex(enabled)?;
+    if origin_str == "Pacote Windows (AppX)" || origin_str == "Microsoft Store (AppX)" {
+        let current_items = list_startup_items().unwrap_or_default();
+        let matched = current_items
+            .into_iter()
+            .find(|i| i.name.eq_ignore_ascii_case(&name) && (i.origin == origin_str));
 
-    let out = crate::process::hidden_command("reg.exe")
-        .args([
-            "add",
-            approved_key,
-            "/v",
-            &name,
-            "/t",
-            "REG_BINARY",
-            "/d",
-            hex_val.as_str(),
-            "/f",
-        ])
-        .output()
-        .map_err(|e| format!("Não foi possível alterar a inicialização: {e}"))?;
+        let (pkg_family, task_id) = if let Some(ref it) = matched {
+            if let Some((p, t)) = it.command.split_once('!') {
+                (p.to_string(), t.to_string())
+            } else {
+                (it.command.clone(), name.clone())
+            }
+        } else {
+            return Err("Aplicativo de pacote Windows não localizado".into());
+        };
 
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_owned());
+        let key_path = format!(r"{APPMODEL_APPDATA_KEY}\{pkg_family}\{task_id}");
+        let state_val = if enabled { "2" } else { "1" };
+        let out = crate::process::hidden_command("reg.exe")
+            .args([
+                "add",
+                &key_path,
+                "/v",
+                "State",
+                "/t",
+                "REG_DWORD",
+                "/d",
+                state_val,
+                "/f",
+            ])
+            .output()
+            .map_err(|e| format!("Não foi possível alterar a inicialização: {e}"))?;
+
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_owned());
+        }
+
+        if enabled {
+            let _ = crate::process::hidden_command("reg.exe")
+                .args([
+                    "add",
+                    &key_path,
+                    "/v",
+                    "UserEnabledStartupOnce",
+                    "/t",
+                    "REG_DWORD",
+                    "/d",
+                    "1",
+                    "/f",
+                ])
+                .output();
+        }
+    } else if origin_str == "Startup (Usuário)" || origin_str == "Startup (Comum)" {
+        let filename = resolve_startup_folder_filename(&name);
+        let hex_val = startup_approved_hex(enabled)?;
+
+        let out = crate::process::hidden_command("reg.exe")
+            .args([
+                "add",
+                HKCU_APPROVED_STARTUP_FOLDER,
+                "/v",
+                &filename,
+                "/t",
+                "REG_BINARY",
+                "/d",
+                hex_val.as_str(),
+                "/f",
+            ])
+            .output()
+            .map_err(|e| format!("Não foi possível alterar a inicialização: {e}"))?;
+
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_owned());
+        }
+    } else {
+        let approved_key = match origin_str {
+            "HKCU\\Run" => HKCU_APPROVED_RUN,
+            "HKLM\\Run" => HKCU_APPROVED_RUN, // override em HKCU para dispensar elevação
+            "HKLM\\Run (32-bit)" | "HKCU\\Run (32-bit)" => HKCU_APPROVED_RUN32,
+            _ => return Err("Origem de inicialização inválida".into()),
+        };
+
+        let hex_val = startup_approved_hex(enabled)?;
+
+        let out = crate::process::hidden_command("reg.exe")
+            .args([
+                "add",
+                approved_key,
+                "/v",
+                &name,
+                "/t",
+                "REG_BINARY",
+                "/d",
+                hex_val.as_str(),
+                "/f",
+            ])
+            .output()
+            .map_err(|e| format!("Não foi possível alterar a inicialização: {e}"))?;
+
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_owned());
+        }
     }
 
     // Invalida o cache para forçar releitura dos dados atualizados
@@ -456,4 +1006,69 @@ mod tests {
         parse_diagnostics_events(xml, &mut map);
         assert_eq!(map.get("discord.exe"), Some(&2150));
     }
+
+    #[test]
+    fn parses_appx_state_output_correctly() {
+        let text = r#"
+HKEY_CURRENT_USER\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData\OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0\ChatGPT
+    State    REG_DWORD    0x2
+
+HKEY_CURRENT_USER\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData\Claude_pzs8sxrjxfjjc\ClaudeStartup
+    State    REG_DWORD    0x0
+
+HKEY_CURRENT_USER\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData\OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0\Schemas
+    State    REG_DWORD    0x1
+        "#;
+        let entries = parse_appx_state_output(text);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0, "OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0");
+        assert_eq!(entries[0].1, "ChatGPT");
+        assert!(entries[0].2); // 0x2 = enabled
+
+        assert_eq!(entries[1].0, "Claude_pzs8sxrjxfjjc");
+        assert_eq!(entries[1].1, "ClaudeStartup");
+        assert!(!entries[1].2); // 0x0 = disabled
+    }
+
+    #[test]
+    fn cleans_appx_display_name_accurately() {
+        assert_eq!(
+            clean_appx_display_name(
+                Some("ChatGPT Classic"),
+                "OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0",
+                "ChatGPT"
+            ),
+            "ChatGPT"
+        );
+        assert_eq!(
+            clean_appx_display_name(None, "OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0", "ChatGPT"),
+            "ChatGPT"
+        );
+        assert_eq!(
+            clean_appx_display_name(Some("Claude"), "Claude_pzs8sxrjxfjjc", "ClaudeStartup"),
+            "Claude"
+        );
+        assert_eq!(
+            clean_appx_display_name(
+                Some("ms-resource:AppName"),
+                "Microsoft.WindowsTerminal_8wekyb3d8bbwe",
+                "StartTerminalOnLoginTask"
+            ),
+            "Windows Terminal"
+        );
+    }
+
+    #[test]
+    fn parses_appx_package_full_names_and_app_names() {
+        let fn_text = r#"
+HKEY_CURRENT_USER\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData\OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0\Schemas
+    PackageFullName    REG_SZ    OpenAI.ChatGPT-Desktop_1.2026.190.0_x64__2p2nqsd0c76g0
+        "#;
+        let map = parse_appx_values_by_family(fn_text, "PackageFullName");
+        assert_eq!(
+            map.get("openai.chatgpt-desktop_2p2nqsd0c76g0").map(|s| s.as_str()),
+            Some("OpenAI.ChatGPT-Desktop_1.2026.190.0_x64__2p2nqsd0c76g0")
+        );
+    }
 }
+

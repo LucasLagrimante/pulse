@@ -2065,6 +2065,66 @@ describe("Pulse application shell", () => {
     });
   });
 
+  it("renders and toggles startup items from user Startup folder and AppX packages (Wispr Flow and ChatGPT)", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "list_startup_items") {
+        return Promise.resolve([
+          {
+            name: "Wispr Flow",
+            command: "C:\\Users\\user\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Wispr Flow.lnk",
+            origin: "Startup (Usuário)",
+            enabled: true,
+            canChange: true,
+            impact: "Não medido",
+            startupTimeMs: null,
+          },
+          {
+            name: "ChatGPT",
+            command: "OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0!ChatGPT",
+            origin: "Pacote Windows (AppX)",
+            enabled: false,
+            canChange: true,
+            impact: "Não medido",
+            startupTimeMs: null,
+          },
+        ]) as never;
+      }
+      if (command === "set_startup_item_enabled") {
+        return Promise.resolve({
+          name: "ChatGPT",
+          command: "OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0!ChatGPT",
+          origin: "Pacote Windows (AppX)",
+          enabled: true,
+          canChange: true,
+          impact: "Não medido",
+          startupTimeMs: null,
+        }) as never;
+      }
+      return Promise.resolve([]) as never;
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Inicialização e segurança/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Wispr Flow")).toBeInTheDocument();
+      expect(screen.getByText("ChatGPT")).toBeInTheDocument();
+    });
+
+    const enableChatGptCheckbox = screen.getByRole("checkbox", { name: "Ativar ChatGPT" });
+    expect(enableChatGptCheckbox).not.toBeChecked();
+
+    await act(async () => {
+      fireEvent.click(enableChatGptCheckbox);
+    });
+
+    expect(invoke).toHaveBeenCalledWith("set_startup_item_enabled", {
+      name: "ChatGPT",
+      origin: "Pacote Windows (AppX)",
+      enabled: true,
+    });
+  });
+
   it("uses active items followed by the slowest items as the default startup order", async () => {
     vi.mocked(invoke).mockImplementation((command: string) => {
       if (command === "list_startup_items") {
