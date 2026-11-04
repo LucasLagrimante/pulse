@@ -244,4 +244,14 @@ describe("AiDiskAdvisorModal", () => {
     fireEvent.click(screen.getByRole("dialog"));
     expect(handleClose).toHaveBeenCalledTimes(2);
   });
+  it("abre com o provedor que o botão estava exibindo", async () => {
+    vi.mocked(invoke).mockResolvedValue(mockPreview as never);
+    render(
+      <AiDiskAdvisorModal isOpen={true} onClose={vi.fn()} cachedScan={mockCachedScan} initialProvider="codex" />,
+    );
+    expect(screen.getByRole("radio", { name: /Codex CLI/ })).toHaveAttribute("aria-checked", "true");
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("get_ai_disk_analysis_preview", expect.objectContaining({ provider: "codex" }));
+    });
+  });
 });

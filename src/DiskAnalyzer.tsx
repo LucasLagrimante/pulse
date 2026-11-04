@@ -14,8 +14,8 @@ import {
   subscribeDiskAnalyzer,
 } from "./diskScanStore";
 import { FileIcon, ModuleIcon } from "./Identity";
-import { AiDiskAdvisorModal } from "./AiDiskAdvisorModal";
-import { ProviderIcon } from "./ProviderIcon";
+import { AI_PROVIDERS, AiDiskAdvisorModal, type SupportedAiProvider } from "./AiDiskAdvisorModal";
+import { AiProviderCycleButton } from "./AiProviderCycleButton";
 
 export type {
   CachedDiskScan,
@@ -228,6 +228,32 @@ export function DiskAnalyzer({
   const [hoveredNode, setHoveredNode] = useState<{ node: DiskItemNode; x: number; y: number } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showAiModal, setShowAiModal] = useState(false);
+  const [aiModalProvider, setAiModalProvider] = useState<SupportedAiProvider>("antigravity");
+  const [availableAiProviders, setAvailableAiProviders] = useState<SupportedAiProvider[] | null>(null);
+  const hasScanForAi = cachedScan != null;
+  const openAiModal = (provider: SupportedAiProvider) => {
+    setAiModalProvider(provider);
+    setShowAiModal(true);
+  };
+
+  // Descobre quais CLIs de IA estão instalados só quando o botão vai aparecer
+  // (a detecção consulta o WSL); o backend guarda o resultado em cache.
+  useEffect(() => {
+    if (!hasScanForAi) return;
+    let active = true;
+    invoke<string[]>("detect_ai_cli_providers")
+      .then(ids => {
+        if (active && Array.isArray(ids)) {
+          setAvailableAiProviders(ids.filter((id): id is SupportedAiProvider => AI_PROVIDERS.some(p => p.id === id)));
+        }
+      })
+      .catch(() => {
+        // Sem detecção o botão segue alternando entre os três suportados
+      });
+    return () => {
+      active = false;
+    };
+  }, [hasScanForAi]);
   const treemapContainerRef = useRef<HTMLDivElement>(null);
   const [containerDimensions, setContainerDimensions] = useState({ width: 600, height: 400 });
 
@@ -792,15 +818,13 @@ export function DiskAnalyzer({
             )}
             {describeScanStop(cachedScan) && <span>{describeScanStop(cachedScan)}</span>}
 
-            <button
-              type="button"
+            <AiProviderCycleButton
               className="disk-ai-advisor-trigger-btn"
-              onClick={() => setShowAiModal(true)}
-              title="Abrir terminal com Claude, Antigravity ou Codex CLI para analisar maiores pastas e liberar espaço"
-            >
-              <ProviderIcon providerId="antigravity" size={13} />
-              ANALISAR COM IA NO TERMINAL
-            </button>
+              available={availableAiProviders}
+              prefix="ANALISAR COM"
+              suffix="NO TERMINAL"
+              onOpen={openAiModal}
+            />
           </div>
         )}
 
@@ -836,15 +860,12 @@ export function DiskAnalyzer({
             </div>
 
             {/* Atalho para Análise com IA no Terminal */}
-            <button
-              type="button"
+            <AiProviderCycleButton
               className="disk-ai-subtoolbar-btn"
-              onClick={() => setShowAiModal(true)}
-              title="Abrir terminal com Claude, Antigravity ou Codex CLI para analisar maiores pastas e liberar espaço"
-            >
-              <ProviderIcon providerId="antigravity" size={13} />
-              ANALISAR COM IA
-            </button>
+              available={availableAiProviders}
+              prefix="ANALISAR COM"
+              onOpen={openAiModal}
+            />
 
             {/* Filtro: Arquivos vs Pastas Mais Pesados */}
             <div className="disk-type-filter" role="group" aria-label="Filtro de tipo">
@@ -1164,6 +1185,7 @@ export function DiskAnalyzer({
         isOpen={showAiModal}
         onClose={() => setShowAiModal(false)}
         cachedScan={cachedScan}
+        initialProvider={aiModalProvider}
       />
     </div>
   );

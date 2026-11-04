@@ -39,7 +39,7 @@ export type AiTerminalLaunchResult = {
 
 export type SupportedAiProvider = "antigravity" | "claude" | "codex";
 
-const PROVIDERS: Array<{
+export const AI_PROVIDERS: Array<{
   id: SupportedAiProvider;
   name: string;
   subtitle: string;
@@ -69,15 +69,18 @@ export type AiDiskAdvisorModalProps = {
   isOpen: boolean;
   onClose: () => void;
   cachedScan: CachedDiskScan | null;
+  /** Provedor pré-selecionado ao abrir (o que o botão estava mostrando). */
+  initialProvider?: SupportedAiProvider;
 };
 
 export function AiDiskAdvisorModal({
   isOpen,
   onClose,
   cachedScan,
+  initialProvider = "antigravity",
 }: AiDiskAdvisorModalProps) {
   const [selectedProvider, setSelectedProvider] =
-    useState<SupportedAiProvider>("antigravity");
+    useState<SupportedAiProvider>(initialProvider);
   const [preview, setPreview] = useState<AiDiskAnalysisPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +94,14 @@ export function AiDiskAdvisorModal({
   const [copiedType, setCopiedType] = useState<"command" | "prompt" | null>(
     null,
   );
+
+  // Cada abertura começa no provedor que o botão estava exibindo
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedProvider(initialProvider);
+      setIsEditingPrompt(false);
+    }
+  }, [isOpen, initialProvider]);
 
   // Carrega a prévia sempre que o modal abre ou o provedor muda
   useEffect(() => {
@@ -221,7 +232,7 @@ export function AiDiskAdvisorModal({
           role="radiogroup"
           aria-label="Escolher assistente de IA"
         >
-          {PROVIDERS.map(p => {
+          {AI_PROVIDERS.map(p => {
             const isSelected = selectedProvider === p.id;
             return (
               <button

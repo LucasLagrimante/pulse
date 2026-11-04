@@ -126,6 +126,7 @@ pub fn run() {
             disk_analyzer::get_disk_scan_state,
             disk_analyzer::get_cached_disk_scan,
             disk_analyzer::open_disk_item,
+            ai_disk_advisor::detect_ai_cli_providers,
             ai_disk_advisor::get_ai_disk_analysis_preview,
             ai_disk_advisor::launch_ai_disk_terminal,
             disk_cleanup::analyze_disk_cleanup,

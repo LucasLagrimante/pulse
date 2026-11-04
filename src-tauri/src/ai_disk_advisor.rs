@@ -3,6 +3,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -235,11 +237,15 @@ fn command_exists_in_windows(cmd: &str) -> bool {
     false
 }
 
-fn wsl_distros() -> Vec<String> {
+/// Distros do WSL. Com `running_only`, lista só as que já estão ligadas
+/// (`wsl -l --running` não inicia a VM); só uma ação explícita do usuário pode
+/// ligar o WSL.
+fn wsl_distros(running_only: bool) -> Vec<String> {
     #[cfg(windows)]
     {
+        let args: &[&str] = if running_only { &["-l", "--running", "-q"] } else { &["-l", "-q"] };
         if let Ok(output) = crate::process::hidden_command("wsl.exe")
-            .args(["-l", "-q"])
+            .args(args)
             .output()
         {
             if output.status.success() {
@@ -263,7 +269,17 @@ fn wsl_distros() -> Vec<String> {
             }
         }
     }
+    let _ = running_only;
     Vec::new()
+}
+
+/// Quanto a detecção pode mexer no WSL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WslProbe {
+    /// Só distros já ligadas: detecção automática (botão e prévia do modal).
+    RunningOnly,
+    /// Pode ligar o WSL: o usuário clicou em abrir o terminal.
+    AllowStart,
 }
 
 fn command_exists_in_wsl(distro: &str, cmd: &str) -> bool {
@@ -360,7 +376,7 @@ fn sanitize_prompt(prompt: &str) -> String {
     cleaned.trim().trim_end_matches('\\').trim_end().to_owned()
 }
 
-fn detect_cli(cmd_name: &str) -> CliDetection {
+fn detect_cli(cmd_name: &str, probe: WslProbe) -> CliDetection {
     if command_exists_in_windows(cmd_name) {
         return CliDetection {
             is_available: true,
@@ -370,7 +386,15 @@ fn detect_cli(cmd_name: &str) -> CliDetection {
         };
     }
 
-    let distros = wsl_distros();
+    let distros = match probe {
+        WslProbe::AllowStart => wsl_distros(false),
+        WslProbe::RunningOnly => {
+            // Só nomes que também existem em `wsl -l -q`: o texto de "nenhuma distro
+            // em execução" nunca vira nome de distro passado a `wsl -d`.
+            let installed = wsl_distros(false);
+            wsl_distros(true).into_iter().filter(|d| installed.contains(d)).collect()
+        }
+    };
     for distro in distros {
         if command_exists_in_wsl(&distro, cmd_name) {
             return CliDetection {
@@ -386,7 +410,12 @@ fn detect_cli(cmd_name: &str) -> CliDetection {
         is_available: false,
         is_wsl: false,
         distro: None,
-        environment: "CLI não detectada no PATH (copie o comando manualmente)".into(),
+        environment: match probe {
+            WslProbe::RunningOnly => {
+                "CLI não detectada no Windows nem no WSL em execução (o Pulse não liga o WSL sozinho)".into()
+            }
+            WslProbe::AllowStart => "CLI não detectada no PATH (copie o comando manualmente)".into(),
+        },
     }
 }
 
@@ -535,6 +564,7 @@ fn build_prompt_and_invocation(
 fn prepare_analysis(
     provider: String,
     custom_prompt: Option<String>,
+    probe: WslProbe,
 ) -> Result<(AiDiskAnalysisPreview, CliInvocation), String> {
     let cli_cmd = cli_binary(&provider)?;
     let cache = get_cached_disk_scan()
@@ -548,7 +578,11 @@ fn prepare_analysis(
     let report_content = generate_markdown_report(root, &top_dirs, &top_files, &candidates, total_candidates);
     let context_file = save_context_file(&report_content, &root.path)?;
 
-    let detection = detect_cli(cli_cmd);
+    let detection = detect_cli(cli_cmd, probe);
+    // Sem consultar o WSL desligado, "não achei" não prova que o CLI sumiu
+    if detection.is_available || probe == WslProbe::AllowStart {
+        reconcile_provider_cache(&provider, detection.is_available);
+    }
     let (prompt, invocation) = build_prompt_and_invocation(
         cli_cmd,
         &root.path,
@@ -588,12 +622,126 @@ fn prepare_analysis(
     Ok((preview, invocation))
 }
 
+/// Provedores na ordem exibida pela interface.
+const PROVIDER_IDS: [&str; 3] = ["antigravity", "claude", "codex"];
+
+/// A detecção chama `where.exe` e consulta só as distros WSL já ligadas (nunca
+/// liga a VM). Mesmo assim o resultado fica salvo em disco
+/// (`%LOCALAPPDATA%\Pulse\ai-cli-providers.json`) e vale por 24 h: abrir o
+/// Armazenamento não refaz a busca a cada início do app. O modal detecta de novo
+/// ao abrir e corrige o cache se algo mudou.
+const PROVIDER_DETECTION_TTL_SECS: u64 = 24 * 60 * 60;
+static PROVIDER_DETECTION: Mutex<Option<ProviderDetectionCache>> = Mutex::new(None);
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ProviderDetectionCache {
+    detected_at_unix_secs: u64,
+    providers: Vec<String>,
+}
+
+fn now_unix_secs() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+fn provider_cache_file() -> PathBuf {
+    env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(env::temp_dir)
+        .join("Pulse")
+        .join("ai-cli-providers.json")
+}
+
+/// Só aceita ids conhecidos, na ordem da interface (o arquivo pode ter sido editado).
+fn normalize_provider_ids(ids: &[String]) -> Vec<String> {
+    PROVIDER_IDS
+        .iter()
+        .filter(|id| ids.iter().any(|candidate| candidate == *id))
+        .map(|id| (*id).to_owned())
+        .collect()
+}
+
+fn is_cache_fresh(cache: &ProviderDetectionCache, now: u64) -> bool {
+    now >= cache.detected_at_unix_secs && now - cache.detected_at_unix_secs < PROVIDER_DETECTION_TTL_SECS
+}
+
+fn load_provider_cache() -> Option<ProviderDetectionCache> {
+    if let Some(cache) = PROVIDER_DETECTION.lock().ok().and_then(|guard| guard.clone()) {
+        return Some(cache);
+    }
+    let raw = fs::read_to_string(provider_cache_file()).ok()?;
+    let mut cache: ProviderDetectionCache = serde_json::from_str(&raw).ok()?;
+    cache.providers = normalize_provider_ids(&cache.providers);
+    if let Ok(mut guard) = PROVIDER_DETECTION.lock() {
+        *guard = Some(cache.clone());
+    }
+    Some(cache)
+}
+
+fn store_provider_cache(providers: Vec<String>) {
+    let cache = ProviderDetectionCache {
+        detected_at_unix_secs: now_unix_secs(),
+        providers: normalize_provider_ids(&providers),
+    };
+    let path = provider_cache_file();
+    if let Some(dir) = path.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    // Falha ao gravar só custa uma nova detecção no próximo início
+    if let Ok(json) = serde_json::to_string_pretty(&cache) {
+        let _ = fs::write(&path, json);
+    }
+    if let Ok(mut guard) = PROVIDER_DETECTION.lock() {
+        *guard = Some(cache);
+    }
+}
+
+/// Atualiza o cache quando o modal detecta um provedor diferente do salvo
+/// (CLI instalado ou removido depois da última detecção).
+fn reconcile_provider_cache(provider_id: &str, is_available: bool) {
+    let Some(cache) = load_provider_cache() else { return };
+    let listed = cache.providers.iter().any(|id| id == provider_id);
+    if listed == is_available {
+        return;
+    }
+    let mut providers = cache.providers;
+    if is_available {
+        providers.push(provider_id.to_owned());
+    } else {
+        providers.retain(|id| id != provider_id);
+    }
+    store_provider_cache(providers);
+}
+
+/// Ids dos provedores cujo CLI está no PATH do Windows ou de alguma distro WSL.
+#[tauri::command]
+pub async fn detect_ai_cli_providers() -> Result<Vec<String>, String> {
+    if let Some(cache) = load_provider_cache() {
+        if is_cache_fresh(&cache, now_unix_secs()) {
+            return Ok(cache.providers);
+        }
+    }
+
+    let ids = tauri::async_runtime::spawn_blocking(|| {
+        PROVIDER_IDS
+            .iter()
+            .filter(|id| cli_binary(id).is_ok_and(|cmd| detect_cli(cmd, WslProbe::RunningOnly).is_available))
+            .map(|id| (*id).to_owned())
+            .collect::<Vec<_>>()
+    })
+    .await
+    .map_err(|error| format!("Falha ao detectar os CLIs de IA: {error}"))?;
+
+    store_provider_cache(ids.clone());
+    Ok(ids)
+}
+
 #[tauri::command]
 pub fn get_ai_disk_analysis_preview(
     provider: String,
     custom_prompt: Option<String>,
 ) -> Result<AiDiskAnalysisPreview, String> {
-    prepare_analysis(provider, custom_prompt).map(|(preview, _)| preview)
+    prepare_analysis(provider, custom_prompt, WslProbe::RunningOnly).map(|(preview, _)| preview)
 }
 
 /// Caminho completo do CLI no Windows. `Command::new("claude")` só acha
@@ -624,7 +772,7 @@ pub fn launch_ai_disk_terminal(
     provider: String,
     custom_prompt: Option<String>,
 ) -> Result<AiTerminalLaunchResult, String> {
-    let (preview, invocation) = prepare_analysis(provider.clone(), custom_prompt)?;
+    let (preview, invocation) = prepare_analysis(provider.clone(), custom_prompt, WslProbe::AllowStart)?;
 
     #[cfg(windows)]
     {
@@ -877,5 +1025,20 @@ mod tests {
         assert_eq!(invocation.program, "wsl.exe");
         assert_eq!(&invocation.args[..7], ["-d", "Ubuntu", "-e", "sh", "-lc", WSL_EXEC_SCRIPT, "agy"]);
         assert_eq!(invocation.args.len(), 8);
+    }
+
+    #[test]
+    fn provider_cache_keeps_only_known_ids_in_ui_order() {
+        let ids = vec!["codex".to_owned(), "calc.exe".to_owned(), "antigravity".to_owned()];
+        assert_eq!(normalize_provider_ids(&ids), vec!["antigravity".to_owned(), "codex".to_owned()]);
+    }
+
+    #[test]
+    fn provider_cache_expires_after_ttl() {
+        let cache = ProviderDetectionCache { detected_at_unix_secs: 1_000, providers: vec![] };
+        assert!(is_cache_fresh(&cache, 1_000 + PROVIDER_DETECTION_TTL_SECS - 1));
+        assert!(!is_cache_fresh(&cache, 1_000 + PROVIDER_DETECTION_TTL_SECS));
+        // Relógio voltou no tempo: detecta de novo
+        assert!(!is_cache_fresh(&cache, 999));
     }
 }

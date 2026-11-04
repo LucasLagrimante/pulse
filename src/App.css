@@ -5748,6 +5748,58 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   box-shadow: var(--neu-shadow-raised-xs);
 }
 
+/* Botão que alterna entre os provedores de IA detectados (AiProviderCycleButton) */
+.ai-provider-cycle-icon {
+  display: inline-flex;
+  animation: ai-provider-cycle-in 320ms ease-out;
+}
+
+.ai-provider-cycle-names {
+  display: inline-grid;
+}
+
+.ai-provider-cycle-names > span {
+  grid-area: 1 / 1;
+  visibility: hidden;
+  opacity: 0;
+}
+
+.ai-provider-cycle-names > span.is-active {
+  visibility: visible;
+  opacity: 1;
+  animation: ai-provider-cycle-in 320ms ease-out;
+}
+
+.ai-provider-cycle-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 2px;
+}
+
+.ai-provider-cycle-dots > i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.3;
+  transition: opacity 200ms ease;
+}
+
+.ai-provider-cycle-dots > i.is-active {
+  opacity: 1;
+}
+
+@keyframes ai-provider-cycle-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .disk-ai-subtoolbar-btn {
   display: inline-flex;
   align-items: center;
