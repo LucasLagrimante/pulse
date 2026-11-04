@@ -627,20 +627,22 @@ fn wait_for_elevated_uninstaller(
             .collect()
     });
 
-    let mut info = SHELLEXECUTEINFOW::default();
-    info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
-    info.fMask = SEE_MASK_NOCLOSEPROCESS;
-    info.lpVerb = PCWSTR(verb.as_ptr());
-    info.lpFile = PCWSTR(file.as_ptr());
-    info.lpParameters = if formatted_args.is_empty() {
-        PCWSTR::null()
-    } else {
-        PCWSTR(params.as_ptr())
+    let mut info = SHELLEXECUTEINFOW {
+        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOCLOSEPROCESS,
+        lpVerb: PCWSTR(verb.as_ptr()),
+        lpFile: PCWSTR(file.as_ptr()),
+        lpParameters: if formatted_args.is_empty() {
+            PCWSTR::null()
+        } else {
+            PCWSTR(params.as_ptr())
+        },
+        lpDirectory: dir
+            .as_ref()
+            .map_or_else(PCWSTR::null, |dir_utf16| PCWSTR(dir_utf16.as_ptr())),
+        nShow: SW_SHOWNORMAL.0,
+        ..Default::default()
     };
-    if let Some(dir_utf16) = &dir {
-        info.lpDirectory = PCWSTR(dir_utf16.as_ptr());
-    }
-    info.nShow = SW_SHOWNORMAL.0;
 
     if let Err(err) = unsafe { ShellExecuteExW(&mut info) } {
         let code = err.code().0 as u32;
