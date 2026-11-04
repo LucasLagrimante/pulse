@@ -260,12 +260,13 @@ describe("SubscriptionUsage", () => {
 
     const { container } = render(<SubscriptionUsage />);
     await screen.findByText("OpenRouter");
-    await waitFor(() => expect(container.querySelectorAll(".quota-provider-card")).toHaveLength(4));
-
-    const order = [...container.querySelectorAll(".quota-provider-card")].map(card =>
-      [...card.classList].find(className => className.startsWith("provider-"))?.replace("provider-", ""),
-    );
-    expect(order).toEqual(["openrouter", "codex", "claude", "opencode-go"]);
+    // A ordem só vale depois que get_subscription_settings responde; em máquina
+    // lenta (CI) os cards aparecem antes na ordem do relatório.
+    const cardOrder = () =>
+      [...container.querySelectorAll(".quota-provider-card")].map(card =>
+        [...card.classList].find(className => className.startsWith("provider-"))?.replace("provider-", ""),
+      );
+    await waitFor(() => expect(cardOrder()).toEqual(["openrouter", "codex", "claude", "opencode-go"]));
   });
 
   it("persists a new order when a card is dropped on another", async () => {
