@@ -51,7 +51,20 @@ const cmdBin = isWin ? "cmd.exe" : CMD_WSL;
 if (isWsl) {
   // cmd.exe não aceita UNC (\\wsl.localhost\...) como cwd e alguns instaladores
   // NSIS falham se executados de caminho UNC. Copiamos para Temp em NTFS.
-  const ntfsTempDir = "/mnt/c/Users/lucas/AppData/Local/Temp/pulse-target/release/bundle/nsis";
+  // %LOCALAPPDATA%\Temp do usuário Windows atual, sem caminho de usuário fixo.
+  const winTemp =
+    process.env.PULSE_WIN_TEMP ||
+    execFileSync(CMD_WSL, ["/c", "echo %LOCALAPPDATA%\\Temp"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  const ntfsTempDir = join(
+    execFileSync("wslpath", ["-u", winTemp], { encoding: "utf8" }).trim(),
+    "pulse-target",
+    "release",
+    "bundle",
+    "nsis",
+  );
   mkdirSync(ntfsTempDir, { recursive: true });
   const ntfsInstaller = join(ntfsTempDir, setups[0].file);
   copyFileSync(installer, ntfsInstaller);

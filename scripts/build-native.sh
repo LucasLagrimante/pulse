@@ -44,10 +44,20 @@ for arg in "$@"; do
   esac
 done
 
-STAGING="/mnt/c/Users/lucas/AppData/Local/Temp/pulse-src"
-STAGING_WIN='C:\Users\lucas\AppData\Local\Temp\pulse-src'
-TARGET_DIR="/mnt/c/Users/lucas/AppData/Local/Temp/pulse-target"
 CMD_EXE="/mnt/c/Windows/System32/cmd.exe"
+
+# Pastas de trabalho no %TEMP% do usuário Windows atual (sem caminho fixo de
+# usuário). PULSE_WIN_TEMP permite sobrescrever, ex.: 'D:\Temp'.
+WIN_TEMP_WIN="${PULSE_WIN_TEMP:-$("$CMD_EXE" /c 'echo %LOCALAPPDATA%\Temp' < /dev/null 2>/dev/null | tr -d '\r')}"
+if [ -z "$WIN_TEMP_WIN" ] || [[ "$WIN_TEMP_WIN" == *%* ]]; then
+  echo "não foi possível descobrir %LOCALAPPDATA% do Windows; defina PULSE_WIN_TEMP" >&2
+  exit 1
+fi
+STAGING_WIN="$WIN_TEMP_WIN\pulse-src"
+TARGET_DIR_WIN="$WIN_TEMP_WIN\pulse-target"
+STAGING="$(wslpath -u "$STAGING_WIN")"
+TARGET_DIR="$(wslpath -u "$TARGET_DIR_WIN")"
+export REPO_DIR="$PWD" STAGING
 
 node scripts/kill-running-app.mjs
 
@@ -84,8 +94,8 @@ fi
 # precisa recompilar o frontend pois já foi gerado na etapa 1/5 no WSL.
 python3 - <<'PYEOF'
 import json, io, os
-src = "/home/lucas/projects/pulse/src-tauri/tauri.conf.json"
-dst = "/mnt/c/Users/lucas/AppData/Local/Temp/pulse-src/src-tauri/tauri.conf.json"
+src = os.path.join(os.environ["REPO_DIR"], "src-tauri", "tauri.conf.json")
+dst = os.path.join(os.environ["STAGING"], "src-tauri", "tauri.conf.json")
 with io.open(src, "r", encoding="utf-8") as fh:
     conf = json.load(fh)
 conf.setdefault("build", {})["beforeBuildCommand"] = ""
@@ -97,16 +107,16 @@ PYEOF
 echo "==> 3/5  build Rust + instalador NSIS (Windows, via wrapper .bat)"
 # Wrapper em NTFS: o quoting literal evita a corrupcao de aspas em caminhos
 # com espaço ("Program Files (x86)") dentro de `cmd /c "..."`.
-cat > "$STAGING/run-build.bat" <<'BATEOF'
+cat > "$STAGING/run-build.bat" <<BATEOF
 @echo off
 setlocal
 taskkill /IM pulse-windows.exe /F >nul 2>&1
-set "CARGO_TARGET_DIR=C:\Users\lucas\AppData\Local\Temp\pulse-target"
+set "CARGO_TARGET_DIR=$TARGET_DIR_WIN"
 call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 2
-cd /d C:\Users\lucas\AppData\Local\Temp\pulse-src\src-tauri || exit /b 3
+cd /d "$STAGING_WIN\src-tauri" || exit /b 3
 echo === tauri build (Rust release + bundler NSIS) ===
 chcp 65001 >nul
-node "C:\Users\lucas\AppData\Local\Temp\pulse-src\node_modules\@tauri-apps\cli\tauri.js" build --bundles nsis -- --locked
+node "$STAGING_WIN\node_modules\@tauri-apps\cli\tauri.js" build --bundles nsis -- --locked
 exit /b %errorlevel%
 BATEOF
 
