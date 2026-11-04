@@ -9,4 +9,5 @@ metadata:
 **How to apply:**
 - Release: `git tag v<versão> && git push --tags` → `.github/workflows/release.yml` (build, SignPath, `Get-AuthenticodeSignature`, upload na Release) → `npm run lp:sync:release` (SHA do asset assinado) → push no `pulse-lp`.
 - `release:publish` exige `--unsigned`: nunca sobrescrever um instalador assinado com build local.
-- Sem `vars.SIGNPATH_ORGANIZATION_ID` o CI só gera artefato, não publica. Política de assinatura obrigatória fica no README.
+- Sem `vars.SIGNPATH_ORGANIZATION_ID` o CI publica **sem assinatura** e as notas da Release dizem isso (decisão do usuário: não esperar a aprovação). Nunca anunciar "assinado" na landing antes de haver certificado. Política de assinatura obrigatória fica no README.
+- `npm ci` no CI exige lock em sincronia: pacotes JS `@tauri-apps/*` seguem o major.minor do crate, não o patch (api 2.11.5 não existe).
