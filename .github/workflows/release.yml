@@ -7,8 +7,9 @@
 #   variable SIGNPATH_ORGANIZATION_ID    ID da organização na SignPath
 #   variable SIGNPATH_PROJECT_SLUG       slug do projeto (ex.: pulse)
 #   variable SIGNPATH_SIGNING_POLICY     slug da política (ex.: release-signing)
-# Sem SIGNPATH_ORGANIZATION_ID o job só gera o artefato sem assinatura e não
-# publica nada, para nunca substituir um instalador assinado por um sem assinatura.
+# Sem SIGNPATH_ORGANIZATION_ID (pedido ainda em análise) a Release da tag é
+# publicada SEM assinatura e as notas dizem isso; configurar as variables liga a
+# assinatura nas próximas tags sem outra mudança.
 name: release
 
 on:
@@ -86,32 +87,41 @@ jobs:
           output-artifact-directory: signed
 
       - name: Validar assinatura e calcular SHA-256
-        if: env.SIGNING_ENABLED == 'true'
-        id: signed
+        id: final
         shell: pwsh
         run: |
-          $file = Join-Path signed "${{ steps.meta.outputs.asset }}"
-          $sig = Get-AuthenticodeSignature $file
-          if ($sig.Status -ne "Valid") { throw "Assinatura inválida: $($sig.Status) $($sig.StatusMessage)" }
+          $asset = "${{ steps.meta.outputs.asset }}"
+          if ($env:SIGNING_ENABLED -eq "true") {
+            $file = Join-Path signed $asset
+            $sig = Get-AuthenticodeSignature $file
+            if ($sig.Status -ne "Valid") { throw "Assinatura inválida: $($sig.Status) $($sig.StatusMessage)" }
+            "Assinado por: $($sig.SignerCertificate.Subject)" >> $env:GITHUB_STEP_SUMMARY
+            $label = "assinado pela SignPath Foundation"
+          } else {
+            $file = "src-tauri/target/release/bundle/nsis/$asset"
+            "Sem assinatura: SignPath ainda não configurada" >> $env:GITHUB_STEP_SUMMARY
+            $label = "sem assinatura de código (SignPath em análise); o Windows pode exibir o aviso do SmartScreen"
+          }
           $sha = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
           "path=$file" >> $env:GITHUB_OUTPUT
           "sha256=$sha" >> $env:GITHUB_OUTPUT
-          "Assinado por: $($sig.SignerCertificate.Subject)" >> $env:GITHUB_STEP_SUMMARY
+          "label=$label" >> $env:GITHUB_OUTPUT
           "SHA-256: ``$sha``" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Publicar na GitHub Release
-        if: env.SIGNING_ENABLED == 'true' && github.ref_type == 'tag'
+        if: github.ref_type == 'tag'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ github.ref_name }}"
-          $file = "${{ steps.signed.outputs.path }}"
+          $file = "${{ steps.final.outputs.path }}"
+          $notes = "Instalador NSIS para Windows 11 x64, ${{ steps.final.outputs.label }}.`n`nSHA-256 (``${{ steps.meta.outputs.asset }}``): ``${{ steps.final.outputs.sha256 }}``"
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $file --clobber
+            if ($LASTEXITCODE -eq 0) { gh release edit $tag --notes $notes }
           } else {
-            $notes = "Instalador NSIS para Windows 11 x64, assinado pela SignPath Foundation.`n`nSHA-256 (``${{ steps.meta.outputs.asset }}``): ``${{ steps.signed.outputs.sha256 }}``"
             gh release create $tag $file --title "Pulse ${{ steps.meta.outputs.version }}" --notes $notes
           }
           if ($LASTEXITCODE -ne 0) { throw "Falha ao publicar na Release $tag" }
