@@ -3372,3 +3372,127 @@ body:has(.tray-flyout-container),
   box-shadow: var(--neu-shadow-inset-xs);
 }
 
+
+/* ==========================================================================
+   Flyout: card de cota clicável + contagem regressiva no hover
+   ========================================================================== */
+.flyout-quota-mini-card.is-clickable {
+  cursor: pointer;
+  transition: transform .14s ease, box-shadow .14s ease;
+}
+
+[data-theme] .flyout-quota-mini-card.is-clickable:hover,
+[data-theme] .flyout-quota-mini-card.is-clickable:focus-visible {
+  box-shadow: var(--neu-shadow-raised-sm) !important;
+  border-color: color-mix(in srgb, var(--neu-accent) 45%, var(--neu-divider)) !important;
+  outline: none;
+}
+
+.flyout-quota-mini-card.is-clickable:active { transform: translateY(1px); }
+
+.flyout-quota-bar.has-countdown {
+  position: relative;
+  overflow: visible;
+}
+
+.flyout-quota-bar i { transition: opacity .14s ease; }
+
+.flyout-quota-countdown {
+  position: absolute;
+  inset: 50% auto auto 0;
+  transform: translateY(-50%);
+  font: 700 .54rem "Cascadia Mono", Consolas, monospace;
+  white-space: nowrap;
+  color: var(--neu-text-primary);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .14s ease;
+}
+
+/* No hover a barra cede lugar ao tempo restante até a janela renovar. */
+[data-theme] .flyout-quota-mini-card.is-clickable:is(:hover, :focus-visible) .flyout-quota-bar.has-countdown {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+.flyout-quota-mini-card.is-clickable:is(:hover, :focus-visible) .flyout-quota-bar.has-countdown i { opacity: 0; }
+.flyout-quota-mini-card.is-clickable:is(:hover, :focus-visible) .flyout-quota-countdown { opacity: 1; }
+
+/* ==========================================================================
+   Cotas de IA: matriz modelo × janela (Antigravity e afins)
+   ========================================================================== */
+.quota-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.quota-matrix-row {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 0;
+  border-top: 1px solid var(--neu-divider);
+}
+
+.quota-matrix-row.is-head {
+  padding: 0 0 2px;
+  border-top: 0;
+}
+
+.quota-matrix-row.is-head span {
+  font: 600 .6rem "Cascadia Mono", Consolas, monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--neu-text-muted);
+  min-width: 0;
+}
+
+.quota-matrix-model {
+  font: 700 .72rem "Cascadia Mono", Consolas, monospace;
+  color: var(--neu-text-title);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.quota-matrix-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.quota-matrix-cell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
+}
+
+.quota-matrix-cell-head b {
+  font: 700 .74rem "Cascadia Mono", Consolas, monospace;
+  color: var(--neu-text-title);
+}
+
+.quota-matrix-cell .quota-track { height: 6px !important; }
+
+.quota-matrix-cell small {
+  font: 500 .62rem "Cascadia Mono", Consolas, monospace;
+  color: var(--neu-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quota-matrix-cell.is-empty span {
+  font: 600 .74rem "Cascadia Mono", Consolas, monospace;
+  color: var(--neu-text-muted);
+}
+
+[data-theme] .quota-matrix-cell .quota-track i.is-warning { background: var(--neu-warning) !important; }
+[data-theme] .quota-matrix-cell .quota-track i.is-critical { background: var(--neu-danger) !important; }

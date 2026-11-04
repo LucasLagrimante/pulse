@@ -2514,6 +2514,39 @@ describe("Pulse application shell", () => {
     expect(screen.queryByText("Gemi")).not.toBeInTheDocument();
   });
 
+  it("opens the main window on the quotas tab when a tray quota card is clicked", async () => {
+    localStorage.clear();
+    const reset = Math.floor(Date.now() / 1000) + 2 * 3600 + 30 * 60;
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_current_window_label") return Promise.resolve("tray-flyout") as never;
+      if (command === "get_subscription_usage") {
+        return Promise.resolve({
+          scanStatus: "ready",
+          durationMs: 80,
+          privacyNote: "Privado",
+          sampledAtUnixMs: Date.now(),
+          providers: [
+            {
+              id: "codex",
+              provider: "Codex",
+              status: "available",
+              windows: [{ id: "session", label: "Sessão", remainingPercent: 46, usedPercent: 54, windowMinutes: 300, resetsAtUnixSeconds: reset }],
+              source: "wham",
+            },
+          ],
+        }) as never;
+      }
+      return Promise.resolve() as never;
+    });
+
+    render(<App />);
+
+    const card = await screen.findByRole("button", { name: /Abrir Cotas de IA: Codex — 5h renova em 2h30/ });
+    expect(card.querySelector(".flyout-quota-countdown")).toHaveTextContent("↻ 2h30");
+    fireEvent.click(card);
+    expect(invoke).toHaveBeenCalledWith("show_main_module", { module: "Cotas de IA" });
+  });
+
   it("renders every primary module with valid native payloads", async () => {
     render(<App />);
     for (const [buttonName, heading] of [

@@ -6,18 +6,23 @@ import { ModuleIcon } from "./Identity";
 import { ProviderIcon } from "./ProviderIcon";
 import { CREDITS_WINDOW_ID, QuotaHistoryButton } from "./QuotaHistory";
 import {
+  formatCountdown,
   formatReset,
   formatUsd,
+  groupQuotaWindowsByModel,
   hasMeasuredQuota,
   isProviderDisabled,
   isWindowChartEligible,
   keyManagedProvider,
   measuredNumber,
   planLabel,
+  quotaColumnLabel,
   reorderIds,
   safePercent,
+  shortModelName,
 } from "./subscriptionHelpers";
 import type {
+  QuotaMatrix as QuotaMatrixData,
   ProviderUsage,
   QuotaWindow,
   SubscriptionUsageReport,
@@ -129,7 +134,7 @@ function QuotaMeter({ quota, providerId, providerName }: { quota: QuotaWindow; p
             aria-valuemax={100}
             aria-valuenow={Math.round(remaining)}
           >
-            <i className={remaining <= 20 ? "is-critical" : remaining <= 45 ? "is-warning" : ""} style={{ width: `${remaining}%` }} />
+            <i className={quotaTone(remaining)} style={{ width: `${remaining}%` }} />
           </div>
           <div className="quota-meter-value">
             <b>{Math.round(remaining)}% restante</b>
@@ -137,6 +142,93 @@ function QuotaMeter({ quota, providerId, providerName }: { quota: QuotaWindow; p
           </div>
         </>
       ) : <p>{quota.unavailableReason || `O ${providerName} não informou esta cota.`}</p>}
+    </div>
+  );
+}
+
+function quotaTone(remaining: number): string {
+  return remaining <= 20 ? "is-critical" : remaining <= 45 ? "is-warning" : "";
+}
+
+function QuotaMatrixCell({
+  quota,
+  model,
+  column,
+  providerId,
+}: {
+  quota: QuotaWindow | undefined;
+  model: string;
+  column: string;
+  providerId: string;
+}) {
+  const isExpired = typeof quota?.resetsAtUnixSeconds === "number" && quota.resetsAtUnixSeconds * 1000 <= Date.now();
+  const remaining = quota ? (isExpired ? 100 : safePercent(quota.remainingPercent)) : null;
+  if (!quota || remaining == null || quota.unavailableReason) {
+    // Ausência explícita, nunca 0%: o modelo simplesmente não tem esta janela.
+    const reason = quota?.unavailableReason || `${model} não tem janela ${column.toLowerCase()}`;
+    return (
+      <div className="quota-matrix-cell is-empty" role="cell" title={reason}>
+        <span aria-label={reason}>—</span>
+      </div>
+    );
+  }
+  const countdown = isExpired ? "renovado" : formatCountdown(quota.resetsAtUnixSeconds);
+  const reset = quota.resetDescription?.trim() || formatReset(quota.resetsAtUnixSeconds);
+  const windowLabel = quota.label?.trim() || `${model} · ${column}`;
+  return (
+    <div className="quota-matrix-cell" role="cell" title={`${windowLabel} — ${reset}`}>
+      <div className="quota-matrix-cell-head">
+        <b>{Math.round(remaining)}%</b>
+        <QuotaHistoryButton
+          providerId={providerId}
+          windowId={quota.id?.trim() || windowLabel}
+          windowLabel={windowLabel}
+          quota={quota}
+          mode="percent"
+        />
+      </div>
+      <div
+        className="quota-track"
+        role="progressbar"
+        aria-label={`${windowLabel}: cota restante`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(remaining)}
+      >
+        <i className={quotaTone(remaining)} style={{ width: `${remaining}%` }} />
+      </div>
+      <small>{countdown ? `↻ ${countdown}` : quota.resetDescription?.trim() || "Reset não informado"}</small>
+    </div>
+  );
+}
+
+/** Matriz modelo × janela: 3 modelos × 2 janelas cabem em 3 linhas, não 6 barras. */
+function QuotaMatrixView({ matrix, providerId }: { matrix: QuotaMatrixData; providerId: string }) {
+  const columns = matrix.columns.map(quotaColumnLabel);
+  const template = { gridTemplateColumns: `minmax(0, 0.9fr) repeat(${columns.length}, minmax(0, 1fr))` };
+  return (
+    <div className="quota-matrix" role="table" aria-label="Cotas por modelo e janela">
+      <div className="quota-matrix-row is-head" role="row" style={template}>
+        <span role="columnheader">Modelo</span>
+        {columns.map(label => <span role="columnheader" key={label}>{label}</span>)}
+      </div>
+      {matrix.rows.map(row => {
+        const model = shortModelName(row.model);
+        return (
+          <div className="quota-matrix-row" role="row" style={template} key={row.model}>
+            <strong className="quota-matrix-model" role="rowheader" title={row.model}>{model}</strong>
+            {matrix.columns.map((minutes, index) => (
+              <QuotaMatrixCell
+                key={`${row.model}-${minutes ?? "x"}`}
+                quota={row.cells.get(minutes)}
+                model={model}
+                column={columns[index]}
+                providerId={providerId}
+              />
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -175,6 +267,7 @@ function ProviderCard({
   const resetCredits = measuredNumber(provider.resetCreditsAvailable);
   const sampledAt = measuredNumber(provider.sampledAtUnixMs);
   const managedTarget = keyManagedProvider(provider);
+  const matrix = useMemo(() => groupQuotaWindowsByModel(windows), [windows]);
   return (
     <article
       className={`quota-provider-card provider-${provider.id}${disabled ? " is-disabled" : available ? "" : " is-unavailable"}${reorderEnabled ? " is-reorderable" : ""}${dragging ? " is-dragging" : ""}`}
@@ -237,7 +330,7 @@ function ProviderCard({
         </div>
       ) : available ? (
         <div className="quota-window-list">
-          {windows.length > 0 ? windows.map((quota, index) => <QuotaMeter key={quota.id || `${provider.id}-${index}`} quota={quota} providerId={provider.id} providerName={provider.provider} />) : (
+          {matrix ? <QuotaMatrixView matrix={matrix} providerId={provider.id} /> : windows.length > 0 ? windows.map((quota, index) => <QuotaMeter key={quota.id || `${provider.id}-${index}`} quota={quota} providerId={provider.id} providerName={provider.provider} />) : (
             <div className="quota-credit-summary">
               <strong>{provider.id === "openrouter" ? "Saldo disponível" : "Créditos disponíveis"}</strong>
               <b>{credits != null ? (provider.id === "openrouter" ? formatUsd(credits) : credits.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })) : "Indisponível"}</b>

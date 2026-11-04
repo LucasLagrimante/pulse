@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { formatCountdown, groupQuotaWindowsByModel, shortModelName } from "./subscriptionHelpers";
 import { formatReset, formatUsd, hasMeasuredQuota, isProviderDisabled, isWindowChartEligible, reorderIds, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, SubscriptionUsage, type SubscriptionUsageReport } from "./SubscriptionUsage";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -293,6 +294,67 @@ describe("SubscriptionUsage", () => {
     fireEvent.drop(cards[1], { dataTransfer });
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_provider_order", { order: ["codex", "claude", "openrouter"] }));
+  });
+
+  it("groups per-model quota windows into a model × window matrix", () => {
+    const matrix = groupQuotaWindowsByModel([
+      { id: "agy-0", label: "Gemini Models · Semanal", remainingPercent: 92, windowMinutes: 10080 },
+      { id: "agy-1", label: "Gemini Models · 5 horas", remainingPercent: 97, windowMinutes: 300 },
+      { id: "agy-2", label: "Claude and GPT models · Semanal", remainingPercent: 100, windowMinutes: 10080 },
+      { id: "agy-4", label: "Gemini 4 Argon · Semanal", remainingPercent: 100, windowMinutes: 10080 },
+    ]);
+    expect(matrix?.columns).toEqual([300, 10080]);
+    expect(matrix?.rows.map(row => row.model)).toEqual(["Gemini Models", "Claude and GPT models", "Gemini 4 Argon"]);
+    expect(matrix?.rows[2].cells.has(300)).toBe(false);
+    // Codex/Claude (sem "Modelo · Janela") continuam na lista simples.
+    expect(groupQuotaWindowsByModel(report.providers[1].windows)).toBeNull();
+    expect(shortModelName("Claude and GPT models")).toBe("Claude + GPT");
+    expect(shortModelName("Gemini Models")).toBe("Gemini");
+    expect(shortModelName("Gemini 4 Argon")).toBe("Gemini 4 Argon");
+  });
+
+  it("formats a compact countdown until the window renews", () => {
+    expect(formatCountdown(null)).toBeNull();
+    expect(formatCountdown(1_000, 2_000_000)).toBe("renovado");
+    expect(formatCountdown(1_000 + 45 * 60, 1_000_000)).toBe("45min");
+    expect(formatCountdown(1_000 + 2 * 3600 + 5 * 60, 1_000_000)).toBe("2h05");
+    expect(formatCountdown(1_000 + 4 * 86400 + 2 * 3600, 1_000_000)).toBe("4d2h");
+    expect(formatCountdown(1_000 + 7 * 86400, 1_000_000)).toBe("7d");
+  });
+
+  it("renders Antigravity as a compact matrix with an explicit gap for missing windows", async () => {
+    const future = Math.floor(Date.now() / 1000) + 3 * 3600 + 53 * 60;
+    const matrixReport: SubscriptionUsageReport = {
+      ...report,
+      providers: [
+        {
+          id: "antigravity", provider: "Antigravity", subtitle: "Google AI Pro", status: "available", source: "Antigravity CLI · /usage",
+          windows: [
+            { id: "agy-0", label: "Gemini Models · Semanal", usedPercent: 8, remainingPercent: 92, windowMinutes: 10080, resetsAtUnixSeconds: future + 86400 },
+            { id: "agy-1", label: "Gemini Models · 5 horas", usedPercent: 3, remainingPercent: 97, windowMinutes: 300, resetsAtUnixSeconds: future },
+            { id: "agy-2", label: "Claude and GPT models · Semanal", usedPercent: 0, remainingPercent: 100, windowMinutes: 10080, resetsAtUnixSeconds: future },
+            { id: "agy-3", label: "Claude and GPT models · 5 horas", usedPercent: 0, remainingPercent: 100, windowMinutes: 300, resetsAtUnixSeconds: future },
+            { id: "agy-4", label: "Gemini 4 Argon · Semanal", usedPercent: 19, remainingPercent: 81, windowMinutes: 10080, resetsAtUnixSeconds: future },
+          ],
+        },
+      ],
+    };
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_subscription_settings") {
+        return Promise.resolve({ openrouterConfigured: false, opencodeGoConfigured: false }) as never;
+      }
+      return Promise.resolve(matrixReport) as never;
+    });
+
+    render(<SubscriptionUsage />);
+    const table = await screen.findByRole("table", { name: "Cotas por modelo e janela" });
+    expect(table.querySelectorAll('[role="row"]')).toHaveLength(4);
+    expect(screen.getByRole("rowheader", { name: "Claude + GPT" })).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "Gemini 4 Argon" })).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Gemini 4 Argon · Semanal: cota restante" })).toHaveAttribute("aria-valuenow", "81");
+    expect(screen.getByLabelText("Gemini 4 Argon não tem janela 5 horas")).toHaveTextContent("—");
+    expect(screen.getAllByText("↻ 3h53").length).toBeGreaterThan(0);
+    expect(screen.queryByText("0%")).not.toBeInTheDocument();
   });
 
   it("includes the history chart button for both 5-hour and weekly windows", async () => {

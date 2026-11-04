@@ -82,7 +82,7 @@
         "Desinstalação em 3 fases com Ponto de Restauração e varredura conservadora de resíduos",
         "Inventário de inicialização via StartupApproved com impacto de boot em milissegundos",
         "Serviços nativos do Windows (SCM/WMI) e atualizações de aplicativos via winget",
-        "Cotas de assinaturas de IA (Claude Code, OpenAI Codex, Google Antigravity, OpenRouter, OpenCode Go) com histórico de 30 dias em SQLite",
+        "Cotas de assinaturas de IA (Claude Code, OpenAI Codex, Google Antigravity, OpenRouter, OpenCode Go) com matriz por modelo, contagem regressiva na bandeja e histórico de 30 dias em SQLite",
         "Mixer de volume Core Audio por aplicativo no flyout da bandeja e trilha de auditoria local"
       ],
       "offers": {
@@ -662,7 +662,7 @@
                   <div class="sim-panel-header">
                     <div>
                       <h3>Cotas de Assinaturas de IA + Histórico SQLite (30 dias)</h3>
-                      <p>Claude Code, OpenAI Codex, Google Antigravity, OpenRouter e OpenCode Go com chaves no Windows Keyring</p>
+                      <p>Claude Code, OpenAI Codex, Google Antigravity (matriz modelo × janela), OpenRouter e OpenCode Go com chaves no Windows Keyring</p>
                     </div>
                     <span class="sim-api-tag">KEYRING · SQLITE 30D</span>
                   </div>
@@ -745,7 +745,7 @@
                 <div class="tray-flyout-card">
                   <div class="tray-flyout-head">
                     <strong>Pulse — Painel Rápido (Tray)</strong>
-                    <span class="sim-api-tag">CPU 54 °C · GPU 49 °C</span>
+                    <span class="sim-api-tag" title="Tooltip do ícone: Codex 5h 46% ↻2h30 · 7d 91% ↻6d21h">CPU 54 °C · GPU 49 °C · ↻ 2h30</span>
                   </div>
                   <div class="app-cards cols-3">
                     <div class="app-card">

@@ -367,12 +367,25 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
     // 60 s para não acoplar ao polling da UI nem acordar o app à toa; entre
     // os ciclos, o comando `get_performance_details` atualiza de carona cada
     // leitura que a UI já pediu — zero subprocesso extra.
+    // As cotas entram no mesmo tooltip (tempo até cada janela renovar); a
+    // contagem regressiva é recalculada a cada ciclo a partir do cache, sem
+    // nova consulta aos provedores.
     let tooltip_app = handle.clone();
-    let _tooltip_thread = std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(60));
-        let details = crate::performance::get_performance_details_sync();
-        if let Some(tray) = tooltip_app.tray_by_id("main-tray") {
-            let _ = tray.set_tooltip(Some(tray_tooltip_for_sensors(&details.thermal_sensors)));
+    let _tooltip_thread = std::thread::spawn(move || {
+        refresh_quota_tooltip(
+            &tooltip_app,
+            &crate::subscription_usage::cached_providers_snapshot(),
+        );
+        loop {
+            std::thread::sleep(Duration::from_secs(60));
+            let details = crate::performance::get_performance_details_sync();
+            if let Ok(mut thermal) = LAST_THERMAL_LINE.lock() {
+                *thermal = thermal_readings(&details.thermal_sensors);
+            }
+            refresh_quota_tooltip(
+                &tooltip_app,
+                &crate::subscription_usage::cached_providers_snapshot(),
+            );
         }
     });
 
@@ -383,7 +396,7 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
 /// (`Pulse — CPU Package 54 °C · RTX 4070 SUPER 67 °C`); sem par
 /// identificado, cai para os dois sensores mais quentes.
 /// Sem sensores, mantém o texto estático — nunca um valor inventado.
-pub(crate) fn tray_tooltip_for_sensors(sensors: &[crate::performance::ThermalSensor]) -> String {
+fn thermal_readings(sensors: &[crate::performance::ThermalSensor]) -> Option<String> {
     let is_cpu = |sensor: &crate::performance::ThermalSensor| {
         sensor.label.to_lowercase().contains("cpu")
     };
@@ -419,14 +432,169 @@ pub(crate) fn tray_tooltip_for_sensors(sensors: &[crate::performance::ThermalSen
         }
     }
     if picks.is_empty() {
-        return "Pulse — Windows Observability".to_owned();
+        return None;
     }
-    let readings = picks
+    Some(
+        picks
+            .iter()
+            .map(|sensor| format!("{} {}", sensor.label, format_celsius(sensor.celsius)))
+            .collect::<Vec<_>>()
+            .join(" · "),
+    )
+}
+
+/// Tooltip só com temperaturas (sem cotas confirmadas).
+pub(crate) fn tray_tooltip_for_sensors(sensors: &[crate::performance::ThermalSensor]) -> String {
+    match thermal_readings(sensors) {
+        Some(readings) => format!("Pulse — {readings}"),
+        None => DEFAULT_TOOLTIP.to_owned(),
+    }
+}
+
+const DEFAULT_TOOLTIP: &str = "Pulse — Windows Observability";
+/// `NOTIFYICONDATAW::szTip` comporta 128 unidades UTF-16 com o terminador.
+const TOOLTIP_MAX_UTF16: usize = 127;
+
+static LAST_THERMAL_LINE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Tempo até a renovação em formato curto: `45min`, `2h30`, `4d2h`.
+fn format_countdown(seconds: i64) -> String {
+    let minutes = ((seconds.max(0) + 59) / 60).max(1);
+    let (days, hours, mins) = (minutes / 1440, (minutes % 1440) / 60, minutes % 60);
+    if days > 0 && hours == 0 {
+        format!("{days}d")
+    } else if days > 0 {
+        format!("{days}d{hours}h")
+    } else if hours > 0 {
+        format!("{hours}h{mins:02}")
+    } else {
+        format!("{mins}min")
+    }
+}
+
+fn short_window_label(window: &crate::subscription_usage::QuotaWindow) -> String {
+    match window.window_minutes.filter(|minutes| *minutes > 0) {
+        Some(minutes) if minutes % 1440 == 0 => format!("{}d", minutes / 1440),
+        Some(minutes) if minutes % 60 == 0 => format!("{}h", minutes / 60),
+        Some(minutes) => format!("{minutes}min"),
+        None => window.label.chars().take(6).collect(),
+    }
+}
+
+/// Mesma seleção do flyout: a janela mais crítica de cada duração, da menor
+/// para a maior, no máximo duas por provedor.
+fn select_tooltip_windows(
+    windows: &[crate::subscription_usage::QuotaWindow],
+) -> Vec<&crate::subscription_usage::QuotaWindow> {
+    let mut picked: Vec<&crate::subscription_usage::QuotaWindow> = Vec::new();
+    for window in windows
         .iter()
-        .map(|sensor| format!("{} {}", sensor.label, format_celsius(sensor.celsius)))
-        .collect::<Vec<_>>()
-        .join(" · ");
-    format!("Pulse — {readings}")
+        .filter(|window| window.remaining_percent.is_some() && window.unavailable_reason.is_none())
+    {
+        let remaining = window.remaining_percent.unwrap_or(100.0);
+        match picked
+            .iter_mut()
+            .find(|current| current.window_minutes == window.window_minutes)
+        {
+            Some(current) if current.remaining_percent.unwrap_or(100.0) > remaining => {
+                *current = window
+            }
+            Some(_) => {}
+            None => picked.push(window),
+        }
+    }
+    picked.sort_by_key(|window| window.window_minutes.unwrap_or(u64::MAX));
+    picked.truncate(2);
+    picked
+}
+
+/// Uma linha por provedor: `Codex 5h 46% ↻2h30 · 7d 91% ↻6d21h`.
+/// Nunca inventa valor: provedor sem janela medida (ou desativado) fica de fora.
+pub(crate) fn quota_tooltip_lines(
+    providers: &[crate::subscription_usage::ProviderUsage],
+    now_unix_seconds: i64,
+) -> Vec<String> {
+    providers
+        .iter()
+        .filter(|provider| !provider.disabled && provider.status == "available")
+        .filter_map(|provider| {
+            let windows = select_tooltip_windows(&provider.windows);
+            if windows.is_empty() {
+                let credits = provider.credits_remaining.filter(|value| value.is_finite())?;
+                return (provider.id == "openrouter")
+                    .then(|| format!("{} $ {}", provider.provider, format!("{credits:.2}").replace('.', ",")));
+            }
+            let parts = windows
+                .iter()
+                .map(|window| {
+                    let reset = window.resets_at_unix_seconds;
+                    let expired = reset.is_some_and(|reset| reset <= now_unix_seconds);
+                    let remaining = if expired {
+                        100.0
+                    } else {
+                        window.remaining_percent.unwrap_or(0.0)
+                    };
+                    let countdown = match reset {
+                        _ if expired => " ↻renovado".to_owned(),
+                        Some(reset) => format!(" ↻{}", format_countdown(reset - now_unix_seconds)),
+                        None => String::new(),
+                    };
+                    format!("{} {:.0}%{}", short_window_label(window), remaining, countdown)
+                })
+                .collect::<Vec<_>>()
+                .join(" · ");
+            Some(format!("{} {}", provider.provider, parts))
+        })
+        .collect()
+}
+
+/// Monta o tooltip respeitando o limite do Windows: cotas primeiro (é o que
+/// o usuário consulta no hover), temperaturas só se ainda couberem.
+pub(crate) fn compose_tooltip(quota_lines: &[String], thermal: Option<&str>) -> String {
+    let utf16_len = |text: &str| text.encode_utf16().count();
+    let mut lines: Vec<String> = Vec::new();
+    let mut used = 0usize;
+    for line in quota_lines {
+        let cost = utf16_len(line) + usize::from(!lines.is_empty());
+        if used + cost > TOOLTIP_MAX_UTF16 {
+            break;
+        }
+        used += cost;
+        lines.push(line.clone());
+    }
+    if let Some(thermal) = thermal {
+        let line = if lines.is_empty() {
+            format!("Pulse — {thermal}")
+        } else {
+            thermal.to_owned()
+        };
+        if used + utf16_len(&line) + usize::from(!lines.is_empty()) <= TOOLTIP_MAX_UTF16 {
+            lines.push(line);
+        }
+    }
+    if lines.is_empty() {
+        DEFAULT_TOOLTIP.to_owned()
+    } else {
+        lines.join("\n")
+    }
+}
+
+pub fn refresh_quota_tooltip<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    providers: &[crate::subscription_usage::ProviderUsage],
+) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default();
+    let thermal = LAST_THERMAL_LINE
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
+    let tooltip = compose_tooltip(&quota_tooltip_lines(providers, now), thermal.as_deref());
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let _ = tray.set_tooltip(Some(tooltip));
+    }
 }
 
 fn format_celsius(value: f64) -> String {
@@ -518,6 +686,15 @@ pub fn show_main_window(app: AppHandle) -> Result<(), String> {
     show_main_internal(&app)
 }
 
+/// Abre a janela principal já no módulo pedido (ex.: clique num card de
+/// cota no flyout → "Cotas de IA").
+#[tauri::command]
+pub fn show_main_module(app: AppHandle, module: String) -> Result<(), String> {
+    show_main_internal(&app)?;
+    app.emit_to("main", "pulse://navigate-area", module)
+        .map_err(|error| error.to_string())
+}
+
 /// Chamado pelo frontend após a primeira pintura do React. Exibe a janela
 /// `main` já com o tamanho restaurado pelo plugin window-state e o tema
 /// aplicado, eliminando o clarão branco e o salto de resize do arranque.
@@ -551,8 +728,84 @@ pub fn exit_app(app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_celsius, tray_icon_for_theme, tray_tooltip_for_sensors};
+    use super::{
+        compose_tooltip, format_celsius, format_countdown, quota_tooltip_lines,
+        tray_icon_for_theme, tray_tooltip_for_sensors,
+    };
     use crate::performance::ThermalSensor;
+    use crate::subscription_usage::{ProviderUsage, QuotaWindow};
+
+    fn window(id: &str, minutes: u64, remaining: f64, reset: Option<i64>) -> QuotaWindow {
+        QuotaWindow {
+            id: id.into(),
+            label: id.into(),
+            used_percent: Some(100.0 - remaining),
+            remaining_percent: Some(remaining),
+            window_minutes: Some(minutes),
+            resets_at_unix_seconds: reset,
+            reset_description: None,
+            unavailable_reason: None,
+        }
+    }
+
+    fn provider(id: &str, name: &str, windows: Vec<QuotaWindow>) -> ProviderUsage {
+        ProviderUsage {
+            id: id.into(),
+            provider: name.into(),
+            subtitle: String::new(),
+            plan: None,
+            environment: None,
+            status: "available".into(),
+            windows,
+            credits_remaining: None,
+            credits_total: None,
+            credits_used: None,
+            reset_credits_available: None,
+            sampled_at_unix_ms: None,
+            source: String::new(),
+            unavailable_reason: None,
+            disabled: false,
+        }
+    }
+
+    #[test]
+    fn countdown_is_compact() {
+        assert_eq!(format_countdown(45 * 60), "45min");
+        assert_eq!(format_countdown(2 * 3600 + 30 * 60), "2h30");
+        assert_eq!(format_countdown(4 * 86400 + 2 * 3600), "4d2h");
+    }
+
+    #[test]
+    fn tooltip_lists_most_critical_window_per_duration_with_countdown() {
+        let now = 1_000_000;
+        let providers = vec![
+            provider(
+                "antigravity",
+                "Antigravity",
+                vec![
+                    window("gem-7d", 10080, 92.0, Some(now + 4 * 86400 + 2 * 3600)),
+                    window("gem-5h", 300, 97.0, Some(now + 3 * 3600 + 53 * 60)),
+                    window("argon-7d", 10080, 40.0, Some(now + 7 * 86400)),
+                ],
+            ),
+            ProviderUsage { disabled: true, ..provider("codex", "Codex", vec![window("s", 300, 10.0, None)]) },
+        ];
+        assert_eq!(
+            quota_tooltip_lines(&providers, now),
+            vec!["Antigravity 5h 97% ↻3h53 · 7d 40% ↻7d".to_owned()]
+        );
+    }
+
+    #[test]
+    fn tooltip_respects_windows_length_limit_and_keeps_quotas_first() {
+        let lines = vec!["A".repeat(60), "B".repeat(60), "C".repeat(60)];
+        let tooltip = compose_tooltip(&lines, Some("CPU 50 °C"));
+        assert!(tooltip.encode_utf16().count() <= 127);
+        assert!(tooltip.starts_with(&"A".repeat(60)));
+        assert!(!tooltip.contains('C'));
+        assert_eq!(compose_tooltip(&[], None), "Pulse — Windows Observability");
+        assert_eq!(compose_tooltip(&[], Some("CPU 50 °C")), "Pulse — CPU 50 °C");
+    }
 
     #[test]
     fn tray_icon_is_transparent_and_theme_aware() {

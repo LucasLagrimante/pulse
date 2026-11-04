@@ -22,7 +22,7 @@ const SubscriptionUsage = lazy(() => import("./SubscriptionUsage").then(module =
 const ServicesHub = lazy(() => import("./ServicesHub").then(module => ({ default: module.ServicesHub })));
 const UninstallHub = lazy(() => import("./UninstallHub").then(module => ({ default: module.UninstallHub })));
 import { ensureDiskAnalyzerLoaded } from "./diskScanStore";
-import { formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, type ProviderUsage } from "./subscriptionHelpers";
+import { formatCountdown, formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, type ProviderUsage } from "./subscriptionHelpers";
 import { ProviderIcon } from "./ProviderIcon";
 
 export const ALL_NAVIGATION_ITEMS = [
@@ -1991,8 +1991,33 @@ export function TrayFlyout({
               const trayWindows = selectFlyoutQuotaWindows(provider.windows);
               const planName = provider.plan?.trim() ? provider.plan.toUpperCase() : "ATUAL";
 
+              const openQuotas = () => {
+                void Promise.resolve(invoke("show_main_module", { module: "Cotas de IA" })).catch(() => undefined);
+              };
+              const resetSummary = trayWindows
+                .map(window => {
+                  const countdown = formatCountdown(window.resetsAtUnixSeconds);
+                  return countdown ? `${shortQuotaWindowLabel(window)} renova em ${countdown}` : null;
+                })
+                .filter(Boolean)
+                .join(" · ");
+
               return (
-                <article className="flyout-quota-mini-card" key={provider.id}>
+                <article
+                  className="flyout-quota-mini-card is-clickable"
+                  key={provider.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Abrir Cotas de IA: ${provider.provider}${resetSummary ? ` — ${resetSummary}` : ""}`}
+                  title={resetSummary ? `${resetSummary}\nClique para abrir Cotas de IA` : "Clique para abrir Cotas de IA"}
+                  onClick={openQuotas}
+                  onKeyDown={event => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openQuotas();
+                    }
+                  }}
+                >
                   <header className="flyout-quota-head">
                     <div className="flyout-quota-brand">
                       <ProviderIcon providerId={provider.id} size={15} />
@@ -2010,17 +2035,23 @@ export function TrayFlyout({
                       {trayWindows.map((window, idx) => {
                         const remaining = safePercent(window.remainingPercent) ?? 0;
                         const shortLabel = shortQuotaWindowLabel(window);
+                        const countdown = formatCountdown(window.resetsAtUnixSeconds);
 
                         return (
                           <div className="flyout-quota-row" key={window.id || `${provider.id}-${idx}`}>
                             <span className="flyout-quota-window-label" title={window.label}>
                               {shortLabel}
                             </span>
-                            <div className="flyout-quota-bar">
+                            <div className={`flyout-quota-bar${countdown ? " has-countdown" : ""}`}>
                               <i
                                 style={{ width: `${remaining}%` }}
                                 className={remaining <= 20 ? "is-critical" : remaining <= 45 ? "is-warning" : ""}
                               />
+                              {countdown && (
+                                <span className="flyout-quota-countdown" aria-hidden="true">
+                                  {countdown === "renovado" ? "renovado" : `↻ ${countdown}`}
+                                </span>
+                              )}
                             </div>
                             <span className="flyout-quota-value">{Math.round(remaining)}%</span>
                           </div>
@@ -2604,6 +2635,26 @@ function App() {
       if (telemetryTimer !== undefined) window.clearInterval(telemetryTimer);
     };
   }, [isWindowForeground, windowLabel]);
+
+  // Clique num card de cota do flyout: o backend mostra a janela e pede o módulo.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    listen<string>("pulse://navigate-area", event => {
+      if (typeof event.payload === "string" && (ALL_NAVIGATION_ITEMS as readonly string[]).includes(event.payload)) {
+        setActiveArea(event.payload);
+      }
+    })
+      .then(cleanup => {
+        if (disposed) cleanup();
+        else unlisten = cleanup;
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;

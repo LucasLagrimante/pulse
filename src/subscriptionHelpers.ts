@@ -144,3 +144,68 @@ export function reorderIds(ids: string[], fromId: string, toId: string): string[
   next.splice(to, 0, fromId);
   return next;
 }
+
+/** Contagem regressiva curta para hover/tooltip: `45min`, `2h30`, `4d2h`. */
+export function formatCountdown(timestampSeconds: number | null | undefined, nowMs = Date.now()): string | null {
+  if (typeof timestampSeconds !== "number" || !Number.isFinite(timestampSeconds)) return null;
+  const difference = timestampSeconds * 1000 - nowMs;
+  if (difference <= 0) return "renovado";
+  const totalMinutes = Math.max(1, Math.ceil(difference / 60_000));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return hours > 0 ? `${days}d${hours}h` : `${days}d`;
+  if (hours > 0) return `${hours}h${String(minutes).padStart(2, "0")}`;
+  return `${minutes}min`;
+}
+
+/** Nome de coluna por duração da janela (5 horas, Semanal, Mensal…). */
+export function quotaColumnLabel(minutes: number | null): string {
+  if (minutes === 300) return "5 horas";
+  if (minutes === 10080) return "Semanal";
+  if (minutes === 43200) return "Mensal";
+  if (minutes == null) return "Janela";
+  if (minutes % 1440 === 0) return `${minutes / 1440} dias`;
+  if (minutes % 60 === 0) return `${minutes / 60} horas`;
+  return `${minutes} min`;
+}
+
+/** "Gemini Models" → "Gemini"; "Claude and GPT models" → "Claude + GPT". */
+export function shortModelName(model: string): string {
+  const cleaned = model.replace(/\s+models?$/i, "").replace(/\s+and\s+/gi, " + ").trim();
+  return cleaned || model.trim() || "Modelo";
+}
+
+export type QuotaMatrixRow = { model: string; cells: Map<number | null, QuotaWindow> };
+export type QuotaMatrix = { columns: Array<number | null>; rows: QuotaMatrixRow[] };
+
+/**
+ * Agrupa janelas no formato "Modelo · Janela" em matriz modelo × duração.
+ * Retorna null quando o provedor não separa cota por modelo (Codex, Claude),
+ * que continuam na lista simples de barras.
+ */
+export function groupQuotaWindowsByModel(windows: QuotaWindow[]): QuotaMatrix | null {
+  const list = Array.isArray(windows) ? windows : [];
+  if (list.length < 3) return null;
+  const rows = new Map<string, QuotaMatrixRow>();
+  const columns = new Set<number | null>();
+  for (const window of list) {
+    const separator = (window.label || "").lastIndexOf(" · ");
+    if (separator <= 0) return null;
+    const model = window.label.slice(0, separator).trim();
+    const minutes = measuredWindowMinutes(window);
+    columns.add(minutes);
+    const row = rows.get(model) ?? { model, cells: new Map() };
+    // Janela duplicada para o mesmo modelo/duração: mantém a mais crítica.
+    const current = row.cells.get(minutes);
+    if (!current || (safePercent(window.remainingPercent) ?? 100) < (safePercent(current.remainingPercent) ?? 100)) {
+      row.cells.set(minutes, window);
+    }
+    rows.set(model, row);
+  }
+  if (rows.size < 2) return null;
+  return {
+    columns: [...columns].sort((a, b) => (a ?? Number.MAX_SAFE_INTEGER) - (b ?? Number.MAX_SAFE_INTEGER)),
+    rows: [...rows.values()],
+  };
+}

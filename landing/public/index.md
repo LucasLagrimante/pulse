@@ -37,10 +37,10 @@ Inventário completo do boot utilizando o padrão reversível `StartupApproved` 
 Inspeção nativa de serviços do Windows via Service Control Manager / WMI (classificados em *Sistema*, *Usuário* e *Revisão* com evidências técnicas) e conferência/instalação de atualizações pendentes de aplicativos via `winget`.
 
 ### 9. Cotas de assinaturas de IA (com histórico SQLite de 30 dias)
-Acompanhe localmente limites de janela (5h, diária, semanal), saldo de créditos e histórico de 30 dias em SQLite (com pico e média diária) para **Claude Code**, **OpenAI Codex**, **Google Antigravity**, **OpenRouter** e **OpenCode Go**, protegendo chaves opcionais no Windows Credential Manager (`keyring`).
+Acompanhe localmente limites de janela (5h, diária, semanal), saldo de créditos e histórico de 30 dias em SQLite (com pico e média diária) para **Claude Code**, **OpenAI Codex**, **Google Antigravity** (cotas separadas por modelo — Gemini, Claude + GPT e Gemini 4 Argon — numa matriz compacta modelo × janela), **OpenRouter** e **OpenCode Go**, protegendo chaves opcionais no Windows Credential Manager (`keyring`).
 
 ### 10. Áudio, Bandeja do Sistema (Tray Flyout) e Trilha de Auditoria
-Flyout compacto na bandeja do sistema com telemetria instantânea, barras duplas de cotas de IA, **Mixer de Volume Core Audio por aplicativo** (`ISimpleAudioVolume`, mute individual e troca de dispositivo de entrada/saída) e módulo dinâmico de Debug/Auditoria local exportável.
+Flyout compacto na bandeja do sistema com telemetria instantânea, barras duplas de cotas de IA (clique abre direto a aba de Cotas; o hover mostra quanto falta para cada janela renovar, também no tooltip do ícone da bandeja), **Mixer de Volume Core Audio por aplicativo** (`ISimpleAudioVolume`, mute individual e troca de dispositivo de entrada/saída) e módulo dinâmico de Debug/Auditoria local exportável.
 
 ## Como funciona
 

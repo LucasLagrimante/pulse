@@ -939,39 +939,91 @@ fn parse_claude_cli_usage(raw: &str) -> Vec<QuotaWindow> {
     windows
 }
 
+/// Classifica a coluna de limite do `agy /usage` pela duração da janela.
+/// Aceita tanto `Weekly Limit Remaining` quanto o formato novo dos modelos
+/// premium (`Gemini 4 Argon Weekly Limit`, sem a palavra "Remaining").
+fn antigravity_window_kind(kind: &str) -> Option<(&'static str, u64)> {
+    let normalized = kind.to_ascii_lowercase();
+    if normalized.contains("weekly") {
+        Some(("Semanal", 10080))
+    } else if normalized.contains("five hour") || normalized.contains("5 hour") {
+        Some(("5 horas", 300))
+    } else {
+        None
+    }
+}
+
+/// Separa uma linha do `agy /usage` em (modelo, tipo de limite, percentual, reset).
+/// A saída usa TAB entre colunas; sem TAB, cai no fatiamento por espaço
+/// ancorado no primeiro campo terminado em `%`.
+fn split_antigravity_line(line: &str) -> Option<(String, String, String, Option<String>)> {
+    if line.contains('\t') {
+        let fields = line
+            .split('\t')
+            .map(str::trim)
+            .filter(|field| !field.is_empty())
+            .collect::<Vec<_>>();
+        let percent_index = fields.iter().position(|field| field.ends_with('%'))?;
+        if percent_index < 2 {
+            return None;
+        }
+        return Some((
+            fields[0].to_owned(),
+            fields[1..percent_index].join(" "),
+            fields[percent_index].to_owned(),
+            fields.get(percent_index + 1).map(|value| (*value).to_owned()),
+        ));
+    }
+    let fields = line.split_whitespace().collect::<Vec<_>>();
+    let percent_index = fields.iter().position(|field| field.ends_with('%'))?;
+    let lower = fields[..percent_index]
+        .iter()
+        .map(|field| field.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    let kind_start = lower
+        .iter()
+        .position(|field| field == "weekly")
+        .or_else(|| {
+            lower
+                .windows(2)
+                .position(|pair| pair[0] == "five" && pair[1] == "hour")
+        })?;
+    if kind_start == 0 {
+        return None;
+    }
+    Some((
+        fields[..kind_start].join(" "),
+        fields[kind_start..percent_index].join(" "),
+        fields[percent_index].to_owned(),
+        fields.get(percent_index + 1).map(|value| (*value).to_owned()),
+    ))
+}
+
 fn parse_antigravity_cli_usage(raw: &str) -> Vec<QuotaWindow> {
     let mut windows = Vec::new();
     for line in strip_terminal(raw).lines() {
-        let fields = line.split_whitespace().collect::<Vec<_>>();
-        let Some(remaining_index) = fields
-            .iter()
-            .position(|field| field.eq_ignore_ascii_case("remaining"))
-        else {
+        let Some((model, kind, percent, reset)) = split_antigravity_line(line) else {
             continue;
         };
-        let (model_end, label, minutes) =
-            if remaining_index >= 2 && fields[remaining_index - 2].eq_ignore_ascii_case("weekly") {
-                (remaining_index - 2, "Semanal", 10080)
-            } else if remaining_index >= 3
-                && fields[remaining_index - 3].eq_ignore_ascii_case("five")
-                && fields[remaining_index - 2].eq_ignore_ascii_case("hour")
-            {
-                (remaining_index - 3, "5 horas", 300)
-            } else {
-                continue;
-            };
-        let model = fields[..model_end].join(" ");
-        let Some(remaining) = fields
-            .get(remaining_index + 1)
-            .and_then(|value| value.strip_suffix('%'))
+        let Some((label, minutes)) = antigravity_window_kind(&kind) else {
+            continue;
+        };
+        // O nome do modelo pode se repetir na coluna do limite
+        // ("Gemini 4 Argon Weekly Limit"); o rótulo usa só a coluna do modelo.
+        let model = model.trim();
+        if model.is_empty() {
+            continue;
+        }
+        let Some(remaining) = percent
+            .strip_suffix('%')
             .and_then(|value| value.replace(',', ".").parse::<f64>().ok())
             .filter(|value| value.is_finite())
             .map(|value| value.clamp(0.0, 100.0))
         else {
             continue;
         };
-        let reset = fields
-            .get(remaining_index + 2)
+        let reset = reset
+            .as_deref()
             .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
             .map(|date| date.timestamp());
         let expired = reset.is_some_and(|reset| reset * 1000 <= now_unix_ms());
@@ -980,6 +1032,7 @@ fn parse_antigravity_cli_usage(raw: &str) -> Vec<QuotaWindow> {
         } else {
             (Some(100.0 - remaining), Some(remaining), None)
         };
+        // Id posicional preservado: o histórico de 30 dias é indexado por ele.
         windows.push(QuotaWindow {
             id: format!("agy-{}", windows.len()),
             label: format!("{model} · {label}"),
@@ -1810,7 +1863,21 @@ fn notify_subscription_updated(report: &SubscriptionUsageReport) {
     if let Some(app) = APP_HANDLE.get() {
         use tauri::Emitter;
         let _ = app.emit("pulse://subscription-usage-updated", report);
+        // Tooltip nativo do ícone acompanha cada leitura nova de cota.
+        crate::tray::refresh_quota_tooltip(app, &report.providers);
     }
+}
+
+/// Última leitura conhecida (memória ou disco) sem disparar varredura:
+/// usado pelo tooltip da bandeja, que não pode acordar subprocessos.
+pub fn cached_providers_snapshot() -> Vec<ProviderUsage> {
+    let in_memory = CACHE
+        .get()
+        .and_then(|cache| cache.lock().ok())
+        .and_then(|guard| guard.as_ref().map(|cached| cached.report.providers.clone()));
+    in_memory
+        .or_else(|| load_persisted_cache().map(|report| report.providers))
+        .unwrap_or_default()
 }
 
 fn preferences_file() -> PathBuf {
@@ -2469,5 +2536,31 @@ mod tests {
         assert_eq!(windows[0].remaining_percent, Some(52.0));
         assert_eq!(windows[1].window_minutes, Some(300));
         assert!(windows[2].resets_at_unix_seconds.is_some());
+    }
+
+    #[test]
+    fn parses_antigravity_premium_model_line_without_remaining_keyword() {
+        let windows = parse_antigravity_cli_usage(
+            "Gemini Models\tWeekly Limit Remaining\t92%\t2099-11-08T18:57:44Z\nClaude and GPT models\tFive Hour Limit Remaining\t100%\t2099-11-04T21:32:20Z\nGemini 4 Argon\tGemini 4 Argon Weekly Limit\t81%\t2099-11-11T16:32:20Z\n",
+        );
+        assert_eq!(windows.len(), 3);
+        assert_eq!(windows[2].label, "Gemini 4 Argon · Semanal");
+        assert_eq!(windows[2].window_minutes, Some(10080));
+        assert_eq!(windows[2].remaining_percent, Some(81.0));
+        assert_eq!(windows[2].id, "agy-2");
+        assert_eq!(windows[1].label, "Claude and GPT models · 5 horas");
+    }
+
+    #[test]
+    fn parses_antigravity_usage_without_tabs() {
+        let windows = parse_antigravity_cli_usage(
+            "Gemini Models Weekly Limit Remaining 52% 2099-09-18T01:08:10Z\nGemini 4 Argon Gemini 4 Argon Weekly Limit 70% 2099-09-18T01:08:10Z",
+        );
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows[0].label, "Gemini Models · Semanal");
+        // Sem TAB o modelo é tudo antes de "Weekly": o nome repetido entra no rótulo,
+        // mas a janela e o percentual continuam corretos.
+        assert_eq!(windows[1].remaining_percent, Some(70.0));
+        assert_eq!(windows[1].window_minutes, Some(10080));
     }
 }
