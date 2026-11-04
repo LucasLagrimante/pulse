@@ -19,7 +19,8 @@
     "lp:build": "vite build landing --config landing/vite.config.js",
     "lp:preview": "vite preview landing --config landing/vite.config.js",
     "lp:check": "node landing/scripts/check-seo.mjs --dir=landing/dist",
-    "lp:sync": "node scripts/sync-landing.mjs"
+    "lp:sync": "node scripts/sync-landing.mjs",
+    "release:publish": "node scripts/publish-release.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.5",

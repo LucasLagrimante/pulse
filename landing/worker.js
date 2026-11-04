@@ -7,11 +7,14 @@
  *  2. devolver um 404 de verdade (e amigável a agente) para caminhos inexistentes,
  *     em vez do soft-404 que um catch-all de SPA produziria.
  *
- * O instalador (.exe) é um arquivo estático servido pelo binding de assets.
+ * O instalador (.exe) não é servido daqui: `/download/*.exe` redireciona para o
+ * asset da GitHub Release fixado em `release.json` (`installer.assetUrl`), para
+ * que o binário baixado seja sempre o do SHA-256 exibido na página.
  */
 
 const MARKDOWN_ACCEPT = /(?:^|,)\s*text\/markdown(?:\s*[;,][^,]*)?/i;
 const SITE = "https://pulse.lagrimante.com.br";
+const RELEASES_URL = "https://github.com/LucasLagrimante/pulse/releases";
 
 const NOT_FOUND_MARKDOWN = `# Pulse
 
@@ -25,6 +28,27 @@ O recurso solicitado não existe neste domínio.
 - [llms.txt](${SITE}/llms.txt)
 - [Versão em Markdown](${SITE}/index.md)
 `;
+
+// Resolve a URL do instalador pela versão publicada em release.json; se o
+// manifesto faltar ou vier inválido, cai na página da última Release.
+async function installerRedirect(request, env) {
+  let target = `${RELEASES_URL}/latest`;
+  try {
+    const manifestResponse = await env.ASSETS.fetch(new Request(`${SITE}/release.json`, { method: "GET" }));
+    if (manifestResponse.ok) {
+      const assetUrl = (await manifestResponse.json())?.installer?.assetUrl;
+      if (typeof assetUrl === "string" && assetUrl.startsWith(`${RELEASES_URL}/download/`)) {
+        target = assetUrl;
+      }
+    }
+  } catch {
+    // Mantém o fallback para a página da última Release.
+  }
+  return new Response(null, {
+    status: 302,
+    headers: { Location: target, "Cache-Control": "public, max-age=300" },
+  });
+}
 
 function markdownHeaders() {
   return {
@@ -53,6 +77,10 @@ export default {
       }
     }
 
+    if (url.pathname.startsWith("/download/") && url.pathname.endsWith(".exe")) {
+      return installerRedirect(request, env);
+    }
+
     const response = await env.ASSETS.fetch(request);
 
     if (response.status === 404) {
@@ -60,16 +88,6 @@ export default {
         return new Response(NOT_FOUND_MARKDOWN, { status: 404, headers: markdownHeaders() });
       }
       return response;
-    }
-
-    // O instalador precisa de um Content-Type explícito: alguns clientes de
-    // download interpretam application/octet-stream de forma inconsistente.
-    if (url.pathname.startsWith("/download/") && url.pathname.endsWith(".exe")) {
-      const headers = new Headers(response.headers);
-      headers.set("Content-Type", "application/octet-stream");
-      headers.set("Content-Disposition", `attachment; filename="${url.pathname.split("/").pop()}"`);
-      headers.set("Cache-Control", "public, max-age=3600");
-      return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
     }
 
     // A raiz anuncia a variante Markdown para quem faz descoberta por header Link.

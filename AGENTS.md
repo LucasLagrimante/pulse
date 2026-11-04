@@ -204,7 +204,7 @@ pulse/
 ├── landing/                      # Landing Page Oficial Unificada (pulse.lagrimante.com.br)
 │   ├── index.html                # Página completa com Simulador Interativo, SEO e JSON-LD
 │   ├── src/                      # CSS neumórfico (base.css, components.css) e main.js
-│   ├── public/                   # index.md, llms.txt, release.json, sitemap.xml e download/.exe
+│   ├── public/                   # index.md, llms.txt, release.json e sitemap.xml (sem .exe)
 │   ├── scripts/check-seo.mjs     # Auditoria automatizada de SEO, IA, JSON-LD e instalador
 │   ├── worker.js                 # Cloudflare Worker (Content Negotiation Markdown + headers .exe)
 │   └── wrangler.jsonc            # Configuração de deploy Cloudflare Workers
@@ -223,8 +223,9 @@ Como o repositório reside no WSL (`~/projects/pulse`), mas o backend Rust/Tauri
 2. Os artefatos compilados são copiados de volta para o WSL em:
    - Executável standalone: `src-tauri/target/release/pulse-windows.exe`
    - Instalador NSIS: `src-tauri/target/release/bundle/nsis/Pulse_<versão>_x64-setup.exe`
-3. Automaticamente ao final do build, `scripts/sync-landing.mjs` copia o instalador mais recente para `landing/public/download/Pulse-latest-x64-setup.exe`, recalcula o tamanho real em MB e o hash `SHA-256`, atualiza `landing/index.html`, `landing/public/index.md`, `landing/public/llms.txt` e `landing/public/release.json`, compila `landing/dist`, executa `check-seo.mjs` e espelha tudo em `../pulse-lp` (se presente).
-4. **Regra de Paridade Obrigatória**: Sempre que uma nova funcionalidade, módulo ou mudança de comportamento for adicionada ao aplicativo Pulse, a Landing Page (`landing/index.html`, `landing/public/index.md` e `landing/public/llms.txt`) **DEVE** ser atualizada na mesma tarefa.
+3. Automaticamente ao final do build, `scripts/sync-landing.mjs` lê `Pulse_<versão>_x64-setup.exe` do bundle, calcula tamanho e `SHA-256`, grava `installer.assetUrl` (GitHub Release `v<versão>`) em `landing/public/release.json`, atualiza `landing/index.html`, `landing/public/index.md` e `landing/public/llms.txt`, compila `landing/dist`, executa `check-seo.mjs` e espelha tudo em `../pulse-lp` (se presente). O `.exe` **nunca** é versionado: o script apaga cópias em `download/` e falha se o Git ainda rastrear alguma.
+4. `npm run release:publish` envia o instalador para a GitHub Release `v<versão>` (só se o SHA-256 bater com `release.json`). O Worker redireciona `/download/Pulse-latest-x64-setup.exe` para esse asset; publique a Release **antes** de dar push no `pulse-lp`.
+5. **Regra de Paridade Obrigatória**: Sempre que uma nova funcionalidade, módulo ou mudança de comportamento for adicionada ao aplicativo Pulse, a Landing Page (`landing/index.html`, `landing/public/index.md` e `landing/public/llms.txt`) **DEVE** ser atualizada na mesma tarefa.
 
 ---
 
@@ -240,7 +241,8 @@ Sempre valide as alterações antes de finalizar qualquer intervenção:
 | `npm run verify` | Execução encadeada: typecheck, testes e build do app |
 | `npm run build:native` | Build completa WSL -> Windows (Frontend + Rust MSVC + NSIS + Sync Landing Page) |
 | `npm run tauri:build:install` | Executa `build:native` e abre o instalador NSIS no Windows |
-| `npm run lp:sync` | Sincroniza instalador, versão, tamanho e SHA-256 com a Landing Page e valida SEO |
+| `npm run lp:sync` | Sincroniza versão, tamanho e SHA-256 do instalador com a Landing Page e valida SEO |
+| `npm run release:publish` | Publica o instalador na GitHub Release `v<versão>` (`-- --clobber` substitui) |
 | `npm run lp:dev` | Inicia servidor de desenvolvimento da Landing Page (`landing/`) |
 | `npm run lp:check` | Executa auditoria de SEO, JSON-LD, `llms.txt` e instalador na Landing Page |
 

@@ -19,3 +19,6 @@ src-tauri/target/
 .history
 .playwright-mcp
 .wrangler/
+
+# Instalador gerado pelo build (distribuído pela landing/GitHub Releases, não versionado)
+landing/public/download/*.exe

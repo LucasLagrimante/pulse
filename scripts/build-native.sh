@@ -134,9 +134,9 @@ echo
 echo "==> artefatos"
 ls -la src-tauri/target/release/pulse-windows.exe 2>/dev/null || true
 find src-tauri/target/release/bundle -name '*.exe' 2>/dev/null | sed 's/^/    /' || true
-ls -la landing/public/download/Pulse-latest-x64-setup.exe 2>/dev/null || true
 echo
 echo "==> build nativa + landing page sincronizadas com sucesso"
+echo "    publique o instalador com: npm run release:publish"
 
 if [ "$RUN_INSTALLER" -eq 1 ]; then
   node scripts/run-installer.mjs

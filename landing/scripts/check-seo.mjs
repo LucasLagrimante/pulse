@@ -7,7 +7,7 @@
  * meta tags, JSON-LD válido, hierarquia de headings, 404 real e o instalador.
  */
 
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 const args = process.argv.slice(2);
@@ -35,13 +35,19 @@ try {
   problems.push("og-image.png ilegível");
 }
 
-// 3. Instalador para download
-const exe = join(dir, "download", "Pulse-latest-x64-setup.exe");
-if (existsSync(exe)) {
-  const size = statSync(exe).size;
-  check(size > 500_000, `instalador presente (${(size / 1024 / 1024).toFixed(1)} MB)`);
-} else {
-  problems.push("instalador ausente em download/");
+// 3. Instalador: publicado na GitHub Release, nunca empacotado no site
+check(!existsSync(join(dir, "download")), "nenhum .exe empacotado em download/ (instalador vive na GitHub Release)");
+try {
+  const release = JSON.parse(readFileSync(join(dir, "release.json"), "utf8"));
+  const inst = release.installer || {};
+  check(/^[a-f0-9]{64}$/.test(inst.sha256 || ""), "release.json com SHA-256 válido");
+  check(inst.sizeBytes > 500_000, `release.json com tamanho do instalador (${((inst.sizeBytes || 0) / 1024 / 1024).toFixed(1)} MB)`);
+  check(
+    inst.assetUrl === `https://github.com/LucasLagrimante/pulse/releases/download/v${release.version}/Pulse_${release.version}_x64-setup.exe`,
+    "release.json aponta para o asset da GitHub Release da versão atual",
+  );
+} catch (e) {
+  problems.push(`release.json ilegível: ${e.message.slice(0, 60)}`);
 }
 
 // 4. index.html

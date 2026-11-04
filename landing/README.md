@@ -41,7 +41,7 @@ npm run preview   # prévia local do build
 | `src/main.js` | Alternância de tema, FAQ e revelação ao rolar |
 | `worker.js` | Worker: Markdown para agentes, 404 real, headers do instalador |
 | `public/` | `robots.txt`, `llms.txt`, `sitemap.xml`, `index.md`, `og-image.png`, `404.html` |
-| `public/download/` | Instalador do Pulse para Windows 11 |
+| `public/release.json` | Versão, tamanho, SHA-256 e URL do instalador na GitHub Release |
 
 ## Deploy
 

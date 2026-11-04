@@ -10,9 +10,8 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
-  statSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -27,33 +26,50 @@ const tauriConfPath = join(rootDir, "src-tauri", "tauri.conf.json");
 const tauriConf = JSON.parse(readFileSync(tauriConfPath, "utf8"));
 const version = tauriConf.version || "1.0.0";
 
-const downloadDir = join(landingDir, "public", "download");
-mkdirSync(downloadDir, { recursive: true });
-const targetInstallerPath = join(downloadDir, "Pulse-latest-x64-setup.exe");
+// O instalador NÃO é mais copiado para a landing: ele é publicado como asset de
+// GitHub Release (`npm run release:publish`) e o Worker redireciona
+// `/download/Pulse-latest-x64-setup.exe` para a URL fixa da versão em release.json.
+const RELEASES_URL = "https://github.com/LucasLagrimante/pulse/releases";
+const assetName = `Pulse_${version}_x64-setup.exe`;
+const bundleInstallerPath = join(bundleDir, assetName);
+const releaseJsonPath = join(landingDir, "public", "release.json");
 
-if (existsSync(bundleDir)) {
-  const setups = readdirSync(bundleDir)
-    .filter(file => file.toLowerCase().endsWith("-setup.exe"))
-    .map(file => ({ file, mtime: statSync(join(bundleDir, file)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime);
-
-  if (setups.length > 0) {
-    const latestSetup = join(bundleDir, setups[0].file);
-    copyFileSync(latestSetup, targetInstallerPath);
-    console.log(`[sync-landing] Instalador copiado: ${setups[0].file} -> landing/public/download/Pulse-latest-x64-setup.exe`);
+// Remove cópias antigas do .exe (landing local e espelho) para ele nunca voltar ao Git.
+for (const base of [landingDir, siblingLpDir]) {
+  for (const sub of ["public", "dist"]) {
+    rmSync(join(base, sub, "download"), { recursive: true, force: true });
   }
 }
-
-if (!existsSync(targetInstallerPath)) {
-  console.error("[sync-landing] ERRO: Pulse-latest-x64-setup.exe não encontrado em landing/public/download/.");
+const trackedExe = execFileSync("git", ["ls-files", "--", "landing/public/download"], {
+  cwd: rootDir,
+  encoding: "utf8",
+}).trim();
+if (trackedExe) {
+  console.error(`[sync-landing] ERRO: instalador ainda versionado no Git:\n${trackedExe}\nRode: git rm --cached -r landing/public/download`);
   process.exit(1);
 }
 
-const installerBuffer = readFileSync(targetInstallerPath);
-const sizeBytes = installerBuffer.byteLength;
+let sizeBytes;
+let sha256;
+if (existsSync(bundleInstallerPath)) {
+  const installerBuffer = readFileSync(bundleInstallerPath);
+  sizeBytes = installerBuffer.byteLength;
+  sha256 = createHash("sha256").update(installerBuffer).digest("hex");
+  console.log(`[sync-landing] Instalador lido do bundle: ${assetName}`);
+} else {
+  // Sem build local (ex.: só ajuste de texto): mantém os metadados já publicados,
+  // desde que sejam da mesma versão — nunca inventa tamanho/hash.
+  const previous = existsSync(releaseJsonPath) ? JSON.parse(readFileSync(releaseJsonPath, "utf8")) : null;
+  if (previous?.version !== version || !previous?.installer?.sha256) {
+    console.error(`[sync-landing] ERRO: ${assetName} não encontrado em src-tauri/target/release/bundle/nsis/ e release.json não é da versão ${version}. Rode npm run build:native.`);
+    process.exit(1);
+  }
+  sizeBytes = previous.installer.sizeBytes;
+  sha256 = previous.installer.sha256;
+  console.log(`[sync-landing] Bundle ausente; mantendo metadados do release.json v${version}`);
+}
 const sizeMbNumber = sizeBytes / (1024 * 1024);
 const sizeMbFormatted = `${sizeMbNumber.toFixed(1).replace(".", ",")} MB`;
-const sha256 = createHash("sha256").update(installerBuffer).digest("hex");
 const todayIso = new Date().toISOString().slice(0, 10);
 
 // 1. Atualiza landing/public/release.json para consulta programática
@@ -64,6 +80,7 @@ const releaseManifest = {
   installer: {
     filename: "Pulse-latest-x64-setup.exe",
     url: "https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe",
+    assetUrl: `${RELEASES_URL}/download/v${version}/${assetName}`,
     sizeBytes,
     sizeFormatted: sizeMbFormatted,
     sha256,
@@ -71,7 +88,7 @@ const releaseManifest = {
   updatedAt: todayIso,
 };
 writeFileSync(
-  join(landingDir, "public", "release.json"),
+  releaseJsonPath,
   `${JSON.stringify(releaseManifest, null, 2)}\n`,
   "utf8",
 );
