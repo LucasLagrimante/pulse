@@ -1298,12 +1298,19 @@ pub fn open_disk_item(path: String, reveal: bool) -> Result<(), String> {
     if !p.exists() {
         return Err("O caminho não existe ou não pôde ser acessado.".to_owned());
     }
+    // `explorer.exe <arquivo>` executa o arquivo (.exe, .bat, .lnk...). Abrir
+    // direto só vale para pastas; arquivos são apenas selecionados no Explorer.
+    let reveal = reveal || !p.is_dir();
 
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+
         let mut command = crate::process::hidden_command("explorer.exe");
         if reveal {
-            command.arg(format!("/select,{}", p.display()));
+            // O Explorer lê `/select,` da linha crua e espera o caminho entre
+            // aspas logo após a vírgula; caminhos do Windows não contêm `"`.
+            command.raw_arg(format!(r#"/select,"{}""#, p.display()));
         } else {
             command.arg(&p);
         }
