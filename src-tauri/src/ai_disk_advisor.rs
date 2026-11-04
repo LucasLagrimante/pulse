@@ -316,6 +316,16 @@ fn cli_binary(provider_id: &str) -> Result<&'static str, String> {
     }
 }
 
+/// Argumentos que antecedem o prompt para abrir uma sessão interativa.
+/// `claude` e `codex` aceitam o prompt posicional; o `agy` recusa argumento
+/// posicional e encerra na hora (o console abre e fecha), exigindo `-i`.
+fn cli_prompt_flags(cli_cmd: &str) -> &'static [&'static str] {
+    match cli_cmd {
+        "agy" => &["-i"],
+        _ => &[],
+    }
+}
+
 /// Script fixo do `sh -lc` no WSL: o CLI chega em `$0` e o prompt em `$@`.
 /// `set -f` desliga glob e `IFS=` desliga a divisão de palavras, então nomes de
 /// arquivos com `$(...)`, `*` ou espaços chegam literais. Não usa aspas duplas
@@ -466,20 +476,48 @@ pub fn generate_markdown_report(
     md.push_str("2. Indique claramente quais desses itens podem ser apagados com 100% de segurança (sem quebrar programas nem o Windows).\n");
     md.push_str("3. Alerte sobre itens que NÃO devem ser removidos sem cautela.\n");
     md.push_str("4. Forneça comandos práticos e seguros (PowerShell ou CMD) prontos para executar para liberar o espaço identificado.\n");
+    md.push_str("5. Salve a resposta completa em um arquivo Markdown no caminho indicado no prompt.\n");
 
     md
 }
 
-fn save_context_file(content: &str, drive_path: &str) -> Result<PathBuf, String> {
-    let clean_drive = drive_path
+/// Sufixo de arquivo por unidade (`C:\\` → `C`), comum ao contexto e ao plano.
+fn drive_file_suffix(drive_path: &str) -> String {
+    drive_path
         .replace([':', '\\', '/', '.'], "")
         .trim()
-        .to_uppercase();
-    let filename = format!("pulse-disk-analysis-{clean_drive}.md");
+        .to_uppercase()
+}
+
+fn save_context_file(content: &str, drive_path: &str) -> Result<PathBuf, String> {
+    let filename = format!("pulse-disk-analysis-{}.md", drive_file_suffix(drive_path));
     let path = env::temp_dir().join(filename);
     fs::write(&path, content)
         .map_err(|error| format!("Não foi possível salvar o arquivo de contexto: {error}"))?;
     Ok(path)
+}
+
+/// Plano de limpeza que a IA grava ao lado do relatório de contexto
+/// (`pulse-disk-analysis-C.md` → `pulse-disk-cleanup-plan-C.md`).
+fn cleanup_plan_path(context_file_path: &Path) -> PathBuf {
+    let name = context_file_path
+        .file_name()
+        .map(|n| n.to_string_lossy().replace("pulse-disk-analysis-", "pulse-disk-cleanup-plan-"))
+        .unwrap_or_else(|| "pulse-disk-cleanup-plan.md".into());
+    context_file_path.with_file_name(name)
+}
+
+/// Converte `C:\\Users\\x` em `/mnt/c/Users/x` para o CLI que roda dentro do
+/// WSL enxergar o arquivo. Caminhos sem letra de unidade seguem intactos.
+fn to_wsl_path(windows_path: &str) -> String {
+    let mut chars = windows_path.chars();
+    match (chars.next(), chars.next()) {
+        (Some(drive), Some(':')) if drive.is_ascii_alphabetic() => {
+            let rest = chars.as_str().replace('\\', "/");
+            format!("/mnt/{}/{}", drive.to_ascii_lowercase(), rest.trim_start_matches('/'))
+        }
+        _ => windows_path.to_owned(),
+    }
 }
 
 /// Recortes do scan que alimentam o pré-prompt (agrupados para manter a
@@ -522,10 +560,17 @@ fn build_prompt_and_invocation(
         .collect::<Vec<_>>()
         .join(", ");
 
-    let file_path_str = context_file_path.display().to_string();
+    // No WSL o CLI só enxerga o disco do Windows por `/mnt/<letra>`
+    let runs_in_wsl = detection.is_wsl && detection.distro.is_some();
+    let cli_path = |path: &Path| {
+        let raw = path.display().to_string();
+        if runs_in_wsl { to_wsl_path(&raw) } else { raw }
+    };
+    let file_path_str = cli_path(context_file_path);
+    let plan_path_str = cli_path(&cleanup_plan_path(context_file_path));
 
     let default_prompt = format!(
-        "Analise o relatório de armazenamento do Pulse para a unidade {drive_path}. Objetivo: quais pastas e arquivos são maiores e onde tem espaço seguro para limpar o disco e liberar espaço? Relatório detalhado salvo em: '{file_path_str}'. Top pastas: [{dirs_summary}]. Top arquivos: [{files_summary}]. Candidatos a limpeza ({total_candidates}): [{candidates_summary}]. Forneça comandos de PowerShell ou CMD práticos e seguros para liberar espaço.",
+        "Analise o relatório de armazenamento do Pulse para a unidade {drive_path}. Objetivo: quais pastas e arquivos são maiores e onde tem espaço seguro para limpar o disco e liberar espaço? Relatório detalhado salvo em: '{file_path_str}'. Top pastas: [{dirs_summary}]. Top arquivos: [{files_summary}]. Candidatos a limpeza ({total_candidates}): [{candidates_summary}]. Forneça comandos de PowerShell ou CMD práticos e seguros para liberar espaço. Ao final, salve sua resposta completa (maiores consumidores, itens seguros para apagar, alertas do que não remover, comandos e ganho estimado) em Markdown no arquivo '{plan_path_str}', sobrescrevendo se existir, e informe o caminho.",
         total_candidates = format_bytes(total_candidates_bytes)
     );
 
@@ -538,23 +583,24 @@ fn build_prompt_and_invocation(
             .unwrap_or(&default_prompt),
     );
 
+    let cli_args: Vec<String> = cli_prompt_flags(cli_cmd)
+        .iter()
+        .map(|flag| (*flag).to_owned())
+        .chain(std::iter::once(prompt.clone()))
+        .collect();
+
     let invocation = match detection.distro.as_deref().filter(|_| detection.is_wsl) {
         Some(distro) => CliInvocation {
             program: "wsl.exe".into(),
-            args: vec![
-                "-d".into(),
-                distro.to_owned(),
-                "-e".into(),
-                "sh".into(),
-                "-lc".into(),
-                WSL_EXEC_SCRIPT.into(),
-                cli_cmd.to_owned(),
-                prompt.clone(),
-            ],
+            args: ["-d", distro, "-e", "sh", "-lc", WSL_EXEC_SCRIPT, cli_cmd]
+                .into_iter()
+                .map(str::to_owned)
+                .chain(cli_args)
+                .collect(),
         },
         None => CliInvocation {
             program: cli_cmd.to_owned(),
-            args: vec![prompt.clone()],
+            args: cli_args,
         },
     };
 
@@ -734,6 +780,53 @@ pub async fn detect_ai_cli_providers() -> Result<Vec<String>, String> {
 
     store_provider_cache(ids.clone());
     Ok(ids)
+}
+
+/// Situação do plano de limpeza que a IA grava a pedido do pré-prompt.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiCleanupPlanStatus {
+    pub path: String,
+    pub exists: bool,
+    pub modified_at_unix_ms: Option<u64>,
+    pub size_bytes: u64,
+}
+
+fn cleanup_plan_status_at(path: &Path) -> AiCleanupPlanStatus {
+    let meta = fs::metadata(path).ok().filter(|m| m.is_file() && m.len() > 0);
+    AiCleanupPlanStatus {
+        path: path.display().to_string(),
+        exists: meta.is_some(),
+        modified_at_unix_ms: meta
+            .as_ref()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64),
+        size_bytes: meta.map_or(0, |m| m.len()),
+    }
+}
+
+/// Plano da unidade em cache. O caminho é sempre derivado aqui, nunca recebido
+/// da UI, para o comando de abrir não virar um "abra qualquer arquivo".
+fn cached_cleanup_plan_path() -> Option<PathBuf> {
+    let cache = get_cached_disk_scan()?;
+    let filename = format!("pulse-disk-cleanup-plan-{}.md", drive_file_suffix(&cache.result.path));
+    Some(env::temp_dir().join(filename))
+}
+
+#[tauri::command]
+pub fn get_ai_cleanup_plan_status() -> Option<AiCleanupPlanStatus> {
+    cached_cleanup_plan_path().map(|path| cleanup_plan_status_at(&path))
+}
+
+#[tauri::command]
+pub fn open_ai_cleanup_plan() -> Result<(), String> {
+    let path = cached_cleanup_plan_path()
+        .filter(|p| p.is_file())
+        .ok_or_else(|| "O plano de limpeza ainda não foi gerado pela IA.".to_string())?;
+    // Abre no app padrão de .md (o nome termina sempre em `.md`, nunca executa)
+    tauri_plugin_opener::open_path(&path, None::<&str>)
+        .map_err(|error| format!("Não foi possível abrir o plano de limpeza: {error}"))
 }
 
 #[tauri::command]
@@ -1023,8 +1116,72 @@ mod tests {
             &wsl,
         );
         assert_eq!(invocation.program, "wsl.exe");
-        assert_eq!(&invocation.args[..7], ["-d", "Ubuntu", "-e", "sh", "-lc", WSL_EXEC_SCRIPT, "agy"]);
-        assert_eq!(invocation.args.len(), 8);
+        assert_eq!(&invocation.args[..8], ["-d", "Ubuntu", "-e", "sh", "-lc", WSL_EXEC_SCRIPT, "agy", "-i"]);
+        assert_eq!(invocation.args.len(), 9);
+
+        // `agy` recusa prompt posicional: no Windows nativo também precisa de `-i`.
+        let (prompt, invocation) = build_prompt_and_invocation(
+            "agy",
+            "C:\\",
+            Path::new("C:\\Temp\\ctx.md"),
+            &highlights,
+            None,
+            &CliDetection { is_wsl: false, distro: None, ..wsl.clone() },
+        );
+        assert_eq!(invocation.program, "agy");
+        assert_eq!(invocation.args, vec!["-i".to_owned(), prompt]);
+    }
+
+    #[test]
+    fn default_prompt_asks_to_save_cleanup_plan_with_cli_visible_path() {
+        let highlights = ScanHighlights { top_dirs: &[], top_files: &[], candidates: &[], total_candidates_bytes: 0 };
+        let native = CliDetection { is_available: true, is_wsl: false, distro: None, environment: String::new() };
+        let ctx = Path::new("C:\\Temp\\pulse-disk-analysis-C.md");
+
+        let (prompt, _) = build_prompt_and_invocation("claude", "C:\\", ctx, &highlights, None, &native);
+        assert!(prompt.contains("'C:\\Temp\\pulse-disk-cleanup-plan-C.md'"));
+
+        let wsl = CliDetection { is_wsl: true, distro: Some("Ubuntu".into()), ..native };
+        let (prompt, _) = build_prompt_and_invocation("claude", "C:\\", ctx, &highlights, None, &wsl);
+        assert!(prompt.contains("'/mnt/c/Temp/pulse-disk-analysis-C.md'"));
+        assert!(prompt.contains("'/mnt/c/Temp/pulse-disk-cleanup-plan-C.md'"));
+
+        // Prompt personalizado é respeitado sem instrução extra
+        let (prompt, _) = build_prompt_and_invocation("claude", "C:\\", ctx, &highlights, Some("só liste"), &wsl);
+        assert_eq!(prompt, "só liste");
+    }
+
+    #[test]
+    fn cleanup_plan_status_ignores_missing_and_empty_files() {
+        let dir = env::temp_dir().join(format!("pulse-plan-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let plan = dir.join("pulse-disk-cleanup-plan-C.md");
+
+        assert!(!cleanup_plan_status_at(&plan).exists);
+        fs::write(&plan, "").unwrap();
+        assert!(!cleanup_plan_status_at(&plan).exists, "arquivo vazio = IA ainda escrevendo");
+        fs::write(&plan, "# Plano").unwrap();
+        let status = cleanup_plan_status_at(&plan);
+        assert!(status.exists);
+        assert_eq!(status.size_bytes, 7);
+        assert!(status.modified_at_unix_ms.is_some());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn drive_suffix_matches_context_and_plan_names() {
+        assert_eq!(drive_file_suffix("c:\\"), "C");
+        assert_eq!(
+            cleanup_plan_path(Path::new("pulse-disk-analysis-C.md")),
+            PathBuf::from(format!("pulse-disk-cleanup-plan-{}.md", drive_file_suffix("C:\\")))
+        );
+    }
+
+    #[test]
+    fn to_wsl_path_maps_drive_letter_and_keeps_others() {
+        assert_eq!(to_wsl_path("D:\\Dados\\a b.md"), "/mnt/d/Dados/a b.md");
+        assert_eq!(to_wsl_path("/tmp/x.md"), "/tmp/x.md");
     }
 
     #[test]

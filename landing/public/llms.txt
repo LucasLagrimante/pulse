@@ -37,7 +37,7 @@ Quando NÃO usar:
 1. **Visão geral** — CPU, memória, disco por volume, GPU, rede e processos em uma tela.
 2. **Atividade** — processos agrupados por aplicativo com ordenação por RAM, CPU e GPU, detecção de `vmmemWSL` e encerramento seguro de árvore.
 3. **Desempenho** — gráficos SVG em tempo real e sensores térmicos reais (`Indisponível` com justificativa quando não exposto pelo hardware).
-4. **Armazenamento (TreeSize + Treemap)** — árvore agregada, mapa visual proporcional, arquivos recentes e pastas personalizadas multi-volume com proteção anti-DPC e diagnóstico inteligente via terminal de IA (Claude, Antigravity e Codex CLI, detectados localmente sem ligar o WSL) para mapear maiores pastas e liberar espaço.
+4. **Armazenamento (TreeSize + Treemap)** — árvore agregada, mapa visual proporcional, arquivos recentes e pastas personalizadas multi-volume com proteção anti-DPC e diagnóstico inteligente via terminal de IA (Claude, Antigravity e Codex CLI, detectados localmente sem ligar o WSL) para mapear maiores pastas e liberar espaço; o plano de limpeza gravado pela IA abre direto no Pulse.
 5. **Limpeza local controlada** — categorias seguras em whitelist com estimativa de espaço antes da ação.
 6. **Desinstalação rastreada** — Ponto de Restauração do Sistema + desinstalador oficial do fabricante + varredura conservadora de resíduos de registro e pastas.
 7. **Inicialização e segurança** — controle reversível via `StartupApproved` (0x02/0x03), impacto de boot em ms (Event ID 101/102) e evidências verificáveis.

@@ -254,4 +254,37 @@ describe("AiDiskAdvisorModal", () => {
       expect(invoke).toHaveBeenCalledWith("get_ai_disk_analysis_preview", expect.objectContaining({ provider: "codex" }));
     });
   });
+
+  it("shows the AI cleanup plan card only when the plan file exists and opens it", async () => {
+    const plan = {
+      path: "C:\\Users\\Lucas\\AppData\\Local\\Temp\\pulse-disk-cleanup-plan-C.md",
+      exists: false,
+      modifiedAtUnixMs: null as number | null,
+      sizeBytes: 0,
+    };
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_ai_disk_analysis_preview") return Promise.resolve(mockPreview) as never;
+      if (command === "get_ai_cleanup_plan_status") return Promise.resolve({ ...plan }) as never;
+      return Promise.resolve() as never;
+    });
+
+    const { rerender } = render(
+      <AiDiskAdvisorModal isOpen={true} onClose={vi.fn()} cachedScan={mockCachedScan} />,
+    );
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("get_ai_cleanup_plan_status"));
+    expect(screen.queryByText("ABRIR PLANO")).not.toBeInTheDocument();
+
+    // A IA gravou o arquivo: reabrir o modal já mostra o card
+    Object.assign(plan, { exists: true, modifiedAtUnixMs: 1_725_000_000_000, sizeBytes: 2048 });
+    rerender(<AiDiskAdvisorModal isOpen={false} onClose={vi.fn()} cachedScan={mockCachedScan} />);
+    rerender(<AiDiskAdvisorModal isOpen={true} onClose={vi.fn()} cachedScan={mockCachedScan} />);
+
+    fireEvent.click(await screen.findByText("ABRIR PLANO"));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("open_ai_cleanup_plan"));
+
+    fireEvent.click(screen.getByText("Mostrar na Pasta"));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("open_disk_item", { path: plan.path, reveal: true }),
+    );
+  });
 });

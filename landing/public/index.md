@@ -22,7 +22,7 @@ Processos agrupados por aplicativo com consumo real de Memória, CPU e GPU, orde
 Gráficos SVG vetoriais de CPU, RAM, GPU, download, upload e discos físicos, além de sensores térmicos verificados. Sensores sem suporte do hardware aparecem como **Indisponível** com justificativa técnica, nunca como zero fictício.
 
 ### 4. Análise de armazenamento (TreeSize + Treemap) e diagnóstico via IA CLI
-Mapa visual proporcional (Treemap), árvore agregada da ocupação do disco, arquivos acessados recentemente e varredura de pastas personalizadas em múltiplos volumes, com proteção anti-DPC (`spawn_blocking` + `yield_now` a cada 15 arquivos) para nunca travar o cursor do mouse. Inclui integração com terminal de IA (Claude Code, Antigravity e Codex CLI; o botão mostra só os CLIs instalados, sem ligar o WSL) que gera relatórios estruturados das maiores pastas e pré-prompts prontos para encontrar e liberar espaço com segurança.
+Mapa visual proporcional (Treemap), árvore agregada da ocupação do disco, arquivos acessados recentemente e varredura de pastas personalizadas em múltiplos volumes, com proteção anti-DPC (`spawn_blocking` + `yield_now` a cada 15 arquivos) para nunca travar o cursor do mouse. Inclui integração com terminal de IA (Claude Code, Antigravity e Codex CLI; o botão mostra só os CLIs instalados, sem ligar o WSL) que gera relatórios estruturados das maiores pastas e pré-prompts prontos para encontrar e liberar espaço com segurança; o plano de limpeza que a IA grava aparece no próprio Pulse para abrir com um clique.
 
 ### 5. Limpeza local controlada
 Categorias seguras em whitelist (temporários, caches e relatórios conhecidos), com estimativa exata de tamanho antes da ação. O Pulse nunca apaga nada por conta própria.

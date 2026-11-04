@@ -5800,28 +5800,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   }
 }
 
-.disk-ai-subtoolbar-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: var(--neu-surface);
-  border: 1px solid var(--neu-divider);
-  border-radius: 4px;
-  color: var(--neu-text-primary);
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 0.65rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 120ms ease;
-}
-
-.disk-ai-subtoolbar-btn:hover {
-  background: var(--neu-surface-hover);
-  border-color: var(--neu-accent);
-  color: var(--neu-accent);
-}
-
 .disk-ai-modal-backdrop {
   z-index: 1050;
 }
@@ -5998,6 +5976,38 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   background: color-mix(in srgb, var(--neu-success) 15%, var(--neu-surface));
   border: 1px solid color-mix(in srgb, var(--neu-success) 35%, var(--neu-divider));
   color: var(--neu-success);
+}
+
+.disk-ai-plan-card {
+  margin: 10px 20px 0;
+  padding: 10px 12px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: color-mix(in srgb, var(--neu-accent) 10%, var(--neu-surface));
+  border: 1px solid color-mix(in srgb, var(--neu-accent) 35%, var(--neu-divider));
+}
+
+.disk-ai-plan-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.disk-ai-plan-info .context-path {
+  overflow-wrap: anywhere;
+}
+
+.disk-ai-plan-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .disk-ai-modal-body {

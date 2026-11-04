@@ -37,6 +37,16 @@ export type AiTerminalLaunchResult = {
   message: string;
 };
 
+export type AiCleanupPlanStatus = {
+  path: string;
+  exists: boolean;
+  modifiedAtUnixMs: number | null;
+  sizeBytes: number;
+};
+
+/** Intervalo de checagem do plano que a IA grava enquanto o modal está aberto. */
+export const CLEANUP_PLAN_POLL_MS = 4000;
+
 export type SupportedAiProvider = "antigravity" | "claude" | "codex";
 
 export const AI_PROVIDERS: Array<{
@@ -94,6 +104,30 @@ export function AiDiskAdvisorModal({
   const [copiedType, setCopiedType] = useState<"command" | "prompt" | null>(
     null,
   );
+
+  const [planStatus, setPlanStatus] = useState<AiCleanupPlanStatus | null>(null);
+
+  // A IA grava o plano no próprio ritmo: checa ao abrir e periodicamente
+  useEffect(() => {
+    if (!isOpen || !cachedScan) return;
+
+    let isMounted = true;
+    const refresh = () => {
+      invoke<AiCleanupPlanStatus | null>("get_ai_cleanup_plan_status")
+        .then(status => {
+          if (isMounted) setPlanStatus(status ?? null);
+        })
+        .catch(() => {
+          if (isMounted) setPlanStatus(null);
+        });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, CLEANUP_PLAN_POLL_MS);
+    return () => {
+      isMounted = false;
+      window.clearInterval(timer);
+    };
+  }, [isOpen, cachedScan]);
 
   // Cada abertura começa no provedor que o botão estava exibindo
   useEffect(() => {
@@ -180,6 +214,19 @@ export function AiDiskAdvisorModal({
       );
     } finally {
       setLaunching(false);
+    }
+  };
+
+  const handleOpenPlan = async (reveal: boolean) => {
+    if (!planStatus?.exists) return;
+    try {
+      if (reveal) {
+        await invoke("open_disk_item", { path: planStatus.path, reveal: true });
+      } else {
+        await invoke("open_ai_cleanup_plan");
+      }
+    } catch (err) {
+      setError(typeof err === "string" ? err : "Não foi possível abrir o plano de limpeza.");
     }
   };
 
@@ -274,6 +321,39 @@ export function AiDiskAdvisorModal({
           <div className="disk-ai-alert success" role="status">
             <strong>✓ {launchResult.terminalType} iniciado!</strong>
             <span>{launchResult.message}</span>
+          </div>
+        )}
+
+        {planStatus?.exists && (
+          <div className="disk-ai-plan-card" role="status">
+            <div className="disk-ai-plan-info">
+              <span className="section-label">PLANO DE LIMPEZA GERADO PELA IA</span>
+              <span className="section-hint">
+                {planStatus.modifiedAtUnixMs
+                  ? `Atualizado em ${new Date(planStatus.modifiedAtUnixMs).toLocaleString("pt-BR")}`
+                  : "Arquivo disponível"}
+                {" · "}
+                <code className="context-path font-mono" title={planStatus.path}>
+                  {planStatus.path}
+                </code>
+              </span>
+            </div>
+            <div className="disk-ai-plan-actions">
+              <button
+                type="button"
+                className="text-link-btn"
+                onClick={() => void handleOpenPlan(true)}
+              >
+                Mostrar na Pasta
+              </button>
+              <button
+                type="button"
+                className="button-primary"
+                onClick={() => void handleOpenPlan(false)}
+              >
+                ABRIR PLANO
+              </button>
+            </div>
           </div>
         )}
 

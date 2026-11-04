@@ -129,6 +129,8 @@ pub fn run() {
             ai_disk_advisor::detect_ai_cli_providers,
             ai_disk_advisor::get_ai_disk_analysis_preview,
             ai_disk_advisor::launch_ai_disk_terminal,
+            ai_disk_advisor::get_ai_cleanup_plan_status,
+            ai_disk_advisor::open_ai_cleanup_plan,
             disk_cleanup::analyze_disk_cleanup,
             disk_cleanup::clean_disk_categories,
             services::list_windows_services,

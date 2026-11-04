@@ -859,14 +859,6 @@ export function DiskAnalyzer({
               </button>
             </div>
 
-            {/* Atalho para Análise com IA no Terminal */}
-            <AiProviderCycleButton
-              className="disk-ai-subtoolbar-btn"
-              available={availableAiProviders}
-              prefix="ANALISAR COM"
-              onOpen={openAiModal}
-            />
-
             {/* Filtro: Arquivos vs Pastas Mais Pesados */}
             <div className="disk-type-filter" role="group" aria-label="Filtro de tipo">
               <button
