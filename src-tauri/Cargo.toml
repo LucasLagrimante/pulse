@@ -3,6 +3,9 @@ name = "pulse-windows"
 version = "1.0.0"
 description = "Windows health and activity monitor"
 authors = ["Lucas Lagrimante"]
+license = "MIT"
+repository = "https://github.com/LucasLagrimante/pulse"
+homepage = "https://pulse.lagrimante.com.br/"
 edition = "2021"
 
 [lib]
