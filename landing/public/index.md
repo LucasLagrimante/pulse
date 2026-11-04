@@ -2,8 +2,8 @@
 
 Central nativa de observabilidade, diagnóstico e controle local para Windows 11. O Pulse reúne em um único aplicativo o que antes exigia sete utilitários separados: monitor de recursos, gerenciador de tarefas, analisador de disco (TreeSize), inventário de inicialização, desinstalador com varredura de resíduos, console de serviços/atualizações e mixer de volume por aplicativo, além de monitorar localmente suas assinaturas de IA.
 
-- **Gratuito**, código aberto e sem cadastro
-- **100% local**: sem conta, sem telemetria, sem nuvem
+- **Gratuito**, código aberto (MIT) e sem cadastro
+- **Local por padrão**: sem conta, sem telemetria e sem servidor do Pulse
 - **Windows 11 x64**, instalador NSIS de 3,5 MB
 - Versão atual: 1.0.0
 - SHA-256: `db78dc5aae1da0ac4991d9c0c26e09c94f0b2bd3dc1b601c6d3db1ebfba2e4a5`
@@ -21,8 +21,8 @@ Processos agrupados por aplicativo com consumo real de Memória, CPU e GPU, orde
 ### 3. Desempenho e telemetria em tempo real
 Gráficos SVG vetoriais de CPU, RAM, GPU, download, upload e discos físicos, além de sensores térmicos verificados. Sensores sem suporte do hardware aparecem como **Indisponível** com justificativa técnica, nunca como zero fictício.
 
-### 4. Análise de armazenamento (TreeSize + Treemap)
-Mapa visual proporcional (Treemap), árvore agregada da ocupação do disco, arquivos acessados recentemente e varredura de pastas personalizadas em múltiplos volumes, com proteção anti-DPC (`spawn_blocking` + `yield_now` a cada 15 arquivos) para nunca travar o cursor do mouse.
+### 4. Análise de armazenamento (TreeSize + Treemap) e diagnóstico via IA CLI
+Mapa visual proporcional (Treemap), árvore agregada da ocupação do disco, arquivos acessados recentemente e varredura de pastas personalizadas em múltiplos volumes, com proteção anti-DPC (`spawn_blocking` + `yield_now` a cada 15 arquivos) para nunca travar o cursor do mouse. Inclui integração com terminal de IA (Claude Code, Antigravity e Codex CLI) que gera relatórios estruturados das maiores pastas e pré-prompts prontos para encontrar e liberar espaço com segurança.
 
 ### 5. Limpeza local controlada
 Categorias seguras em whitelist (temporários, caches e relatórios conhecidos), com estimativa exata de tamanho antes da ação. O Pulse nunca apaga nada por conta própria.
@@ -56,16 +56,18 @@ Flyout compacto na bandeja do sistema com telemetria instantânea, barras duplas
 
 ## Privacidade por arquitetura
 
-A privacidade do Pulse não é uma promessa de política: é uma consequência de como o aplicativo foi construído. Não existe servidor para onde enviar dados, porque não existe servidor.
+A privacidade do Pulse não é uma promessa de política: é uma consequência de como o aplicativo foi construído. Não existe servidor do Pulse para onde enviar dados, porque não existe servidor do Pulse.
 
 - Sem conta e sem login.
 - Sem telemetria: nenhuma leitura do sistema é transmitida para fora.
 - Sem dados fictícios: sensor sem suporte aparece como Indisponível.
 - Sem ações destrutivas: nada é apagado ou alterado sem confirmação explícita.
+- Rede só quando você pede: Cotas de IA consultam direto os endpoints oficiais de cada provedor; o assistente de armazenamento envia ao CLI de IA escolhido um resumo com nomes e caminhos do scan e mostra o comando antes de executar.
+- Código aberto sob licença MIT.
 
 ## Links
 
 - Landing page: https://pulse.lagrimante.com.br/
 - Manifesto de release (JSON): https://pulse.lagrimante.com.br/release.json
-- Código-fonte: https://github.com/LucasLagrimante/pulse
+- Código-fonte (licença MIT): https://github.com/LucasLagrimante/pulse
 - Autor: https://lucaslagrimante.github.io/

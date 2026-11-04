@@ -1,6 +1,6 @@
 # Pulse
 
-Central nativa para Windows 11 que reúne observabilidade, diagnóstico e controle local do sistema em uma interface única. O Pulse explica atividade de processos, desempenho, armazenamento, inicialização e sinais de segurança sem conta, telemetria ou envio de dados para a nuvem.
+Central nativa para Windows 11 que reúne observabilidade, diagnóstico e controle local do sistema em uma interface única. O Pulse explica atividade de processos, desempenho, armazenamento, inicialização e sinais de segurança sem conta e sem telemetria. Veja em [Privacidade e rede](#privacidade-e-rede) as únicas funções opcionais que acessam a internet.
 
 > [!IMPORTANT]
 > Compile e execute o Pulse em um terminal **Windows** (PowerShell, Prompt de Comando ou Windows Terminal com perfil PowerShell). O build nativo não funciona a partir do WSL sem instalar e configurar um toolchain Rust para Linux com cross-compilation para MSVC.
@@ -12,7 +12,7 @@ Central nativa para Windows 11 que reúne observabilidade, diagnóstico e contro
 - Análise de armazenamento em árvore e arquivos recentes.
 - Inventário de inicialização e evidências de impacto no boot.
 - Diagnóstico local e painel compacto na bandeja do sistema.
-- Dados 100% locais e ações operacionais não destrutivas.
+- Dados locais por padrão e ações operacionais não destrutivas.
 
 ## Requisitos
 
@@ -35,10 +35,11 @@ Se `cargo` não for reconhecido depois de instalar o Rust, feche e abra o termin
 
 ## Instalação e desenvolvimento
 
-Abra o PowerShell na raiz do repositório:
+Clone o repositório e abra o PowerShell na raiz dele:
 
 ```powershell
-cd C:\Users\lucas\Projects\pulse
+git clone https://github.com/LucasLagrimante/pulse.git
+cd pulse
 npm install
 npm run tauri dev
 ```
@@ -47,10 +48,9 @@ O primeiro build demora mais porque o Cargo precisa baixar e compilar as depend�
 
 ## Gerar o instalador
 
-No PowerShell, execute:
+No PowerShell, na raiz do repositório, execute:
 
 ```powershell
-cd C:\Users\lucas\Projects\pulse
 npm install
 npm run verify
 npm run tauri:build -- --bundles nsis
@@ -75,7 +75,7 @@ npm run tauri:build:install
 
 ## Atenção ao WSL
 
-Estar em `/mnt/c/Users/lucas/Projects/pulse` **não transforma o terminal WSL em um terminal Windows**. Neste caso, o comando pode falhar assim:
+Estar em `/mnt/c/Users/<usuario>/Projects/pulse` **não transforma o terminal WSL em um terminal Windows**. Neste caso, o comando pode falhar assim:
 
 ```text
 failed to run 'cargo metadata': No such file or directory (os error 2)
@@ -84,7 +84,7 @@ failed to run 'cargo metadata': No such file or directory (os error 2)
 Esse erro significa que o Tauri tentou encontrar o `cargo` dentro do Linux. Saia do WSL e rode o build no PowerShell. Se estiver em um prompt WSL e quiser iniciar o comando no Windows sem trocar de janela, use:
 
 ```bash
-powershell.exe -NoProfile -Command "Set-Location 'C:\Users\lucas\Projects\pulse'; npm run tauri:build -- --bundles nsis"
+powershell.exe -NoProfile -Command "Set-Location 'C:\caminho\para\pulse'; npm run tauri:build -- --bundles nsis"
 ```
 
 ## Verificação
@@ -111,4 +111,21 @@ memory/       Decisões e lições arquiteturais do projeto
 - Varreduras de arquivos são limitadas para preservar a responsividade do Windows.
 - Operações potencialmente destrutivas não fazem parte do produto.
 
-A implementação Python original permanece preservada em [`legacy-python/`](legacy-python/) e no commit `50ac7f4`.
+A implementação Python original foi removida da árvore atual e permanece no histórico Git (commit `50ac7f4`).
+
+## Privacidade e rede
+
+O monitoramento (processos, desempenho, armazenamento, inicialização, serviços, áudio e debug) roda inteiramente na máquina, sem conta e sem telemetria. Duas funções opcionais acessam a internet, e só quando o usuário as usa:
+
+- **Cotas de IA**: consulta o uso das suas assinaturas diretamente nos endpoints oficiais de cada provedor (Anthropic, OpenAI, Google, OpenRouter, OpenCode) com as credenciais que já existem na máquina ou chaves salvas no Credential Manager do Windows. Nada passa por servidores do Pulse.
+- **Assistente de armazenamento com IA**: abre o CLI escolhido (Claude Code, Codex ou Antigravity) com um resumo do scan de disco. Esse resumo inclui nomes e caminhos de pastas e arquivos e é enviado ao provedor do CLI. O comando completo é exibido antes da execução.
+
+Atualizações de aplicativos usam o `winget` do próprio Windows.
+
+## Segurança
+
+Encontrou uma vulnerabilidade? Não abra uma issue pública: use [GitHub Security Advisories](https://github.com/LucasLagrimante/pulse/security/advisories/new) ou escreva para llagrimante@gmail.com.
+
+## Licença
+
+Distribuído sob a licença [MIT](LICENSE).
