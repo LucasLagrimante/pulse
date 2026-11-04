@@ -24,14 +24,14 @@
     "release:publish": "node scripts/publish-release.mjs"
   },
   "dependencies": {
-    "@tauri-apps/api": "2.11.5",
+    "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-opener": "2.5.5",
     "lucide-react": "^1.46.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.9.6",
+    "@tauri-apps/cli": "2.11.5",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
