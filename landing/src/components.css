@@ -1370,6 +1370,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.signing-note {
+  max-width: 680px;
+  margin: 12px auto 0;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--text-caption);
+  text-align: center;
+}
+.signing-note a {
+  color: var(--accent);
+}
 .copy-hash-btn {
   padding: 7px 13px;
   border-radius: 10px;

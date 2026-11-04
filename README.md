@@ -122,6 +122,15 @@ O monitoramento (processos, desempenho, armazenamento, inicialização, serviço
 
 Atualizações de aplicativos usam o `winget` do próprio Windows.
 
+## Política de assinatura de código
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+- O instalador oficial é compilado a partir deste repositório pelo workflow [`release.yml`](.github/workflows/release.yml), em runner hospedado pelo GitHub, e assinado pela SignPath só depois da aprovação manual de cada release.
+- Committers e revisores: [Lucas Lagrimante](https://github.com/LucasLagrimante)
+- Aprovadores: [Lucas Lagrimante](https://github.com/LucasLagrimante)
+- Privacidade: o Pulse não transfere informação para outros sistemas em rede, a menos que o usuário peça explicitamente. As exceções estão em [Privacidade e rede](#privacidade-e-rede).
+
 ## Segurança
 
 Encontrou uma vulnerabilidade? Não abra uma issue pública: use [GitHub Security Advisories](https://github.com/LucasLagrimante/pulse/security/advisories/new) ou escreva para llagrimante@gmail.com.
