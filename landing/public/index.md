@@ -5,8 +5,8 @@ Central nativa de observabilidade, diagnóstico e controle local para Windows 11
 - **Gratuito**, código aberto (MIT) e sem cadastro
 - **Local por padrão**: sem conta, sem telemetria e sem servidor do Pulse
 - **Windows 11 x64**, instalador NSIS de 3,5 MB
-- Versão atual: 1.0.0
-- SHA-256: `047c76903a0871e17ec805a191cd4021ebeee02b01d8f680c74e91b50a54a550`
+- Versão atual: 1.0.1
+- SHA-256: `2b5823ae9e5b12ddb611216db048bd3bc1c8ff4f26e8005ca793ef8eda8d33ff`
 - Assinatura de código: free code signing provided by SignPath.io, certificate by SignPath Foundation (em adoção; até a primeira versão assinada o SmartScreen pode avisar). Política: https://github.com/LucasLagrimante/pulse#política-de-assinatura-de-código
 - Site: https://pulse.lagrimante.com.br/
 - Download direto: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe
