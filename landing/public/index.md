@@ -70,4 +70,5 @@ A privacidade do Pulse não é uma promessa de política: é uma consequência d
 - Landing page: https://pulse.lagrimante.com.br/
 - Manifesto de release (JSON): https://pulse.lagrimante.com.br/release.json
 - Código-fonte (licença MIT): https://github.com/LucasLagrimante/pulse
+- Releases (instalador + SHA-256): https://github.com/LucasLagrimante/pulse/releases
 - Autor: https://lucaslagrimante.github.io/

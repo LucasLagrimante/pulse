@@ -54,7 +54,7 @@
       "alternateName": ["Pulse Windows Observability"],
       "url": "https://pulse.lagrimante.com.br/",
       "inLanguage": "pt-BR",
-      "description": "Central de observabilidade e diagnóstico para Windows 11: recursos, processos, armazenamento, inicialização, desinstalação, serviços, áudio e cotas de IA em uma interface única, com dados 100% locais.",
+      "description": "Central de observabilidade e diagnóstico para Windows 11: recursos, processos, armazenamento, inicialização, desinstalação, serviços, áudio e cotas de IA em uma interface única, local por padrão e de código aberto (MIT).",
       "author": {
         "@type": "Person",
         "name": "Lucas Lagrimante",
@@ -91,6 +91,7 @@
         "priceCurrency": "BRL"
       },
       "isAccessibleForFree": true,
+      "license": "https://opensource.org/licenses/MIT",
       "author": {
         "@type": "Person",
         "name": "Lucas Lagrimante",
@@ -108,7 +109,7 @@
           "name": "O Pulse envia meus dados para a nuvem?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Não. O Pulse foi projetado para processar tudo localmente na sua máquina. Não há conta de usuário, não há telemetria para servidores externos e nenhuma leitura do sistema é transmitida para a nuvem."
+            "text": "Não. O Pulse processa tudo localmente: não há conta, telemetria nem servidor do Pulse. A rede só é usada quando você pede: as Cotas de IA consultam direto os endpoints oficiais de cada provedor, e o assistente de armazenamento envia ao CLI de IA escolhido um resumo com nomes e caminhos do scan, mostrando o comando antes de executar."
           }
         },
         {
@@ -141,6 +142,22 @@
           "acceptedAnswer": {
             "@type": "Answer",
             "text": "O Pulse exibe o valor como Indisponível, acompanhado da justificativa técnica. Ele nunca inventa um zero ou um percentual fictício para preencher a interface."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "O Pulse é open source?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sim. Todo o código do Pulse (backend Rust, interface React e esta landing page) é aberto no GitHub sob a licença MIT, em https://github.com/LucasLagrimante/pulse. Você pode auditar, compilar e contribuir."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Como confiro se o instalador é legítimo?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "O instalador é publicado nas Releases do repositório no GitHub, e o SHA-256 exibido na página de download é o do mesmo arquivo. Compare o hash com Get-FileHash no PowerShell antes de instalar, ou compile a partir do código-fonte."
           }
         },
         {
@@ -196,6 +213,11 @@
         </nav>
 
         <div class="header-actions">
+          <a class="theme-toggle" href="https://github.com/LucasLagrimante/pulse" rel="noopener" aria-label="Código-fonte do Pulse no GitHub (licença MIT)" title="Código-fonte no GitHub">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49v-1.7c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.34 1.12 2.91.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.35 4.8-4.58 5.05.36.32.68.95.68 1.92v2.85c0 .27.18.59.69.49A10.05 10.05 0 0 0 22 12.25C22 6.58 17.52 2 12 2z" />
+            </svg>
+          </a>
           <button
             type="button"
             class="theme-toggle"
@@ -229,7 +251,7 @@
           <div class="hero-top-row" data-reveal>
             <span class="hero-badge">
               <span class="dot" aria-hidden="true"></span>
-              100% local · zero telemetria · Windows 11 nativo
+              Open source (MIT) · zero telemetria · Windows 11 nativo
             </span>
             <span class="hero-version-pill">
               <span data-release-version>v1.0.0</span> · Rust + Tauri 2 + React 19
@@ -242,7 +264,7 @@
             O Pulse substitui sete utilitários isolados — Gerenciador de Tarefas, Monitor de
             Recursos, TreeSize, Autoruns, Desinstalador, Serviços e Mixer de Volume — além de
             monitorar suas assinaturas de IA localmente. Leitura direta das APIs do Windows,
-            honestidade absoluta em sensores e nenhum byte saindo da sua máquina.
+            honestidade absoluta em sensores e nenhuma telemetria saindo da sua máquina.
           </p>
 
           <div class="hero-cta" data-reveal>
@@ -267,8 +289,12 @@
             </span>
             <span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
-              Zero conta · Zero nuvem
+              Zero conta · Zero telemetria
             </span>
+            <a href="https://github.com/LucasLagrimante/pulse" rel="noopener">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49v-1.7c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.34 1.12 2.91.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.35 4.8-4.58 5.05.36.32.68.95.68 1.92v2.85c0 .27.18.59.69.49A10.05 10.05 0 0 0 22 12.25C22 6.58 17.52 2 12 2z" /></svg>
+              Código aberto · MIT
+            </a>
             <span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17V9 M10 17V5 M16 17v-6 M22 21H2" /></svg>
               10 módulos + Tray Flyout
@@ -868,7 +894,7 @@
 
             <div class="consolidation-card is-pulse" data-reveal>
               <span class="eyebrow">Com o Pulse</span>
-              <h3>Tudo conectado, explicado e 100% local</h3>
+              <h3>Tudo conectado, explicado e local</h3>
               <div class="tool-pill-list">
                 <div class="tool-pill">
                   <span><strong>Visão Geral, Atividade e Desempenho</strong> (CPU, GPU, RAM, Rede e Térmica)</span>
@@ -1305,6 +1331,7 @@
               <span data-release-installer-label>Instalador NSIS · 3,5 MB</span>
               <span data-release-version-label>Versão 1.0.0</span>
               <span>Gratuito · Sem conta</span>
+              <a href="https://github.com/LucasLagrimante/pulse/releases" rel="noopener">Todas as versões no GitHub</a>
             </div>
 
             <div class="checksum-box" aria-label="Checksum SHA-256 do instalador">
@@ -1333,7 +1360,7 @@
                 <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
               </button>
               <div class="faq-a" data-faq-a>
-                <p>Não. O Pulse processa tudo localmente na sua máquina. Não há conta de usuário, não há telemetria para servidores externos e nenhuma leitura do sistema é transmitida para a nuvem. O aplicativo não possui backend remoto.</p>
+                <p>Não. O Pulse processa tudo localmente: não há conta, telemetria nem servidor do Pulse. A rede só é usada quando você pede: as <strong>Cotas de IA</strong> consultam direto os endpoints oficiais de cada provedor, e o <strong>assistente de armazenamento</strong> envia ao CLI de IA escolhido um resumo com nomes e caminhos do scan, mostrando o comando antes de executar.</p>
               </div>
             </div>
 
@@ -1344,6 +1371,26 @@
               </button>
               <div class="faq-a" data-faq-a>
                 <p>Não. O Pulse é gratuito e não exige cadastro, login ou assinatura. Você baixa o instalador para Windows 11 e usa.</p>
+              </div>
+            </div>
+
+            <div class="faq-item" data-faq-item>
+              <button class="faq-q" type="button" data-faq-q aria-expanded="false">
+                O Pulse é open source?
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              <div class="faq-a" data-faq-a>
+                <p>Sim. Todo o código (backend Rust, interface React e esta landing page) está aberto no <a href="https://github.com/LucasLagrimante/pulse" rel="noopener">GitHub</a> sob a <strong>licença MIT</strong>. Você pode auditar o que o Pulse lê do sistema, compilar sua própria versão e contribuir. Falhas de segurança podem ser reportadas em privado pelo GitHub Security Advisories.</p>
+              </div>
+            </div>
+
+            <div class="faq-item" data-faq-item>
+              <button class="faq-q" type="button" data-faq-q aria-expanded="false">
+                Como confiro se o instalador é legítimo?
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              <div class="faq-a" data-faq-a>
+                <p>O instalador é publicado nas <a href="https://github.com/LucasLagrimante/pulse/releases" rel="noopener">Releases do GitHub</a>, e o SHA-256 da seção de download é o do mesmo arquivo. Antes de instalar, compare com <code>Get-FileHash .\Pulse-latest-x64-setup.exe</code> no PowerShell, ou compile a partir do código-fonte.</p>
               </div>
             </div>
 
@@ -1417,6 +1464,12 @@
                 </svg>
                 Baixar para Windows 11
               </a>
+              <a class="btn btn-secondary btn-lg" href="https://github.com/LucasLagrimante/pulse" rel="noopener">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="20" height="20">
+                  <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49v-1.7c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.34 1.12 2.91.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.35 4.8-4.58 5.05.36.32.68.95.68 1.92v2.85c0 .27.18.59.69.49A10.05 10.05 0 0 0 22 12.25C22 6.58 17.52 2 12 2z" />
+                </svg>
+                Ver o código-fonte
+              </a>
             </div>
             <div class="download-facts">
               <span>Windows 11 x64</span>
@@ -1465,7 +1518,8 @@
             <h3>Autor &amp; Código</h3>
             <nav class="footer-links" aria-label="Links do autor">
               <a href="https://lucaslagrimante.github.io/" rel="noopener">Portfólio</a>
-              <a href="https://github.com/LucasLagrimante/pulse" rel="noopener">GitHub</a>
+              <a href="https://github.com/LucasLagrimante/pulse" rel="noopener">Código-fonte (MIT)</a>
+              <a href="https://github.com/LucasLagrimante/pulse/releases" rel="noopener">Releases</a>
               <a href="/index.md">Versão em Markdown</a>
               <a href="/llms.txt">llms.txt</a>
               <a href="mailto:llagrimante@gmail.com">Contato</a>
@@ -1475,7 +1529,7 @@
 
         <div class="footer-bottom">
           <span>© <span data-year>2026</span> Lucas Lagrimante</span>
-          <span class="local-note"><i aria-hidden="true"></i> Privacidade por arquitetura · processamento 100% local</span>
+          <span class="local-note"><i aria-hidden="true"></i> Privacidade por arquitetura · local por padrão · código aberto</span>
         </div>
       </div>
     </footer>
