@@ -1,0 +1,117 @@
+# Build do instalador NSIS em runner hospedado pelo GitHub, assinatura pela
+# SignPath Foundation (certificado gratuito para projetos open source) e
+# publicação na GitHub Release `v<versão>`.
+#
+# Configuração no repositório (Settings → Secrets and variables → Actions):
+#   secret   SIGNPATH_API_TOKEN          token do usuário CI criado na SignPath
+#   variable SIGNPATH_ORGANIZATION_ID    ID da organização na SignPath
+#   variable SIGNPATH_PROJECT_SLUG       slug do projeto (ex.: pulse)
+#   variable SIGNPATH_SIGNING_POLICY     slug da política (ex.: release-signing)
+# Sem SIGNPATH_ORGANIZATION_ID o job só gera o artefato sem assinatura e não
+# publica nada, para nunca substituir um instalador assinado por um sem assinatura.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-sign-publish:
+    runs-on: windows-latest
+    env:
+      SIGNING_ENABLED: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Versão e consistência da tag
+        id: meta
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}" -ne "v$version") {
+            throw "Tag ${{ github.ref_name }} não corresponde à versão v$version do tauri.conf.json"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "asset=Pulse_${version}_x64-setup.exe" >> $env:GITHUB_OUTPUT
+
+      - name: Testes e typecheck
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Build do instalador NSIS
+        run: npx tauri build --bundles nsis -- --locked
+
+      - name: Enviar instalador sem assinatura
+        id: unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-unsigned
+          path: src-tauri/target/release/bundle/nsis/${{ steps.meta.outputs.asset }}
+          if-no-files-found: error
+
+      - name: Assinar com SignPath
+        if: env.SIGNING_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Validar assinatura e calcular SHA-256
+        if: env.SIGNING_ENABLED == 'true'
+        id: signed
+        shell: pwsh
+        run: |
+          $file = Join-Path signed "${{ steps.meta.outputs.asset }}"
+          $sig = Get-AuthenticodeSignature $file
+          if ($sig.Status -ne "Valid") { throw "Assinatura inválida: $($sig.Status) $($sig.StatusMessage)" }
+          $sha = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+          "path=$file" >> $env:GITHUB_OUTPUT
+          "sha256=$sha" >> $env:GITHUB_OUTPUT
+          "Assinado por: $($sig.SignerCertificate.Subject)" >> $env:GITHUB_STEP_SUMMARY
+          "SHA-256: ``$sha``" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Publicar na GitHub Release
+        if: env.SIGNING_ENABLED == 'true' && github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $file = "${{ steps.signed.outputs.path }}"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $file --clobber
+          } else {
+            $notes = "Instalador NSIS para Windows 11 x64, assinado pela SignPath Foundation.`n`nSHA-256 (``${{ steps.meta.outputs.asset }}``): ``${{ steps.signed.outputs.sha256 }}``"
+            gh release create $tag $file --title "Pulse ${{ steps.meta.outputs.version }}" --notes $notes
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao publicar na Release $tag" }

@@ -2,7 +2,8 @@
 // e artefatos da Landing Page (em `landing/` e, se existir, no repo irmão `../pulse-lp`).
 //
 // Executado automaticamente ao final de `scripts/build-native.sh` ou via
-// `npm run lp:sync`.
+// `npm run lp:sync`. Depois que o CI publica o instalador assinado pela SignPath,
+// use `npm run lp:sync:release` (lê o SHA-256 do asset da Release, não do bundle).
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -10,10 +11,12 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -49,9 +52,26 @@ if (trackedExe) {
   process.exit(1);
 }
 
+// --from-release: lê o instalador já publicado (assinado pelo CI/SignPath) em vez
+// do bundle local, que não tem assinatura e teria outro SHA-256.
+const fromRelease = process.argv.includes("--from-release");
 let sizeBytes;
 let sha256;
-if (existsSync(bundleInstallerPath)) {
+if (fromRelease) {
+  const downloadDir = mkdtempSync(join(tmpdir(), "pulse-release-"));
+  try {
+    execFileSync("gh", ["release", "download", `v${version}`, "--repo", "LucasLagrimante/pulse", "--pattern", assetName, "--dir", downloadDir], { stdio: "inherit" });
+    const installerBuffer = readFileSync(join(downloadDir, assetName));
+    sizeBytes = installerBuffer.byteLength;
+    sha256 = createHash("sha256").update(installerBuffer).digest("hex");
+  } catch (error) {
+    console.error(`[sync-landing] ERRO: não foi possível baixar ${assetName} da Release v${version}: ${error.message}`);
+    process.exit(1);
+  } finally {
+    rmSync(downloadDir, { recursive: true, force: true });
+  }
+  console.log(`[sync-landing] Instalador lido da GitHub Release v${version}: ${assetName}`);
+} else if (existsSync(bundleInstallerPath)) {
   const installerBuffer = readFileSync(bundleInstallerPath);
   sizeBytes = installerBuffer.byteLength;
   sha256 = createHash("sha256").update(installerBuffer).digest("hex");

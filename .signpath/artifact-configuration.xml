@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Configuração de artefato da SignPath (colar em Project → Artifact configurations).
+  O workflow .github/workflows/release.yml envia um zip com o instalador NSIS
+  Pulse_<versão>_x64-setup.exe; a SignPath assina o .exe com Authenticode.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file-set>
+      <include path="Pulse_*_x64-setup.exe" />
+      <for-each>
+        <authenticode-sign />
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>

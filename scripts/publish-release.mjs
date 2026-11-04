@@ -5,8 +5,12 @@
 // este script só publica se o arquivo do bundle tiver exatamente o SHA-256 que a
 // landing anuncia — rode `npm run build:native` (ou `npm run lp:sync`) antes.
 //
-// Uso: npm run release:publish            → cria a Release (falha se já existir)
-//      npm run release:publish -- --clobber → substitui o asset de uma Release existente
+// O caminho oficial é o workflow .github/workflows/release.yml (push da tag
+// v<versão>), que assina o instalador pela SignPath. Este script publica um
+// build local SEM assinatura e por isso exige --unsigned explícito.
+//
+// Uso: npm run release:publish -- --unsigned            → cria a Release (falha se já existir)
+//      npm run release:publish -- --unsigned --clobber  → substitui o asset de uma Release existente
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -16,11 +20,16 @@ import { fileURLToPath } from "node:url";
 const REPO = "LucasLagrimante/pulse";
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const clobber = process.argv.includes("--clobber");
+const unsigned = process.argv.includes("--unsigned");
 
 const fail = message => {
   console.error(`[publish-release] ERRO: ${message}`);
   process.exit(1);
 };
+
+if (!unsigned) {
+  fail("o instalador oficial é assinado pelo CI (push da tag v<versão> → .github/workflows/release.yml). Para publicar um build local sem assinatura, passe --unsigned.");
+}
 
 const { version } = JSON.parse(readFileSync(join(rootDir, "src-tauri", "tauri.conf.json"), "utf8"));
 const tag = `v${version}`;

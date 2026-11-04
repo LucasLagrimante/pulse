@@ -20,6 +20,7 @@
     "lp:preview": "vite preview landing --config landing/vite.config.js",
     "lp:check": "node landing/scripts/check-seo.mjs --dir=landing/dist",
     "lp:sync": "node scripts/sync-landing.mjs",
+    "lp:sync:release": "node scripts/sync-landing.mjs --from-release",
     "release:publish": "node scripts/publish-release.mjs"
   },
   "dependencies": {
