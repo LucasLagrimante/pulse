@@ -3180,6 +3180,55 @@ body:has(.tray-flyout-container),
   color: var(--neu-text-primary) !important;
 }
 
+/* Modal de Análise de Disco com IA CLI */
+[data-theme] .disk-ai-modal-card {
+  background: var(--neu-surface) !important;
+  border: 1px solid var(--neu-divider) !important;
+  box-shadow: var(--neu-shadow-raised-lg) !important;
+  color: var(--neu-text-primary) !important;
+}
+
+[data-theme] .disk-ai-modal-header,
+[data-theme] .disk-ai-modal-footer {
+  background: var(--neu-surface-sunken) !important;
+  border-color: var(--neu-divider) !important;
+}
+
+[data-theme] .disk-ai-providers-grid {
+  background: var(--neu-surface) !important;
+  border-bottom: 1px solid var(--neu-divider) !important;
+}
+
+[data-theme] .disk-ai-provider-card {
+  background: var(--neu-surface-sunken) !important;
+  border: 1px solid var(--neu-divider) !important;
+}
+
+[data-theme] .disk-ai-provider-card:hover {
+  border-color: var(--neu-accent) !important;
+  background: var(--neu-surface-hover) !important;
+}
+
+[data-theme] .disk-ai-provider-card.selected {
+  border-color: var(--neu-accent) !important;
+  background: var(--neu-surface) !important;
+  outline: 1px solid var(--neu-accent) !important;
+}
+
+[data-theme] .summary-stat-card,
+[data-theme] .details-col,
+[data-theme] .disk-ai-prompt-preview,
+[data-theme] .disk-ai-command-box {
+  background: var(--neu-surface-sunken) !important;
+  border: 1px solid var(--neu-divider) !important;
+}
+
+[data-theme] .disk-ai-prompt-input {
+  background: var(--neu-surface-sunken) !important;
+  border: 1px solid var(--neu-accent) !important;
+  color: var(--neu-text-primary) !important;
+}
+
 [data-theme] .quota-modal-header {
   border-bottom: 1px solid var(--neu-divider) !important;
 }

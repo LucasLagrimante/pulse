@@ -1,3 +1,4 @@
+pub mod ai_disk_advisor;
 pub mod app_icons;
 pub mod app_updates;
 pub mod audio;
@@ -125,6 +126,8 @@ pub fn run() {
             disk_analyzer::get_disk_scan_state,
             disk_analyzer::get_cached_disk_scan,
             disk_analyzer::open_disk_item,
+            ai_disk_advisor::get_ai_disk_analysis_preview,
+            ai_disk_advisor::launch_ai_disk_terminal,
             disk_cleanup::analyze_disk_cleanup,
             disk_cleanup::clean_disk_categories,
             services::list_windows_services,

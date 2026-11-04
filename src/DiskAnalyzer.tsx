@@ -14,6 +14,8 @@ import {
   subscribeDiskAnalyzer,
 } from "./diskScanStore";
 import { FileIcon, ModuleIcon } from "./Identity";
+import { AiDiskAdvisorModal } from "./AiDiskAdvisorModal";
+import { ProviderIcon } from "./ProviderIcon";
 
 export type {
   CachedDiskScan,
@@ -225,6 +227,7 @@ export function DiskAnalyzer({
   const [searchQuery, setSearchQuery] = useState("");
   const [hoveredNode, setHoveredNode] = useState<{ node: DiskItemNode; x: number; y: number } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showAiModal, setShowAiModal] = useState(false);
   const treemapContainerRef = useRef<HTMLDivElement>(null);
   const [containerDimensions, setContainerDimensions] = useState({ width: 600, height: 400 });
 
@@ -788,6 +791,16 @@ export function DiskAnalyzer({
               <span>{cachedScan.itemsScanned.toLocaleString("pt-BR")} itens examinados</span>
             )}
             {describeScanStop(cachedScan) && <span>{describeScanStop(cachedScan)}</span>}
+
+            <button
+              type="button"
+              className="disk-ai-advisor-trigger-btn"
+              onClick={() => setShowAiModal(true)}
+              title="Abrir terminal com Claude, Antigravity ou Codex CLI para analisar maiores pastas e liberar espaço"
+            >
+              <ProviderIcon providerId="antigravity" size={13} />
+              ANALISAR COM IA NO TERMINAL
+            </button>
           </div>
         )}
 
@@ -821,6 +834,17 @@ export function DiskAnalyzer({
                 TREEMAP COMPLETO
               </button>
             </div>
+
+            {/* Atalho para Análise com IA no Terminal */}
+            <button
+              type="button"
+              className="disk-ai-subtoolbar-btn"
+              onClick={() => setShowAiModal(true)}
+              title="Abrir terminal com Claude, Antigravity ou Codex CLI para analisar maiores pastas e liberar espaço"
+            >
+              <ProviderIcon providerId="antigravity" size={13} />
+              ANALISAR COM IA
+            </button>
 
             {/* Filtro: Arquivos vs Pastas Mais Pesados */}
             <div className="disk-type-filter" role="group" aria-label="Filtro de tipo">
@@ -1135,6 +1159,12 @@ export function DiskAnalyzer({
           </section>
         )}
       </main>
+
+      <AiDiskAdvisorModal
+        isOpen={showAiModal}
+        onClose={() => setShowAiModal(false)}
+        cachedScan={cachedScan}
+      />
     </div>
   );
 }
