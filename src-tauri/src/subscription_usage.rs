@@ -5,7 +5,7 @@
 //! the provider's own credential file) and are never serialized into the report.
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use chrono::DateTime;
+use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveTime, TimeZone};
 use regex::Regex;
 use reqwest::{blocking::Client, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -908,6 +908,71 @@ fn cli_reset_description(line: &str) -> Option<String> {
         .filter(|reset| !reset.is_empty())
 }
 
+/// Converte o reset textual do `claude /usage` ("resets Nov 4, 3pm (America/Sao_Paulo)",
+/// "resets 3:30pm (UTC)") em timestamp. O CLI omite o ano e às vezes a data; o fuso
+/// informado é o local da máquina (o mesmo do Windows), exceto quando vem "UTC".
+fn parse_cli_reset_at<Tz: TimeZone>(description: &str, now: DateTime<Tz>) -> Option<i64> {
+    let captures = Regex::new(
+        r"(?i)resets\s+(?:(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+)?(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?",
+    )
+    .ok()?
+    .captures(description)?;
+    let mut hour: u32 = captures.get(3)?.as_str().parse().ok()?;
+    let minute: u32 = captures
+        .get(4)
+        .map_or(Some(0), |m| m.as_str().parse().ok())?;
+    match captures
+        .get(5)
+        .map(|m| m.as_str().to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("pm") if hour < 12 => hour += 12,
+        Some("am") if hour == 12 => hour = 0,
+        Some(_) if hour > 12 => return None,
+        _ => {}
+    }
+    let time = NaiveTime::from_hms_opt(hour, minute, 0)?;
+    let today = now.date_naive();
+    let date = match (captures.get(1), captures.get(2)) {
+        (Some(month), Some(day)) => {
+            const MONTHS: [&str; 12] = [
+                "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+            ];
+            let month = MONTHS
+                .iter()
+                .position(|name| month.as_str().eq_ignore_ascii_case(name))?
+                as u32
+                + 1;
+            let day: u32 = day.as_str().parse().ok()?;
+            let candidate = NaiveDate::from_ymd_opt(today.year(), month, day)?;
+            // Sem ano no texto: reset em janeiro lido em dezembro pertence ao ano seguinte.
+            if candidate < today - chrono::Duration::days(180) {
+                NaiveDate::from_ymd_opt(today.year() + 1, month, day)?
+            } else {
+                candidate
+            }
+        }
+        _ => today,
+    };
+    let reset = |date: NaiveDate| -> Option<i64> {
+        let naive = date.and_time(time);
+        if description.to_ascii_lowercase().contains("(utc)") {
+            Some(naive.and_utc().timestamp())
+        } else {
+            now.timezone()
+                .from_local_datetime(&naive)
+                .earliest()
+                .map(|dt| dt.timestamp())
+        }
+    };
+    let at = reset(date)?;
+    // Só horário ("resets 3pm") já passado hoje significa amanhã.
+    if captures.get(1).is_none() && at <= now.timestamp() {
+        return reset(date.succ_opt()?);
+    }
+    Some(at)
+}
+
 fn parse_claude_cli_usage(raw: &str) -> Vec<QuotaWindow> {
     let mut windows = Vec::new();
     for line in strip_terminal(raw).lines() {
@@ -931,7 +996,8 @@ fn parse_claude_cli_usage(raw: &str) -> Vec<QuotaWindow> {
             used_percent: Some(used),
             remaining_percent: Some((100.0 - used).clamp(0.0, 100.0)),
             window_minutes: Some(minutes),
-            resets_at_unix_seconds: None,
+            resets_at_unix_seconds: cli_reset_description(line)
+                .and_then(|reset| parse_cli_reset_at(&reset, Local::now())),
             reset_description: cli_reset_description(line),
             unavailable_reason: None,
         });
@@ -971,7 +1037,9 @@ fn split_antigravity_line(line: &str) -> Option<(String, String, String, Option<
             fields[0].to_owned(),
             fields[1..percent_index].join(" "),
             fields[percent_index].to_owned(),
-            fields.get(percent_index + 1).map(|value| (*value).to_owned()),
+            fields
+                .get(percent_index + 1)
+                .map(|value| (*value).to_owned()),
         ));
     }
     let fields = line.split_whitespace().collect::<Vec<_>>();
@@ -995,7 +1063,9 @@ fn split_antigravity_line(line: &str) -> Option<(String, String, String, Option<
         fields[..kind_start].join(" "),
         fields[kind_start..percent_index].join(" "),
         fields[percent_index].to_owned(),
-        fields.get(percent_index + 1).map(|value| (*value).to_owned()),
+        fields
+            .get(percent_index + 1)
+            .map(|value| (*value).to_owned()),
     ))
 }
 
@@ -2391,8 +2461,9 @@ mod tests {
     use super::{
         codex_from_rate_limits, mask_key, now_unix_ms, parse_antigravity_cli_usage,
         parse_antigravity_credential, parse_claude_cli_usage, parse_claude_credential,
-        quota_from_used, strip_terminal,
+        parse_cli_reset_at, quota_from_used, strip_terminal,
     };
+    use chrono::TimeZone;
     use serde_json::json;
     #[test]
     fn maps_codex_root_and_model_specific_limits() {
@@ -2465,7 +2536,10 @@ mod tests {
         .unwrap();
         assert_eq!(expired_window.used_percent, Some(0.0));
         assert_eq!(expired_window.remaining_percent, Some(100.0));
-        assert_eq!(expired_window.reset_description.as_deref(), Some("Ciclo renovado"));
+        assert_eq!(
+            expired_window.reset_description.as_deref(),
+            Some("Ciclo renovado")
+        );
         assert!(expired_window.unavailable_reason.is_none());
     }
     #[test]
@@ -2522,6 +2596,58 @@ mod tests {
             windows[0].reset_description.as_deref(),
             Some("resets Sep 15, 4pm (America/Sao_Paulo)")
         );
+    }
+
+    #[test]
+    fn converts_claude_cli_reset_text_into_timestamp() {
+        let tz = chrono::FixedOffset::west_opt(3 * 3600).unwrap();
+        let now = tz.with_ymd_and_hms(2026, 11, 4, 10, 0, 0).unwrap();
+        let at = |text: &str| parse_cli_reset_at(text, now);
+        let expected = |d, h, m| {
+            tz.with_ymd_and_hms(2026, 11, d, h, m, 0)
+                .unwrap()
+                .timestamp()
+        };
+        assert_eq!(
+            at("resets Nov 4, 3pm (America/Sao_Paulo)"),
+            Some(expected(4, 15, 0))
+        );
+        assert_eq!(
+            at("resets Nov 11, 8am (America/Sao_Paulo)"),
+            Some(expected(11, 8, 0))
+        );
+        assert_eq!(
+            at("resets 3:30pm (America/Sao_Paulo)"),
+            Some(expected(4, 15, 30))
+        );
+        // Horário já passado hoje sem data: próximo dia.
+        assert_eq!(
+            at("resets 9am (America/Sao_Paulo)"),
+            Some(expected(5, 9, 0))
+        );
+        assert_eq!(
+            at("resets 12am (America/Sao_Paulo)"),
+            Some(expected(5, 0, 0))
+        );
+        assert_eq!(
+            at("resets Nov 4, 6pm (UTC)"),
+            Some(
+                chrono::Utc
+                    .with_ymd_and_hms(2026, 11, 4, 18, 0, 0)
+                    .unwrap()
+                    .timestamp()
+            )
+        );
+        let december = tz.with_ymd_and_hms(2026, 12, 30, 10, 0, 0).unwrap();
+        assert_eq!(
+            parse_cli_reset_at("resets Jan 2, 8am (America/Sao_Paulo)", december),
+            Some(
+                tz.with_ymd_and_hms(2027, 1, 2, 8, 0, 0)
+                    .unwrap()
+                    .timestamp()
+            )
+        );
+        assert_eq!(at("sem reset"), None);
     }
 
     #[test]
