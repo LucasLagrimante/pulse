@@ -136,7 +136,7 @@ ls -la src-tauri/target/release/pulse-windows.exe 2>/dev/null || true
 find src-tauri/target/release/bundle -name '*.exe' 2>/dev/null | sed 's/^/    /' || true
 echo
 echo "==> build nativa + landing page sincronizadas com sucesso"
-echo "    release oficial (assinada): git tag v<versao> && git push --tags; depois npm run lp:sync:release"
+echo "    release oficial (CI): git tag v<versao> && git push --tags; depois npm run lp:sync:release"
 
 if [ "$RUN_INSTALLER" -eq 1 ]; then
   node scripts/run-installer.mjs

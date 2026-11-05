@@ -2,7 +2,7 @@
 // e artefatos da Landing Page (em `landing/` e, se existir, no repo irmão `../pulse-lp`).
 //
 // Executado automaticamente ao final de `scripts/build-native.sh` ou via
-// `npm run lp:sync`. Depois que o CI publica o instalador assinado pela SignPath,
+// `npm run lp:sync`. Depois que o CI publica o instalador na Release,
 // use `npm run lp:sync:release` (lê o SHA-256 do asset da Release, não do bundle).
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -52,8 +52,8 @@ if (trackedExe) {
   process.exit(1);
 }
 
-// --from-release: lê o instalador já publicado (assinado pelo CI/SignPath) em vez
-// do bundle local, que não tem assinatura e teria outro SHA-256.
+// --from-release: lê o instalador já publicado (build do CI) em vez
+// do bundle local, que tem outro SHA-256.
 const fromRelease = process.argv.includes("--from-release");
 let sizeBytes;
 let sha256;

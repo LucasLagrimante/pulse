@@ -7,7 +7,7 @@ Central nativa de observabilidade, diagnóstico e controle local para Windows 11
 - **Windows 11 x64**, instalador NSIS de 3,5 MB
 - Versão atual: 1.0.1
 - SHA-256: `2b5823ae9e5b12ddb611216db048bd3bc1c8ff4f26e8005ca793ef8eda8d33ff`
-- Assinatura de código: free code signing provided by SignPath.io, certificate by SignPath Foundation (em adoção; até a primeira versão assinada o SmartScreen pode avisar). Política: https://github.com/LucasLagrimante/pulse#política-de-assinatura-de-código
+- Assinatura de código: o instalador ainda não é assinado, então o SmartScreen pode avisar ("Mais informações" → "Executar assim mesmo"); confira o SHA-256 publicado. Política: https://github.com/LucasLagrimante/pulse#política-de-assinatura-de-código
 - Site: https://pulse.lagrimante.com.br/
 - Download direto: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe
 

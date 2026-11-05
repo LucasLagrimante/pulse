@@ -10,5 +10,5 @@ metadata:
 
 **How to apply:**
 - `sync-landing.mjs` lê `Pulse_<versão>_x64-setup.exe` do bundle, grava `installer.assetUrl` em `release.json`, apaga `download/` e falha se o Git rastrear `.exe`; o `worker.js` faz 302 de `/download/*.exe` para esse `assetUrl`.
-- Ordem do release: tag `v<versão>` → CI assina e publica (ver [[assinatura-signpath-ci]]) → `npm run lp:sync:release` → só então push no `pulse-lp`. O download exige o repo `pulse` público.
+- Ordem do release: tag `v<versão>` → CI publica (sem assinatura, ver [[assinatura-signpath-ci]]) → `npm run lp:sync:release` → só então push no `pulse-lp`. O download exige o repo `pulse` público.
 - Toda função nova com rede vai no README ("Privacidade e rede") e em `#privacidade` da landing; scripts de build sem caminho fixo de usuário (`PULSE_WIN_TEMP`).

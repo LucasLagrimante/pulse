@@ -6,8 +6,8 @@
 // landing anuncia — rode `npm run build:native` (ou `npm run lp:sync`) antes.
 //
 // O caminho oficial é o workflow .github/workflows/release.yml (push da tag
-// v<versão>), que assina o instalador pela SignPath. Este script publica um
-// build local SEM assinatura e por isso exige --unsigned explícito.
+// v<versão>), que compila no runner do GitHub (e assina, se houver certificado).
+// Este script publica um build local SEM assinatura e por isso exige --unsigned explícito.
 //
 // Uso: npm run release:publish -- --unsigned            → cria a Release (falha se já existir)
 //      npm run release:publish -- --unsigned --clobber  → substitui o asset de uma Release existente

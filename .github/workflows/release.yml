@@ -1,13 +1,14 @@
-# Build do instalador NSIS em runner hospedado pelo GitHub, assinatura pela
-# SignPath Foundation (certificado gratuito para projetos open source) e
-# publicação na GitHub Release `v<versão>`.
+# Build do instalador NSIS em runner hospedado pelo GitHub e publicação na
+# GitHub Release `v<versão>`. A etapa de assinatura (SignPath) fica pronta, mas
+# desligada: o pedido à SignPath Foundation foi recusado em 2026-11 por falta de
+# visibilidade pública; reaplicar quando o projeto tiver mais adoção.
 #
 # Configuração no repositório (Settings → Secrets and variables → Actions):
 #   secret   SIGNPATH_API_TOKEN          token do usuário CI criado na SignPath
 #   variable SIGNPATH_ORGANIZATION_ID    ID da organização na SignPath
 #   variable SIGNPATH_PROJECT_SLUG       slug do projeto (ex.: pulse)
 #   variable SIGNPATH_SIGNING_POLICY     slug da política (ex.: release-signing)
-# Sem SIGNPATH_ORGANIZATION_ID (pedido ainda em análise) a Release da tag é
+# Sem SIGNPATH_ORGANIZATION_ID a Release da tag é
 # publicada SEM assinatura e as notas dizem isso; configurar as variables liga a
 # assinatura nas próximas tags sem outra mudança.
 name: release
@@ -96,11 +97,11 @@ jobs:
             $sig = Get-AuthenticodeSignature $file
             if ($sig.Status -ne "Valid") { throw "Assinatura inválida: $($sig.Status) $($sig.StatusMessage)" }
             "Assinado por: $($sig.SignerCertificate.Subject)" >> $env:GITHUB_STEP_SUMMARY
-            $label = "assinado pela SignPath Foundation"
+            $label = "assinado via SignPath"
           } else {
             $file = "src-tauri/target/release/bundle/nsis/$asset"
-            "Sem assinatura: SignPath ainda não configurada" >> $env:GITHUB_STEP_SUMMARY
-            $label = "sem assinatura de código (SignPath em análise); o Windows pode exibir o aviso do SmartScreen"
+            "Sem assinatura: nenhum certificado configurado" >> $env:GITHUB_STEP_SUMMARY
+            $label = "sem assinatura de código ; o Windows pode exibir o aviso do SmartScreen"
           }
           $sha = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
           "path=$file" >> $env:GITHUB_OUTPUT

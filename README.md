@@ -124,9 +124,11 @@ Atualizações de aplicativos usam o `winget` do próprio Windows.
 
 ## Política de assinatura de código
 
-Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+O instalador do Pulse **ainda não tem assinatura de código**. O pedido ao programa da SignPath Foundation foi recusado em 2026-11 por falta de visibilidade pública do projeto; será refeito quando o projeto tiver mais adoção. Até lá, o Windows pode exibir o aviso do SmartScreen ("Mais informações" → "Executar assim mesmo").
 
-- O instalador oficial é compilado a partir deste repositório pelo workflow [`release.yml`](.github/workflows/release.yml), em runner hospedado pelo GitHub, e assinado pela SignPath só depois da aprovação manual de cada release.
+- O instalador oficial é compilado a partir deste repositório pelo workflow [`release.yml`](.github/workflows/release.yml), em runner hospedado pelo GitHub, e publicado na [GitHub Release](https://github.com/LucasLagrimante/pulse/releases) da versão.
+- Confira a integridade pelo SHA-256 publicado nas notas da Release e na página de download.
+- O workflow já tem a etapa de assinatura preparada: ela só é ativada quando houver um certificado configurado.
 - Committers e revisores: [Lucas Lagrimante](https://github.com/LucasLagrimante)
 - Aprovadores: [Lucas Lagrimante](https://github.com/LucasLagrimante)
 - Privacidade: o Pulse não transfere informação para outros sistemas em rede, a menos que o usuário peça explicitamente. As exceções estão em [Privacidade e rede](#privacidade-e-rede).

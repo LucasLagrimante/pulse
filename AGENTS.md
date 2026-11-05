@@ -224,7 +224,7 @@ Como o repositório reside no WSL (`~/projects/pulse`), mas o backend Rust/Tauri
    - Executável standalone: `src-tauri/target/release/pulse-windows.exe`
    - Instalador NSIS: `src-tauri/target/release/bundle/nsis/Pulse_<versão>_x64-setup.exe`
 3. Automaticamente ao final do build, `scripts/sync-landing.mjs` lê `Pulse_<versão>_x64-setup.exe` do bundle, calcula tamanho e `SHA-256`, grava `installer.assetUrl` (GitHub Release `v<versão>`) em `landing/public/release.json`, atualiza `landing/index.html`, `landing/public/index.md` e `landing/public/llms.txt`, compila `landing/dist`, executa `check-seo.mjs` e espelha tudo em `../pulse-lp` (se presente). O `.exe` **nunca** é versionado: o script apaga cópias em `download/` e falha se o Git ainda rastrear alguma.
-4. **Release oficial (assinada)**: `git tag v<versão> && git push --tags` dispara `.github/workflows/release.yml` (runner `windows-latest`), que compila, assina o instalador pela SignPath Foundation e publica na GitHub Release `v<versão>`. Em seguida `npm run lp:sync:release` grava em `release.json` o SHA-256 do asset **assinado** (a assinatura muda o hash do bundle local). `npm run release:publish -- --unsigned` só existe como fallback sem assinatura. O Worker redireciona `/download/Pulse-latest-x64-setup.exe` para esse asset; publique a Release **antes** de dar push no `pulse-lp`.
+4. **Release oficial**: `git tag v<versão> && git push --tags` dispara `.github/workflows/release.yml` (runner `windows-latest`), que compila e publica na GitHub Release `v<versão>`. O instalador **não é assinado** (SignPath Foundation recusou em 2026-11; a etapa SignPath fica desligada até haver certificado), e a landing nunca deve anunciar assinatura. Em seguida `npm run lp:sync:release` grava em `release.json` o SHA-256 do asset publicado pelo CI (difere do bundle local). `npm run release:publish -- --unsigned` só existe como fallback sem assinatura. O Worker redireciona `/download/Pulse-latest-x64-setup.exe` para esse asset; publique a Release **antes** de dar push no `pulse-lp`.
 5. **Regra de Paridade Obrigatória**: Sempre que uma nova funcionalidade, módulo ou mudança de comportamento for adicionada ao aplicativo Pulse, a Landing Page (`landing/index.html`, `landing/public/index.md` e `landing/public/llms.txt`) **DEVE** ser atualizada na mesma tarefa.
 
 ---
@@ -242,7 +242,7 @@ Sempre valide as alterações antes de finalizar qualquer intervenção:
 | `npm run build:native` | Build completa WSL -> Windows (Frontend + Rust MSVC + NSIS + Sync Landing Page) |
 | `npm run tauri:build:install` | Executa `build:native` e abre o instalador NSIS no Windows |
 | `npm run lp:sync` | Sincroniza versão, tamanho e SHA-256 do instalador com a Landing Page e valida SEO |
-| `npm run lp:sync:release` | Sincroniza a landing com o SHA-256 do instalador assinado já publicado na Release |
+| `npm run lp:sync:release` | Sincroniza a landing com o SHA-256 do instalador já publicado na Release pelo CI |
 | `npm run release:publish` | Fallback: publica build local **sem assinatura** (`-- --unsigned [--clobber]`) |
 | `npm run lp:dev` | Inicia servidor de desenvolvimento da Landing Page (`landing/`) |
 | `npm run lp:check` | Executa auditoria de SEO, JSON-LD, `llms.txt` e instalador na Landing Page |
