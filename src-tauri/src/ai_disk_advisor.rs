@@ -79,7 +79,11 @@ pub fn collect_top_directories(root: &DiskItemNode, limit: usize) -> Vec<DiskIte
         if node.is_dir && !is_root && node.size_bytes > 0 && !node.id.contains("[budget]") {
             acc.push(DiskItemSummary {
                 path: node.path.clone(),
-                name: if node.name.is_empty() { node.path.clone() } else { node.name.clone() },
+                name: if node.name.is_empty() {
+                    node.path.clone()
+                } else {
+                    node.name.clone()
+                },
                 size_bytes: node.size_bytes,
                 size_formatted: format_bytes(node.size_bytes),
                 is_dir: true,
@@ -103,7 +107,11 @@ pub fn collect_top_files(root: &DiskItemNode, limit: usize) -> Vec<DiskItemSumma
         if !node.is_dir && node.size_bytes > 0 && !node.id.contains("[budget]") {
             acc.push(DiskItemSummary {
                 path: node.path.clone(),
-                name: if node.name.is_empty() { node.path.clone() } else { node.name.clone() },
+                name: if node.name.is_empty() {
+                    node.path.clone()
+                } else {
+                    node.name.clone()
+                },
                 size_bytes: node.size_bytes,
                 size_formatted: format_bytes(node.size_bytes),
                 is_dir: false,
@@ -124,6 +132,26 @@ pub fn collect_top_files(root: &DiskItemNode, limit: usize) -> Vec<DiskItemSumma
 pub fn is_cleanup_candidate(path: &str, name: &str, is_dir: bool) -> bool {
     let norm_path = path.to_ascii_lowercase().replace('\\', "/");
     let norm_name = name.to_ascii_lowercase();
+
+    // Locais em que "cache"/"node_modules" fazem parte de software instalado
+    // ou de dados baixados de propósito: apagar quebra o app (npm global em
+    // Program Files, ambiente do Anki) ou força re-download de modelos.
+    const NEVER_CANDIDATE: &[&str] = &[
+        "/program files/",
+        "/program files (x86)/",
+        "/appdata/roaming/npm/",
+        "/ankiprogramfiles/",
+        "/.cache/huggingface",
+        "/.ollama/",
+        "/.lmstudio/",
+    ];
+    let probe = format!("{norm_path}/");
+    if NEVER_CANDIDATE
+        .iter()
+        .any(|pattern| probe.contains(pattern))
+    {
+        return false;
+    }
 
     if is_dir {
         const SUSPICIOUS_DIRS: &[&str] = &[
@@ -157,9 +185,8 @@ pub fn is_cleanup_candidate(path: &str, name: &str, is_dir: bool) -> bool {
             "temp" | "tmp" | ".cache" | "cache" | "node_modules" | "crashdumps" | "logs"
         )
     } else {
-        const SUSPICIOUS_EXTENSIONS: &[&str] = &[
-            ".tmp", ".temp", ".log", ".dmp", ".old", ".bak", ".chk",
-        ];
+        const SUSPICIOUS_EXTENSIONS: &[&str] =
+            &[".tmp", ".temp", ".log", ".dmp", ".old", ".bak", ".chk"];
 
         for ext in SUSPICIOUS_EXTENSIONS {
             if norm_name.ends_with(ext) {
@@ -178,7 +205,10 @@ pub fn is_cleanup_candidate(path: &str, name: &str, is_dir: bool) -> bool {
     }
 }
 
-pub fn collect_cleanup_candidates(root: &DiskItemNode, limit: usize) -> (Vec<DiskItemSummary>, u64) {
+pub fn collect_cleanup_candidates(
+    root: &DiskItemNode,
+    limit: usize,
+) -> (Vec<DiskItemSummary>, u64) {
     let mut candidates = Vec::new();
     fn visit(node: &DiskItemNode, is_root: bool, acc: &mut Vec<DiskItemSummary>) {
         if !is_root
@@ -188,7 +218,11 @@ pub fn collect_cleanup_candidates(root: &DiskItemNode, limit: usize) -> (Vec<Dis
         {
             acc.push(DiskItemSummary {
                 path: node.path.clone(),
-                name: if node.name.is_empty() { node.path.clone() } else { node.name.clone() },
+                name: if node.name.is_empty() {
+                    node.path.clone()
+                } else {
+                    node.name.clone()
+                },
                 size_bytes: node.size_bytes,
                 size_formatted: format_bytes(node.size_bytes),
                 is_dir: node.is_dir,
@@ -215,7 +249,12 @@ pub fn collect_cleanup_candidates(root: &DiskItemNode, limit: usize) -> (Vec<Dis
 fn command_exists_in_windows(cmd: &str) -> bool {
     #[cfg(windows)]
     {
-        for candidate in [cmd, &format!("{cmd}.exe"), &format!("{cmd}.cmd"), &format!("{cmd}.bat")] {
+        for candidate in [
+            cmd,
+            &format!("{cmd}.exe"),
+            &format!("{cmd}.cmd"),
+            &format!("{cmd}.bat"),
+        ] {
             if let Ok(output) = crate::process::hidden_command("where.exe")
                 .arg(candidate)
                 .output()
@@ -243,7 +282,11 @@ fn command_exists_in_windows(cmd: &str) -> bool {
 fn wsl_distros(running_only: bool) -> Vec<String> {
     #[cfg(windows)]
     {
-        let args: &[&str] = if running_only { &["-l", "--running", "-q"] } else { &["-l", "-q"] };
+        let args: &[&str] = if running_only {
+            &["-l", "--running", "-q"]
+        } else {
+            &["-l", "-q"]
+        };
         if let Ok(output) = crate::process::hidden_command("wsl.exe")
             .args(args)
             .output()
@@ -257,10 +300,18 @@ fn wsl_distros(running_only: bool) -> Vec<String> {
                         .collect::<Vec<_>>(),
                 );
                 let fallback = String::from_utf8_lossy(&output.stdout);
-                let content = if text.contains('\n') || text.contains('\r') { text } else { fallback.into_owned() };
+                let content = if text.contains('\n') || text.contains('\r') {
+                    text
+                } else {
+                    fallback.into_owned()
+                };
                 let mut distros = content
                     .lines()
-                    .map(|l| l.trim_matches(|c| c == '\u{feff}' || c == '\0').trim().to_owned())
+                    .map(|l| {
+                        l.trim_matches(|c| c == '\u{feff}' || c == '\0')
+                            .trim()
+                            .to_owned()
+                    })
                     .filter(|l| !l.is_empty())
                     .collect::<Vec<_>>();
                 distros.sort_unstable();
@@ -402,7 +453,10 @@ fn detect_cli(cmd_name: &str, probe: WslProbe) -> CliDetection {
             // Só nomes que também existem em `wsl -l -q`: o texto de "nenhuma distro
             // em execução" nunca vira nome de distro passado a `wsl -d`.
             let installed = wsl_distros(false);
-            wsl_distros(true).into_iter().filter(|d| installed.contains(d)).collect()
+            wsl_distros(true)
+                .into_iter()
+                .filter(|d| installed.contains(d))
+                .collect()
         }
     };
     for distro in distros {
@@ -439,9 +493,18 @@ pub fn generate_markdown_report(
     let mut md = String::new();
     md.push_str("# Relatório de Armazenamento do Pulse — Análise de Disco\n\n");
     md.push_str(&format!("- **Unidade / Raiz**: `{}`\n", root.path));
-    md.push_str(&format!("- **Tamanho Total Catalogado**: {}\n", format_bytes(root.size_bytes)));
-    md.push_str(&format!("- **Total de Itens Examinados**: {} arquivos / {} subpastas\n", root.file_count, root.dir_count));
-    md.push_str(&format!("- **Estimativa de Limpeza Potencial**: {}\n\n", format_bytes(total_candidates_bytes)));
+    md.push_str(&format!(
+        "- **Tamanho Total Catalogado**: {}\n",
+        format_bytes(root.size_bytes)
+    ));
+    md.push_str(&format!(
+        "- **Total de Itens Examinados**: {} arquivos / {} subpastas\n",
+        root.file_count, root.dir_count
+    ));
+    md.push_str(&format!(
+        "- **Estimativa de Limpeza Potencial**: {}\n\n",
+        format_bytes(total_candidates_bytes)
+    ));
 
     md.push_str("## 🎯 Objetivo da Análise com IA\n");
     md.push_str("Avaliar a ocupação de armazenamento, identificar com precisão quais pastas e arquivos são os maiores e apontar de forma segura onde há espaço para limpar o disco e liberar armazenamento no Windows.\n\n");
@@ -450,7 +513,10 @@ pub fn generate_markdown_report(
     md.push_str("| Pasta | Tamanho | Arquivos |\n");
     md.push_str("| :--- | :--- | :--- |\n");
     for dir in top_dirs {
-        md.push_str(&format!("| `{}` | {} | {} |\n", dir.path, dir.size_formatted, dir.file_count));
+        md.push_str(&format!(
+            "| `{}` | {} | {} |\n",
+            dir.path, dir.size_formatted, dir.file_count
+        ));
     }
     md.push('\n');
 
@@ -462,12 +528,22 @@ pub fn generate_markdown_report(
     }
     md.push('\n');
 
-    md.push_str(&format!("## 🧹 Candidatos Potenciais para Limpeza / Caches ({})\n", format_bytes(total_candidates_bytes)));
+    md.push_str(&format!(
+        "## 🧹 Candidatos Potenciais para Limpeza / Caches ({})\n",
+        format_bytes(total_candidates_bytes)
+    ));
     md.push_str("| Item / Caminho | Tamanho | Tipo |\n");
     md.push_str("| :--- | :--- | :--- |\n");
     for cand in candidates {
-        let type_desc = if cand.is_dir { "Pasta de Cache / Temp" } else { "Arquivo Temporário / Log" };
-        md.push_str(&format!("| `{}` | {} | {} |\n", cand.path, cand.size_formatted, type_desc));
+        let type_desc = if cand.is_dir {
+            "Pasta de Cache / Temp"
+        } else {
+            "Arquivo Temporário / Log"
+        };
+        md.push_str(&format!(
+            "| `{}` | {} | {} |\n",
+            cand.path, cand.size_formatted, type_desc
+        ));
     }
     md.push('\n');
 
@@ -476,7 +552,9 @@ pub fn generate_markdown_report(
     md.push_str("2. Indique claramente quais desses itens podem ser apagados com 100% de segurança (sem quebrar programas nem o Windows).\n");
     md.push_str("3. Alerte sobre itens que NÃO devem ser removidos sem cautela.\n");
     md.push_str("4. Forneça comandos práticos e seguros (PowerShell ou CMD) prontos para executar para liberar o espaço identificado.\n");
-    md.push_str("5. Salve a resposta completa em um arquivo Markdown no caminho indicado no prompt.\n");
+    md.push_str(
+        "5. Salve a resposta completa em um arquivo Markdown no caminho indicado no prompt.\n",
+    );
 
     md
 }
@@ -502,7 +580,10 @@ fn save_context_file(content: &str, drive_path: &str) -> Result<PathBuf, String>
 fn cleanup_plan_path(context_file_path: &Path) -> PathBuf {
     let name = context_file_path
         .file_name()
-        .map(|n| n.to_string_lossy().replace("pulse-disk-analysis-", "pulse-disk-cleanup-plan-"))
+        .map(|n| {
+            n.to_string_lossy()
+                .replace("pulse-disk-analysis-", "pulse-disk-cleanup-plan-")
+        })
         .unwrap_or_else(|| "pulse-disk-cleanup-plan.md".into());
     context_file_path.with_file_name(name)
 }
@@ -514,7 +595,11 @@ fn to_wsl_path(windows_path: &str) -> String {
     match (chars.next(), chars.next()) {
         (Some(drive), Some(':')) if drive.is_ascii_alphabetic() => {
             let rest = chars.as_str().replace('\\', "/");
-            format!("/mnt/{}/{}", drive.to_ascii_lowercase(), rest.trim_start_matches('/'))
+            format!(
+                "/mnt/{}/{}",
+                drive.to_ascii_lowercase(),
+                rest.trim_start_matches('/')
+            )
         }
         _ => windows_path.to_owned(),
     }
@@ -537,7 +622,12 @@ fn build_prompt_and_invocation(
     custom_prompt: Option<&str>,
     detection: &CliDetection,
 ) -> (String, CliInvocation) {
-    let ScanHighlights { top_dirs, top_files, candidates, total_candidates_bytes } = *highlights;
+    let ScanHighlights {
+        top_dirs,
+        top_files,
+        candidates,
+        total_candidates_bytes,
+    } = *highlights;
 
     let dirs_summary = top_dirs
         .iter()
@@ -564,7 +654,11 @@ fn build_prompt_and_invocation(
     let runs_in_wsl = detection.is_wsl && detection.distro.is_some();
     let cli_path = |path: &Path| {
         let raw = path.display().to_string();
-        if runs_in_wsl { to_wsl_path(&raw) } else { raw }
+        if runs_in_wsl {
+            to_wsl_path(&raw)
+        } else {
+            raw
+        }
     };
     let file_path_str = cli_path(context_file_path);
     let plan_path_str = cli_path(&cleanup_plan_path(context_file_path));
@@ -613,15 +707,18 @@ fn prepare_analysis(
     probe: WslProbe,
 ) -> Result<(AiDiskAnalysisPreview, CliInvocation), String> {
     let cli_cmd = cli_binary(&provider)?;
-    let cache = get_cached_disk_scan()
-        .ok_or_else(|| "Nenhuma análise de disco em cache foi encontrada. Realize uma varredura primeiro.".to_string())?;
+    let cache = get_cached_disk_scan().ok_or_else(|| {
+        "Nenhuma análise de disco em cache foi encontrada. Realize uma varredura primeiro."
+            .to_string()
+    })?;
 
     let root = &cache.result;
     let top_dirs = collect_top_directories(root, 15);
     let top_files = collect_top_files(root, 15);
     let (candidates, total_candidates) = collect_cleanup_candidates(root, 15);
 
-    let report_content = generate_markdown_report(root, &top_dirs, &top_files, &candidates, total_candidates);
+    let report_content =
+        generate_markdown_report(root, &top_dirs, &top_files, &candidates, total_candidates);
     let context_file = save_context_file(&report_content, &root.path)?;
 
     let detection = detect_cli(cli_cmd, probe);
@@ -687,7 +784,10 @@ struct ProviderDetectionCache {
 }
 
 fn now_unix_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn provider_cache_file() -> PathBuf {
@@ -708,11 +808,16 @@ fn normalize_provider_ids(ids: &[String]) -> Vec<String> {
 }
 
 fn is_cache_fresh(cache: &ProviderDetectionCache, now: u64) -> bool {
-    now >= cache.detected_at_unix_secs && now - cache.detected_at_unix_secs < PROVIDER_DETECTION_TTL_SECS
+    now >= cache.detected_at_unix_secs
+        && now - cache.detected_at_unix_secs < PROVIDER_DETECTION_TTL_SECS
 }
 
 fn load_provider_cache() -> Option<ProviderDetectionCache> {
-    if let Some(cache) = PROVIDER_DETECTION.lock().ok().and_then(|guard| guard.clone()) {
+    if let Some(cache) = PROVIDER_DETECTION
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+    {
         return Some(cache);
     }
     let raw = fs::read_to_string(provider_cache_file()).ok()?;
@@ -745,7 +850,9 @@ fn store_provider_cache(providers: Vec<String>) {
 /// Atualiza o cache quando o modal detecta um provedor diferente do salvo
 /// (CLI instalado ou removido depois da última detecção).
 fn reconcile_provider_cache(provider_id: &str, is_available: bool) {
-    let Some(cache) = load_provider_cache() else { return };
+    let Some(cache) = load_provider_cache() else {
+        return;
+    };
     let listed = cache.providers.iter().any(|id| id == provider_id);
     if listed == is_available {
         return;
@@ -771,7 +878,9 @@ pub async fn detect_ai_cli_providers() -> Result<Vec<String>, String> {
     let ids = tauri::async_runtime::spawn_blocking(|| {
         PROVIDER_IDS
             .iter()
-            .filter(|id| cli_binary(id).is_ok_and(|cmd| detect_cli(cmd, WslProbe::RunningOnly).is_available))
+            .filter(|id| {
+                cli_binary(id).is_ok_and(|cmd| detect_cli(cmd, WslProbe::RunningOnly).is_available)
+            })
             .map(|id| (*id).to_owned())
             .collect::<Vec<_>>()
     })
@@ -793,7 +902,9 @@ pub struct AiCleanupPlanStatus {
 }
 
 fn cleanup_plan_status_at(path: &Path) -> AiCleanupPlanStatus {
-    let meta = fs::metadata(path).ok().filter(|m| m.is_file() && m.len() > 0);
+    let meta = fs::metadata(path)
+        .ok()
+        .filter(|m| m.is_file() && m.len() > 0);
     AiCleanupPlanStatus {
         path: path.display().to_string(),
         exists: meta.is_some(),
@@ -810,7 +921,10 @@ fn cleanup_plan_status_at(path: &Path) -> AiCleanupPlanStatus {
 /// da UI, para o comando de abrir não virar um "abra qualquer arquivo".
 fn cached_cleanup_plan_path() -> Option<PathBuf> {
     let cache = get_cached_disk_scan()?;
-    let filename = format!("pulse-disk-cleanup-plan-{}.md", drive_file_suffix(&cache.result.path));
+    let filename = format!(
+        "pulse-disk-cleanup-plan-{}.md",
+        drive_file_suffix(&cache.result.path)
+    );
     Some(env::temp_dir().join(filename))
 }
 
@@ -841,7 +955,10 @@ pub fn get_ai_disk_analysis_preview(
 /// `claude.exe`; shims do npm (`claude.cmd`) precisam do caminho com extensão.
 #[cfg(windows)]
 fn resolve_windows_program(name: &str) -> Option<PathBuf> {
-    let output = crate::process::hidden_command("where.exe").arg(name).output().ok()?;
+    let output = crate::process::hidden_command("where.exe")
+        .arg(name)
+        .output()
+        .ok()?;
     if !output.status.success() {
         return None;
     }
@@ -853,7 +970,9 @@ fn resolve_windows_program(name: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
         .collect();
     let has_ext = |path: &PathBuf, ext: &str| {
-        path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case(ext))
+        path.extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case(ext))
     };
     ["exe", "cmd", "bat"]
         .iter()
@@ -865,7 +984,8 @@ pub fn launch_ai_disk_terminal(
     provider: String,
     custom_prompt: Option<String>,
 ) -> Result<AiTerminalLaunchResult, String> {
-    let (preview, invocation) = prepare_analysis(provider.clone(), custom_prompt, WslProbe::AllowStart)?;
+    let (preview, invocation) =
+        prepare_analysis(provider.clone(), custom_prompt, WslProbe::AllowStart)?;
 
     #[cfg(windows)]
     {
@@ -914,7 +1034,8 @@ pub fn launch_ai_disk_terminal(
             command: preview.command,
             context_file_path: preview.context_file_path,
             terminal_type: "Manual".into(),
-            message: "Abertura automática disponível apenas no Windows. Copie o comando gerado.".into(),
+            message: "Abertura automática disponível apenas no Windows. Copie o comando gerado."
+                .into(),
         })
     }
 }
@@ -922,6 +1043,36 @@ pub fn launch_ai_disk_terminal(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installed_software_and_models_are_never_cleanup_candidates() {
+        assert!(!is_cleanup_candidate(
+            r"C:\Program Files\nodejs\node_modules",
+            "node_modules",
+            true
+        ));
+        assert!(!is_cleanup_candidate(
+            r"C:\Users\lucas\AppData\Roaming\npm\node_modules",
+            "node_modules",
+            true
+        ));
+        assert!(!is_cleanup_candidate(
+            r"C:\Users\lucas\AppData\Local\AnkiProgramFiles\cache",
+            "cache",
+            true
+        ));
+        assert!(!is_cleanup_candidate(
+            r"C:\Users\lucas\.cache\huggingface",
+            "huggingface",
+            true
+        ));
+        assert!(is_cleanup_candidate(
+            r"C:\Users\lucas\Projects\app\node_modules",
+            "node_modules",
+            true
+        ));
+        assert!(is_cleanup_candidate(r"C:\Windows\Temp", "Temp", true));
+    }
 
     fn sample_tree() -> DiskItemNode {
         DiskItemNode {
@@ -977,19 +1128,17 @@ mod tests {
                     dir_count: 0,
                     is_dir: true,
                     modified_at_unix_ms: Some(1_700_000_000_000),
-                    children: vec![
-                        DiskItemNode {
-                            id: "f_log".into(),
-                            name: "debug.log".into(),
-                            path: "C:\\Temp\\debug.log".into(),
-                            size_bytes: 5_000_000,
-                            file_count: 1,
-                            dir_count: 0,
-                            is_dir: false,
-                            modified_at_unix_ms: Some(1_700_000_000_000),
-                            children: vec![],
-                        },
-                    ],
+                    children: vec![DiskItemNode {
+                        id: "f_log".into(),
+                        name: "debug.log".into(),
+                        path: "C:\\Temp\\debug.log".into(),
+                        size_bytes: 5_000_000,
+                        file_count: 1,
+                        dir_count: 0,
+                        is_dir: false,
+                        modified_at_unix_ms: Some(1_700_000_000_000),
+                        children: vec![],
+                    }],
                 },
             ],
         }
@@ -1037,7 +1186,8 @@ mod tests {
         let top_files = collect_top_files(&tree, 5);
         let (candidates, total_bytes) = collect_cleanup_candidates(&tree, 5);
 
-        let report = generate_markdown_report(&tree, &top_dirs, &top_files, &candidates, total_bytes);
+        let report =
+            generate_markdown_report(&tree, &top_dirs, &top_files, &candidates, total_bytes);
         assert!(report.contains("# Relatório de Armazenamento do Pulse"));
         assert!(report.contains("Top Maiores Pastas"));
         assert!(report.contains("Top Maiores Arquivos"));
@@ -1060,8 +1210,14 @@ mod tests {
 
     #[test]
     fn sanitize_prompt_strips_quotes_controls_and_trailing_backslash() {
-        assert_eq!(sanitize_prompt("diga \"oi\"\n\u{0}fim\\\\"), "diga 'oi' fim");
-        assert_eq!(sanitize_prompt(&"x".repeat(MAX_PROMPT_CHARS + 50)).len(), MAX_PROMPT_CHARS);
+        assert_eq!(
+            sanitize_prompt("diga \"oi\"\n\u{0}fim\\\\"),
+            "diga 'oi' fim"
+        );
+        assert_eq!(
+            sanitize_prompt(&"x".repeat(MAX_PROMPT_CHARS + 50)).len(),
+            MAX_PROMPT_CHARS
+        );
     }
 
     #[test]
@@ -1106,7 +1262,11 @@ mod tests {
         assert!(!prompt.contains('"'));
         assert!(invocation.display().starts_with("claude '"));
 
-        let wsl = CliDetection { is_wsl: true, distro: Some("Ubuntu".into()), ..native };
+        let wsl = CliDetection {
+            is_wsl: true,
+            distro: Some("Ubuntu".into()),
+            ..native
+        };
         let (_, invocation) = build_prompt_and_invocation(
             "agy",
             "C:\\",
@@ -1116,7 +1276,19 @@ mod tests {
             &wsl,
         );
         assert_eq!(invocation.program, "wsl.exe");
-        assert_eq!(&invocation.args[..8], ["-d", "Ubuntu", "-e", "sh", "-lc", WSL_EXEC_SCRIPT, "agy", "-i"]);
+        assert_eq!(
+            &invocation.args[..8],
+            [
+                "-d",
+                "Ubuntu",
+                "-e",
+                "sh",
+                "-lc",
+                WSL_EXEC_SCRIPT,
+                "agy",
+                "-i"
+            ]
+        );
         assert_eq!(invocation.args.len(), 9);
 
         // `agy` recusa prompt posicional: no Windows nativo também precisa de `-i`.
@@ -1126,7 +1298,11 @@ mod tests {
             Path::new("C:\\Temp\\ctx.md"),
             &highlights,
             None,
-            &CliDetection { is_wsl: false, distro: None, ..wsl.clone() },
+            &CliDetection {
+                is_wsl: false,
+                distro: None,
+                ..wsl.clone()
+            },
         );
         assert_eq!(invocation.program, "agy");
         assert_eq!(invocation.args, vec!["-i".to_owned(), prompt]);
@@ -1134,20 +1310,37 @@ mod tests {
 
     #[test]
     fn default_prompt_asks_to_save_cleanup_plan_with_cli_visible_path() {
-        let highlights = ScanHighlights { top_dirs: &[], top_files: &[], candidates: &[], total_candidates_bytes: 0 };
-        let native = CliDetection { is_available: true, is_wsl: false, distro: None, environment: String::new() };
+        let highlights = ScanHighlights {
+            top_dirs: &[],
+            top_files: &[],
+            candidates: &[],
+            total_candidates_bytes: 0,
+        };
+        let native = CliDetection {
+            is_available: true,
+            is_wsl: false,
+            distro: None,
+            environment: String::new(),
+        };
         let ctx = Path::new("C:\\Temp\\pulse-disk-analysis-C.md");
 
-        let (prompt, _) = build_prompt_and_invocation("claude", "C:\\", ctx, &highlights, None, &native);
+        let (prompt, _) =
+            build_prompt_and_invocation("claude", "C:\\", ctx, &highlights, None, &native);
         assert!(prompt.contains("'C:\\Temp\\pulse-disk-cleanup-plan-C.md'"));
 
-        let wsl = CliDetection { is_wsl: true, distro: Some("Ubuntu".into()), ..native };
-        let (prompt, _) = build_prompt_and_invocation("claude", "C:\\", ctx, &highlights, None, &wsl);
+        let wsl = CliDetection {
+            is_wsl: true,
+            distro: Some("Ubuntu".into()),
+            ..native
+        };
+        let (prompt, _) =
+            build_prompt_and_invocation("claude", "C:\\", ctx, &highlights, None, &wsl);
         assert!(prompt.contains("'/mnt/c/Temp/pulse-disk-analysis-C.md'"));
         assert!(prompt.contains("'/mnt/c/Temp/pulse-disk-cleanup-plan-C.md'"));
 
         // Prompt personalizado é respeitado sem instrução extra
-        let (prompt, _) = build_prompt_and_invocation("claude", "C:\\", ctx, &highlights, Some("só liste"), &wsl);
+        let (prompt, _) =
+            build_prompt_and_invocation("claude", "C:\\", ctx, &highlights, Some("só liste"), &wsl);
         assert_eq!(prompt, "só liste");
     }
 
@@ -1159,7 +1352,10 @@ mod tests {
 
         assert!(!cleanup_plan_status_at(&plan).exists);
         fs::write(&plan, "").unwrap();
-        assert!(!cleanup_plan_status_at(&plan).exists, "arquivo vazio = IA ainda escrevendo");
+        assert!(
+            !cleanup_plan_status_at(&plan).exists,
+            "arquivo vazio = IA ainda escrevendo"
+        );
         fs::write(&plan, "# Plano").unwrap();
         let status = cleanup_plan_status_at(&plan);
         assert!(status.exists);
@@ -1174,7 +1370,10 @@ mod tests {
         assert_eq!(drive_file_suffix("c:\\"), "C");
         assert_eq!(
             cleanup_plan_path(Path::new("pulse-disk-analysis-C.md")),
-            PathBuf::from(format!("pulse-disk-cleanup-plan-{}.md", drive_file_suffix("C:\\")))
+            PathBuf::from(format!(
+                "pulse-disk-cleanup-plan-{}.md",
+                drive_file_suffix("C:\\")
+            ))
         );
     }
 
@@ -1186,14 +1385,27 @@ mod tests {
 
     #[test]
     fn provider_cache_keeps_only_known_ids_in_ui_order() {
-        let ids = vec!["codex".to_owned(), "calc.exe".to_owned(), "antigravity".to_owned()];
-        assert_eq!(normalize_provider_ids(&ids), vec!["antigravity".to_owned(), "codex".to_owned()]);
+        let ids = vec![
+            "codex".to_owned(),
+            "calc.exe".to_owned(),
+            "antigravity".to_owned(),
+        ];
+        assert_eq!(
+            normalize_provider_ids(&ids),
+            vec!["antigravity".to_owned(), "codex".to_owned()]
+        );
     }
 
     #[test]
     fn provider_cache_expires_after_ttl() {
-        let cache = ProviderDetectionCache { detected_at_unix_secs: 1_000, providers: vec![] };
-        assert!(is_cache_fresh(&cache, 1_000 + PROVIDER_DETECTION_TTL_SECS - 1));
+        let cache = ProviderDetectionCache {
+            detected_at_unix_secs: 1_000,
+            providers: vec![],
+        };
+        assert!(is_cache_fresh(
+            &cache,
+            1_000 + PROVIDER_DETECTION_TTL_SECS - 1
+        ));
         assert!(!is_cache_fresh(&cache, 1_000 + PROVIDER_DETECTION_TTL_SECS));
         // Relógio voltou no tempo: detecta de novo
         assert!(!is_cache_fresh(&cache, 999));
