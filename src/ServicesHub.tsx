@@ -1,7 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import "./ServicesHub.css";
+import {
+  clearBatchMessages,
+  consumeRefreshRequest,
+  getUpgradeJobsState,
+  pruneUpgradeJobs,
+  startPackageUpgrade,
+  startUpgradeAll,
+  subscribeUpgradeJobs,
+} from "./upgradeJobsStore";
+
+export type { UpdateJob } from "./upgradeJobsStore";
 
 /* ------------------------------------------------------------------ */
 /* Tipos espelhados do Rust (serde camelCase)                          */
@@ -236,27 +246,6 @@ const FALLBACK_ICON =
 
 type LoadState = "idle" | "loading" | "ready";
 
-/**
- * Estado de uma atualização disparada pelo usuário. Cada item tem o seu
- * próprio: cliques em vários pacotes correm em paralelo e cada linha mostra o
- * que está acontecendo com ela — nada de loading global que o clique seguinte
- * cancela. `message` carrega a mensagem original do winget/Windows no erro.
- */
-export type UpdateJob = {
-  state: "running" | "done" | "error";
-  /** Última linha emitida pelo winget para este pacote. */
-  log?: string;
-  message?: string;
-  startedAt?: number;
-  settledAt?: number;
-};
-
-/** Evento de progresso emitido pelo backend a cada linha de saída do winget. */
-type UpgradeProgress = { id: string; phase: string; line: string };
-
-/** Id reservado do backend para a atualização em lote (`winget upgrade --all`). */
-const ALL_PACKAGES_ID = "*";
-
 /** `mm:ss` para o tempo decorrido da instalação. */
 export function formatElapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -283,16 +272,13 @@ export function ServicesHub() {
   const [filter, setFilter] = useState<ServiceFilter>("all");
   const [category, setCategory] = useState<ServiceCategoryFilter>("all");
   const [busyService, setBusyService] = useState("");
-  const [updateJobs, setUpdateJobs] = useState<Record<string, UpdateJob>>({});
-  const [busyAll, setBusyAll] = useState(false);
-  const [batchLog, setBatchLog] = useState("");
-  const [batchStartedAt, setBatchStartedAt] = useState(0);
   const [notice, setNotice] = useState("");
 
-  // Espelho síncrono dos pacotes em execução: o `state` do React é assíncrono
-  // e dois cliques em sequência precisam ver o id já reservado, senão a mesma
-  // atualização é disparada duas vezes.
-  const runningUpdates = useRef(new Set<string>());
+  // Instalações vivem fora do componente: o hub é desmontado ao trocar de área,
+  // mas o winget segue rodando e o progresso precisa estar lá na volta.
+  const upgrades = useSyncExternalStore(subscribeUpgradeJobs, getUpgradeJobsState);
+  const { jobs: updateJobs, busyAll, batchLog, batchStartedAt, batchNotice, batchError, needsRefresh } =
+    upgrades;
 
   const runningCount = useMemo(
     () => Object.values(updateJobs).filter(job => job.state === "running").length,
@@ -308,45 +294,10 @@ export function ServicesHub() {
     return () => window.clearInterval(timer);
   }, [runningCount, busyAll]);
 
-  /**
-   * Progresso do backend. Uma linha por evento: o winget não expõe
-   * porcentagem, então a barra é indeterminada e o texto é o feedback real.
-   */
-  useEffect(() => {
-    let active = true;
-    const unlistenPromise = listen<UpgradeProgress>("winget-upgrade-progress", event => {
-      const { id, phase, line } = event.payload;
-      if (id === ALL_PACKAGES_ID) {
-        setBatchLog(line);
-        return;
-      }
-      setUpdateJobs(prev => {
-        const job = prev[id];
-        // Evento de uma operação que a lista já não exibe: descartar.
-        if (!job) return prev;
-        if (phase === "finished") return { ...prev, [id]: { ...job, log: "Concluído" } };
-        return { ...prev, [id]: { ...job, log: line } };
-      });
-    });
-    return () => {
-      active = false;
-      void unlistenPromise.then(unlisten => {
-        if (active) unlisten();
-      });
-    };
-  }, []);
-
   // Um job que não está mais na lista de pendências já cumpriu seu papel.
   useEffect(() => {
     if (updates == null) return;
-    const live = new Set(updates.updates.map(update => update.id));
-    setUpdateJobs(prev => {
-      const next: Record<string, UpdateJob> = {};
-      for (const [id, job] of Object.entries(prev)) {
-        if (job.state === "running" || live.has(id)) next[id] = job;
-      }
-      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
-    });
+    pruneUpgradeJobs(new Set(updates.updates.map(update => update.id)));
   }, [updates]);
 
   const loadServices = useCallback(async (forceRefresh: boolean) => {
@@ -382,6 +333,12 @@ export function ServicesHub() {
   useEffect(() => {
     if (tab === "updates" && updatesState === "idle") void loadUpdates(false);
   }, [tab, updatesState, loadUpdates]);
+
+  // Instalação concluída (com o hub aberto ou em segundo plano): a lista de
+  // pendências está defasada e é reconsultada sem cache.
+  useEffect(() => {
+    if (needsRefresh && consumeRefreshRequest()) void loadUpdates(true);
+  }, [needsRefresh, loadUpdates]);
 
   const categoryCounts = useMemo(
     () => countByCategory(services?.services ?? []),
@@ -437,56 +394,12 @@ export function ServicesHub() {
     }
   };
 
-  /**
-   * Dispara a atualização de **um** pacote. Cada clique é independente: os
-   * outros itens continuam com o próprio loading, barra e log, e a lista só é
-   * reconsultada quando não houver mais nada em execução (reconsultar a cada
-   * item derruba a lista e mistura estados visuais).
-   */
-  const runUpgrade = async (update: PendingUpdate) => {
-    if (runningUpdates.current.has(update.id)) return;
-    runningUpdates.current.add(update.id);
-    setUpdateJobs(prev => ({ ...prev, [update.id]: { state: "running", log: "", startedAt: Date.now() } }));
-    let failure: string | null = null;
-    try {
-      await invoke<string>("upgrade_winget_package", { id: update.id });
-    } catch (cause) {
-      failure = String(cause);
-    } finally {
-      runningUpdates.current.delete(update.id);
-    }
-    const settledAt = Date.now();
-    setUpdateJobs(prev => {
-      const started = prev[update.id]?.startedAt ?? settledAt;
-      if (failure == null) {
-        return { ...prev, [update.id]: { state: "done", log: "Concluído", startedAt: started, settledAt } };
-      }
-      return {
-        ...prev,
-        [update.id]: { state: "error", message: failure, log: failure, startedAt: started, settledAt },
-      };
-    });
-    // Só recarrega quando a última instalação em curso terminou.
-    if (failure == null && runningUpdates.current.size === 0) await loadUpdates(true);
-  };
+  const runUpgrade = (update: PendingUpdate) => startPackageUpgrade(update.id);
 
-  /** Atualiza todos os pacotes desatualizados em uma única execução do winget. */
-  const runUpgradeAll = async () => {
-    if (busyAll) return;
-    setBusyAll(true);
-    setBatchStartedAt(Date.now());
-    setBatchLog("");
+  const runUpgradeAll = () => {
     setUpdatesError("");
     setNotice("");
-    try {
-      await invoke<string>("upgrade_all_winget_packages");
-      setNotice("Todos os aplicativos desatualizados foram enviados para atualização.");
-      await loadUpdates(true);
-    } catch (cause) {
-      setUpdatesError(String(cause));
-    } finally {
-      setBusyAll(false);
-    }
+    return startUpgradeAll();
   };
 
   /**
@@ -496,6 +409,7 @@ export function ServicesHub() {
    */
   const refreshEverything = async () => {
     setNotice("");
+    clearBatchMessages();
     await Promise.all([loadServices(true), loadUpdates(true)]);
   };
 
@@ -843,14 +757,14 @@ export function ServicesHub() {
               {updates?.unavailableReason}
             </p>
           )}
-          {updatesError && (
+          {(updatesError || batchError) && (
             <p className="sh-error" role="alert">
-              {updatesError}
+              {updatesError || batchError}
             </p>
           )}
-          {notice && (
+          {(notice || batchNotice) && (
             <p className="sh-notice" role="status">
-              {notice}
+              {notice || batchNotice}
             </p>
           )}
 

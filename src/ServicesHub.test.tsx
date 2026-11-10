@@ -19,6 +19,7 @@ import {
   type UpdatesSnapshot,
   type WindowsService,
 } from "./ServicesHub";
+import { resetUpgradeJobsForTests } from "./upgradeJobsStore";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -138,6 +139,8 @@ function defaultInvoke(cmd: string): unknown {
 }
 
 beforeEach(() => {
+  // O progresso das instalações vive em escopo de módulo; zera entre casos.
+  resetUpgradeJobsForTests();
   vi.mocked(invoke).mockReset();
   vi.mocked(invoke).mockImplementation((cmd: string) => Promise.resolve(defaultInvoke(cmd)));
   progressHandler = null;
@@ -570,6 +573,48 @@ describe("Aba de atualizações", () => {
     // A lista é reconsultada após a execução em lote.
     const after = vi.mocked(invoke).mock.calls.filter(call => call[0] === "list_pending_updates").length;
     expect(after).toBeGreaterThan(before);
+  });
+
+  it("mantém o progresso do lote ao sair e voltar para a área", async () => {
+    let finishBatch: (value: string) => void = () => {};
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_pending_updates") {
+        return Promise.resolve(
+          updatesSnapshot({
+            updates: [{ id: "Docker.DockerDesktop", name: "Docker Desktop", currentVersion: "4.35.1", availableVersion: "4.36.0", source: "winget" }],
+            totalCount: 1,
+          }),
+        );
+      }
+      if (cmd === "upgrade_all_winget_packages") {
+        return new Promise<string>(resolve => {
+          finishBatch = resolve;
+        });
+      }
+      return Promise.resolve(defaultInvoke(cmd));
+    });
+    const first = await openUpdatesTab();
+    await waitFor(() => expect(screen.getByText("Docker Desktop")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "ATUALIZAR TUDO" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("upgrade_all_winget_packages"));
+
+    // Troca de área: o hub é desmontado, mas o winget segue emitindo.
+    first.unmount();
+    act(() => progressHandler?.({ payload: { id: "*", phase: "log", line: "Instalando Docker Desktop" } }));
+
+    await openUpdatesTab();
+    expect(screen.getByRole("button", { name: "ATUALIZANDO TUDO…" })).toHaveProperty("disabled", true);
+    expect(screen.getByText("Instalando Docker Desktop")).toBeTruthy();
+
+    const before = vi.mocked(invoke).mock.calls.filter(call => call[0] === "list_pending_updates").length;
+    await act(async () => finishBatch("ok"));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("Todos os aplicativos desatualizados"),
+    );
+    expect(vi.mocked(invoke).mock.calls.filter(call => call[0] === "upgrade_all_winget_packages")).toHaveLength(1);
+    expect(
+      vi.mocked(invoke).mock.calls.filter(call => call[0] === "list_pending_updates").length,
+    ).toBeGreaterThan(before);
   });
 
   it("propaga o erro da atualização em lote", async () => {

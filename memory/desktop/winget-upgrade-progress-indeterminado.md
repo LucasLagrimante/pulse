@@ -10,7 +10,7 @@ metadata:
 **Why:** o winget **não expõe porcentagem** — uma barra com "62%" seria dado fictício, proibido pelo AGENTS.md §1.2. E o `winget list --upgrade-available` do host tem 57 pacotes: um único `busyUpdate: string` fazia o segundo clique cancelar o loading visual do primeiro (que continuava rodando em background, invisível).
 
 **How to apply:**
-- Front: `updateJobs: Record<id, {state, log?, message?, startedAt?, settledAt?}>` — chave por pacote, nunca um id global. `runningUpdates` é um `useRef<Set>` (reserva síncrona contra duplo clique, porque `state` é assíncrono).
+- Front: estado das instalações (`jobs` por pacote, `busyAll`, `batchLog`, listener de progresso) vive em `src/upgradeJobsStore.ts` (escopo de módulo + `useSyncExternalStore`), nunca em `useState` do `ServicesHub`: o hub é desmontado ao trocar de área e o progresso sumia com o winget ainda rodando. Fim de instalação marca `needsRefresh`, consumido pelo hub ao (re)montar.
 - Barra sempre `sh-progress-indeterminate` + texto literal do winget + tempo decorrido (`formatElapsed`).
 - Só reconsultar `list_pending_updates` quando `runningUpdates.size === 0`; reconferir a cada item derruba a lista e embaralha o estado visual.
 - Nunca capturar stdout só com `wait_with_output` se a UI precisa de progresso: o buffer do OS enche e o winget trava escrevendo.
