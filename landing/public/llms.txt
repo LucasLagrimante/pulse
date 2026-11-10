@@ -3,8 +3,8 @@
 > Central nativa de observabilidade, diagnóstico e controle local para Windows 11. Reúne monitoramento de CPU, memória, disco e GPU, atividade por grupo de processos, análise de armazenamento TreeSize/Treemap, limpeza segura, desinstalação em 3 fases com resíduos, inventário de inicialização StartupApproved, serviços nativos (SCM) + atualizações winget, cotas de assinaturas de IA com histórico de 30 dias em SQLite e flyout na bandeja com mixer Core Audio por aplicativo. Todo o processamento é 100% local: sem conta, sem telemetria e sem nuvem.
 
 - Versão atual: 1.0.1
-- Instalador Windows 11 x64: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe (instalador NSIS de 3,5 MB)
-- SHA-256: `2b5823ae9e5b12ddb611216db048bd3bc1c8ff4f26e8005ca793ef8eda8d33ff`
+- Instalador Windows 11 x64: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe (instalador NSIS de 3,6 MB)
+- SHA-256: `4eed8b153bc3b5794b5d62df0f80242bed64145b5859621fd8aac0dbc84d8275`
 - Assinatura de código: o instalador ainda não é assinado, então o SmartScreen pode avisar ("Mais informações" → "Executar assim mesmo"); confira o SHA-256 publicado. Política: https://github.com/LucasLagrimante/pulse#política-de-assinatura-de-código
 
 ## O que é
@@ -30,7 +30,7 @@ Quando NÃO usar:
 
 - Você precisa de monitoramento remoto, de servidores ou de múltiplas máquinas em rede.
 - Você usa Windows 10, macOS ou Linux nativo — o Pulse é Windows-first, para Windows 11 x64.
-- Você quer que o aplicativo apague arquivos automaticamente sem confirmação. O Pulse não executa operações destrutivas por conta própria.
+- Você quer que o aplicativo apague arquivos pessoais automaticamente. O Pulse só limpa sozinho categorias de cache/temporários em whitelist, e apenas se você ativar a limpeza automática.
 - Você procura um antivírus. O Pulse aponta evidências técnicas verificáveis para revisão, nunca rotula executáveis arbitrariamente como malware.
 
 ## Recursos principais
@@ -39,7 +39,7 @@ Quando NÃO usar:
 2. **Atividade** — processos agrupados por aplicativo com ordenação por RAM, CPU e GPU, detecção de `vmmemWSL` e encerramento seguro de árvore.
 3. **Desempenho** — gráficos SVG em tempo real e sensores térmicos reais (`Indisponível` com justificativa quando não exposto pelo hardware).
 4. **Armazenamento (TreeSize + Treemap)** — árvore agregada, mapa visual proporcional, arquivos recentes e pastas personalizadas multi-volume com proteção anti-DPC e diagnóstico inteligente via terminal de IA (Claude, Antigravity e Codex CLI, detectados localmente sem ligar o WSL) para mapear maiores pastas e liberar espaço; o plano de limpeza gravado pela IA abre direto no Pulse.
-5. **Limpeza local controlada** — categorias seguras em whitelist com estimativa de espaço antes da ação.
+5. **Limpeza local controlada** — categorias seguras em whitelist (temporários, navegadores, shaders DirectX/NVIDIA, caches npm/uv/Gradle, Lixeira) com estimativa de espaço antes da ação; temporários das últimas 24 horas são sempre preservados, e caches de desenvolvimento e Lixeira só saem na limpeza manual. Limpeza automática opcional (desativada por padrão): uma vez ativada, a escolha fica salva e o Pulse limpa as categorias marcadas em segundo plano (diária, semanal ou mensal), só com o PC ocioso e na tomada, preservando arquivos dos últimos 7 dias e sem nunca esvaziar a Lixeira. A recuperação guiada detecta discos virtuais do WSL/Docker (.vhdx) e a WinSxS e mostra os comandos oficiais (compactar com diskpart, DISM) para você executar como administrador; o Pulse nunca apaga esses arquivos.
 6. **Desinstalação rastreada** — Ponto de Restauração do Sistema + desinstalador oficial do fabricante + varredura conservadora de resíduos de registro e pastas.
 7. **Inicialização e segurança** — controle reversível via `StartupApproved` (0x02/0x03), impacto de boot em ms (Event ID 101/102) e evidências verificáveis.
 8. **Serviços e atualizações** — leitura nativa do SCM/WMI (Sistema, Usuário, Revisão) e atualizações de pacotes via `winget`.
@@ -49,7 +49,7 @@ Quando NÃO usar:
 ## Como funciona
 
 1. Baixe o instalador NSIS (3,5 MB) em https://pulse.lagrimante.com.br/#download.
-2. Instale — o processo é local no escopo do usuário atual e não exige privilégios de administrador.
+2. Instale — o processo é local no escopo do usuário atual e não exige privilégios de administrador. O Pulse roda sem administrador; o indicador PERMISSÃO no topo mostra o modo atual, lista o que depende de elevação (pastas do sistema na limpeza, ponto de restauração, serviços do Windows) e permite reiniciar como administrador pelo UAC quando você quiser.
 3. Abra o Pulse. A telemetria da máquina carrega imediatamente na janela principal e no ícone da bandeja.
 
 ## Requisitos
@@ -62,7 +62,7 @@ Quando NÃO usar:
 
 - Métrica sem suporte do hardware ou driver aparece como **Indisponível**, com justificativa técnica. Nunca como zero fictício.
 - Alertas de segurança apresentam evidências verificáveis, sem rotular executáveis arbitrariamente como malware.
-- Operações potencialmente destrutivas sem confirmação explícita são proibidas por arquitetura.
+- Operações potencialmente destrutivas sem confirmação explícita são proibidas por arquitetura; a limpeza automática é opt-in e restrita à whitelist.
 
 ## Detalhes técnicos
 

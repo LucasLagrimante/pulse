@@ -4,9 +4,9 @@ Central nativa de observabilidade, diagnóstico e controle local para Windows 11
 
 - **Gratuito**, código aberto (MIT) e sem cadastro
 - **Local por padrão**: sem conta, sem telemetria e sem servidor do Pulse
-- **Windows 11 x64**, instalador NSIS de 3,5 MB
+- **Windows 11 x64**, instalador NSIS de 3,6 MB
 - Versão atual: 1.0.1
-- SHA-256: `2b5823ae9e5b12ddb611216db048bd3bc1c8ff4f26e8005ca793ef8eda8d33ff`
+- SHA-256: `4eed8b153bc3b5794b5d62df0f80242bed64145b5859621fd8aac0dbc84d8275`
 - Assinatura de código: o instalador ainda não é assinado, então o SmartScreen pode avisar ("Mais informações" → "Executar assim mesmo"); confira o SHA-256 publicado. Política: https://github.com/LucasLagrimante/pulse#política-de-assinatura-de-código
 - Site: https://pulse.lagrimante.com.br/
 - Download direto: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe
@@ -26,7 +26,7 @@ Gráficos SVG vetoriais de CPU, RAM, GPU, download, upload e discos físicos, al
 Mapa visual proporcional (Treemap), árvore agregada da ocupação do disco, arquivos acessados recentemente e varredura de pastas personalizadas em múltiplos volumes, com proteção anti-DPC (`spawn_blocking` + `yield_now` a cada 15 arquivos) para nunca travar o cursor do mouse. Inclui integração com terminal de IA (Claude Code, Antigravity e Codex CLI; o botão mostra só os CLIs instalados, sem ligar o WSL) que gera relatórios estruturados das maiores pastas e pré-prompts prontos para encontrar e liberar espaço com segurança; o plano de limpeza que a IA grava aparece no próprio Pulse para abrir com um clique.
 
 ### 5. Limpeza local controlada
-Categorias seguras em whitelist (temporários, caches e relatórios conhecidos), com estimativa exata de tamanho antes da ação. O Pulse nunca apaga nada por conta própria.
+Categorias seguras em whitelist (temporários, caches e relatórios conhecidos), com estimativa exata de tamanho antes da ação. Inclui caches de shaders NVIDIA e de ferramentas de desenvolvimento (npm, uv, Gradle; só na limpeza manual). Os temporários das últimas 24 horas são sempre preservados. Limpeza automática opcional (desativada por padrão): uma vez ativada, a escolha fica salva e o Pulse limpa as categorias marcadas em segundo plano (diária, semanal ou mensal), só com o PC ocioso e na tomada, preservando arquivos dos últimos 7 dias e sem nunca esvaziar a Lixeira. A recuperação guiada detecta discos virtuais do WSL/Docker (.vhdx) e a WinSxS e mostra os comandos oficiais (compactar com diskpart, DISM) para você executar como administrador; o Pulse nunca apaga esses arquivos.
 
 ### 6. Desinstalação com Ponto de Restauração e rastreamento de resíduos
 Inventário deduplicado (`HKLM` 64/32 + `HKCU`) que cria Ponto de Restauração do Sistema, executa o desinstalador oficial do fabricante e faz uma varredura conservadora de pastas e chaves de registro órfãs para você revisar antes de remover.
@@ -45,7 +45,7 @@ Flyout compacto na bandeja do sistema com telemetria instantânea, barras duplas
 
 ## Como funciona
 
-1. **Baixe o instalador** — um único executável NSIS compacto (instalador NSIS de 3,5 MB), configurado para instalação no usuário atual sem exigir elevação de administrador para todo o sistema.
+1. **Baixe o instalador** — um único executável NSIS compacto (instalador NSIS de 3,6 MB), configurado para instalação no usuário atual sem exigir elevação de administrador para todo o sistema. O Pulse roda sem administrador; o indicador PERMISSÃO no topo mostra o modo atual, lista o que depende de elevação (pastas do sistema na limpeza, ponto de restauração, serviços do Windows) e permite reiniciar como administrador pelo UAC quando você quiser.
 2. **Instale em segundos** — a instalação é local, fecha instâncias anteriores automaticamente em upgrades e utiliza o WebView2 nativo do Windows 11.
 3. **Abra e leia o sistema** — o painel carrega a telemetria da máquina imediatamente e fica disponível na bandeja do sistema.
 
@@ -62,7 +62,7 @@ A privacidade do Pulse não é uma promessa de política: é uma consequência d
 - Sem conta e sem login.
 - Sem telemetria: nenhuma leitura do sistema é transmitida para fora.
 - Sem dados fictícios: sensor sem suporte aparece como Indisponível.
-- Sem ações destrutivas: nada é apagado ou alterado sem confirmação explícita.
+- Sem ações destrutivas: nada é apagado ou alterado sem confirmação explícita; a limpeza automática só roda se você a ativar.
 - Rede só quando você pede: Cotas de IA consultam direto os endpoints oficiais de cada provedor; o assistente de armazenamento envia ao CLI de IA escolhido um resumo com nomes e caminhos do scan e mostra o comando antes de executar.
 - Código aberto sob licença MIT.
 

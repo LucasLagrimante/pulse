@@ -70,7 +70,7 @@
       "applicationCategory": "UtilitiesApplication",
       "operatingSystem": "Windows 11",
       "softwareVersion": "1.0.1",
-      "fileSize": "3,5 MB",
+      "fileSize": "3,6 MB",
       "downloadUrl": "https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe",
       "description": "Aplicativo nativo para Windows 11 que reúne observabilidade de hardware, atividade de processos, análise de armazenamento TreeSize, limpeza segura, desinstalação com rastreamento de resíduos, inventário de inicialização, serviços e winget, cotas de IA com histórico SQLite e painel na bandeja com mixer Core Audio. Todo o processamento é local.",
       "featureList": [
@@ -78,7 +78,7 @@
         "Atividade com consumo de CPU, GPU e RAM por aplicativo e identificação de vmmemWSL",
         "Telemetria em tempo real com gráficos SVG e sensores térmicos reais",
         "Análise de armazenamento em árvore (TreeSize), treemap e arquivos recentes com proteção anti-DPC e integração com terminal de IA (Claude, Antigravity, Codex) para diagnóstico de maiores pastas e liberação de espaço",
-        "Limpeza local controlada por categorias seguras em whitelist",
+        "Limpeza local controlada por categorias seguras em whitelist, com limpeza automática opcional agendada",
         "Desinstalação em 3 fases com Ponto de Restauração e varredura conservadora de resíduos",
         "Inventário de inicialização via StartupApproved com impacto de boot em milissegundos",
         "Serviços nativos do Windows (SCM/WMI) e atualizações de aplicativos via winget",
@@ -133,7 +133,7 @@
           "name": "O Pulse apaga arquivos ou chaves de registro automaticamente?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Não. O Pulse nunca executa operações destrutivas por conta própria. A limpeza de disco usa categorias seguras em whitelist, a inicialização usa o padrão reversível StartupApproved (sem reg delete) e a desinstalação cria Ponto de Restauração e exibe os resíduos para sua revisão."
+            "text": "Não. O Pulse nunca executa operações destrutivas por conta própria. A limpeza de disco usa categorias seguras em whitelist e só roda sozinha se você ativar a limpeza automática (desligada por padrão, preserva arquivos dos últimos 7 dias e nunca esvazia a Lixeira), a inicialização usa o padrão reversível StartupApproved (sem reg delete) e a desinstalação cria Ponto de Restauração e exibe os resíduos para sua revisão."
           }
         },
         {
@@ -273,7 +273,7 @@
                 <path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" />
               </svg>
               Baixar para Windows 11
-              <span class="btn-pill-meta" data-release-size>3,5 MB</span>
+              <span class="btn-pill-meta" data-release-size>3,6 MB</span>
             </a>
             <a class="btn btn-secondary btn-lg" href="#previa">Testar interface interativa</a>
           </div>
@@ -281,7 +281,7 @@
           <p class="hero-meta" data-reveal>
             <span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z M12 6v6l4 2" /></svg>
-              <span data-release-installer-label>Instalador NSIS · 3,5 MB</span>
+              <span data-release-installer-label>Instalador NSIS · 3,6 MB</span>
             </span>
             <span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13h5l3-8 4 14 3-6h5" /></svg>
@@ -984,7 +984,7 @@
                 <span class="feature-badge">WHITELIST SEGURA</span>
               </div>
               <h3>Limpeza local controlada</h3>
-              <p>Categorias seguras de espaço recuperável (temporários, caches e relatórios conhecidos), com estimativa exata antes da ação. O Pulse nunca apaga nada por conta própria.</p>
+              <p>Categorias seguras de espaço recuperável (temporários, caches de navegador, shaders DirectX/NVIDIA, npm/uv/Gradle e relatórios conhecidos), com estimativa exata antes da ação. Temporários das últimas 24 horas ficam preservados. A limpeza automática é opcional e vem desligada: ative uma vez e o Pulse limpa em segundo plano com o PC ocioso, preservando arquivos dos últimos 7 dias. A recuperação guiada mostra como compactar os discos virtuais do WSL/Docker e limpar a WinSxS com o DISM, sem apagar nada por conta própria.</p>
               <button type="button" class="feature-sim-link" data-open-sim="storage">Ver no simulador ↑</button>
             </article>
 
@@ -1253,7 +1253,7 @@
           <div class="steps">
             <article class="step" data-reveal>
               <h3>Baixe o instalador</h3>
-              <p>Um único executável NSIS compacto (<span data-release-size>3,5 MB</span>), configurado para instalação rápida no usuário atual sem exigir elevação de administrador para todo o sistema.</p>
+              <p>Um único executável NSIS compacto (<span data-release-size>3,6 MB</span>), configurado para instalação rápida no usuário atual sem exigir elevação de administrador para todo o sistema. O Pulse roda sem administrador; o indicador PERMISSÃO no topo mostra o modo atual, lista o que depende de elevação (pastas do sistema na limpeza, ponto de restauração, serviços do Windows) e permite reiniciar como administrador pelo UAC quando você quiser.</p>
             </article>
             <article class="step" data-reveal>
               <h3>Instale em segundos</h3>
@@ -1286,7 +1286,7 @@
             </article>
             <article class="req" data-reveal>
               <h3>Pegada ultraleve</h3>
-              <p>Instalador de <span data-release-size>3,5 MB</span>, menos de 80 MB de Working Set em RAM e banco SQLite local compacto em <code>%LOCALAPPDATA%\Pulse</code>.</p>
+              <p>Instalador de <span data-release-size>3,6 MB</span>, menos de 80 MB de Working Set em RAM e banco SQLite local compacto em <code>%LOCALAPPDATA%\Pulse</code>.</p>
             </article>
           </div>
         </div>
@@ -1328,7 +1328,7 @@
                 <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" /></svg>
                 WINDOWS 11 · X64
               </span>
-              <span data-release-installer-label>Instalador NSIS · 3,5 MB</span>
+              <span data-release-installer-label>Instalador NSIS · 3,6 MB</span>
               <span data-release-version-label>Versão 1.0.1</span>
               <span>Gratuito · Sem conta</span>
               <a href="https://github.com/LucasLagrimante/pulse/releases" rel="noopener">Todas as versões no GitHub</a>
@@ -1337,7 +1337,7 @@
             <div class="checksum-box" aria-label="Checksum SHA-256 do instalador">
               <div class="checksum-meta">
                 <span>SHA-256 (Pulse-latest-x64-setup.exe)</span>
-                <code data-release-sha256>2b5823ae9e5b12ddb611216db048bd3bc1c8ff4f26e8005ca793ef8eda8d33ff</code>
+                <code data-release-sha256>4eed8b153bc3b5794b5d62df0f80242bed64145b5859621fd8aac0dbc84d8275</code>
               </div>
               <button type="button" class="copy-hash-btn" data-copy-sha256>Copiar SHA-256</button>
             </div>
@@ -1416,7 +1416,7 @@
                 <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
               </button>
               <div class="faq-a" data-faq-a>
-                <p>Não. O Pulse não executa operações destrutivas por conta própria. A limpeza de disco usa categorias seguras em whitelist, a inicialização usa o padrão reversível <code>StartupApproved</code> (sem <code>reg delete</code>) e a desinstalação cria Ponto de Restauração antes de rodar o desinstalador oficial, exibindo os resíduos restantes para sua revisão manual.</p>
+                <p>Não. O Pulse não executa operações destrutivas por conta própria. A limpeza de disco usa categorias seguras em whitelist e só roda sozinha se você ativar a limpeza automática (desligada por padrão, preserva arquivos dos últimos 7 dias e nunca esvazia a Lixeira), a inicialização usa o padrão reversível <code>StartupApproved</code> (sem <code>reg delete</code>) e a desinstalação cria Ponto de Restauração antes de rodar o desinstalador oficial, exibindo os resíduos restantes para sua revisão manual.</p>
               </div>
             </div>
 
@@ -1479,7 +1479,7 @@
             </div>
             <div class="download-facts">
               <span>Windows 11 x64</span>
-              <span data-release-installer-label>Instalador NSIS · 3,5 MB</span>
+              <span data-release-installer-label>Instalador NSIS · 3,6 MB</span>
               <span>Gratuito e sem cadastro</span>
             </div>
           </div>
