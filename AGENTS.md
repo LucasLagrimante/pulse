@@ -237,8 +237,9 @@ Sempre valide as alterações antes de finalizar qualquer intervenção:
 | :--- | :--- |
 | `npm test` | Executa a suíte de testes unitários do frontend (Vitest) |
 | `npm run typecheck` | Validação estrita de tipos TypeScript (`tsc --noEmit`) |
+| `npm run lint` | ESLint do frontend (`src/`): hooks do React e `typescript-eslint`, sem regras de estilo |
 | `npm run build` | Compilação completa do bundle do app (TypeScript + Vite) |
-| `npm run verify` | Execução encadeada: typecheck, testes e build do app |
+| `npm run verify` | Execução encadeada: typecheck, lint, testes e build do app |
 | `npm run build:native` | Build completa WSL -> Windows (Frontend + Rust MSVC + NSIS + Sync Landing Page) |
 | `npm run tauri:build:install` | Executa `build:native` e abre o instalador NSIS no Windows |
 | `npm run lp:sync` | Sincroniza versão, tamanho e SHA-256 do instalador com a Landing Page e valida SEO |
@@ -258,6 +259,6 @@ Antes de entregar qualquer tarefa no Pulse, verifique:
 - [ ] Todos os elementos, telas, modais e formulários utilizam tokens de tema (`--neu-*` e `--theme-*`) sem cores hex/rgb fixas?
 - [ ] Valores numéricos recebidos do IPC são sanitizados contra `null`/`undefined`/`NaN`?
 - [ ] Novas funcionalidades ou módulos foram refletidos na Landing Page (`landing/`) e sincronizados com `npm run lp:sync` / `npm run build:native`?
-- [ ] `npm test`, `npm run typecheck` e `npm run lp:check` executam com 100% de aprovação e zero alertas?
+- [ ] `npm test`, `npm run typecheck`, `npm run lint` e `npm run lp:check` executam com 100% de aprovação e zero alertas?
 - [ ] Novas lições ou restrições foram registradas em `memory/<modulo>/<slug>.md`?
 

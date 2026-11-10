@@ -438,7 +438,7 @@ export function UninstallHub() {
         const deferred: string[] = [];
         for (let index = 0; index < queue.length; index += MEASURE_BATCH) {
           if (measureRun.current !== run) return;
-          let batch: AppFootprint[] = [];
+          let batch: AppFootprint[];
           try {
             const result = await invoke<AppFootprint[]>("measure_installed_app_sizes", {
               appIds: queue.slice(index, index + MEASURE_BATCH),
@@ -517,7 +517,7 @@ export function UninstallHub() {
     () => existingRegistryKeys(session?.targets.registryKeys ?? []),
     [session],
   );
-  const folderCandidates = session?.targets.folders ?? [];
+  const folderCandidates = useMemo(() => session?.targets.folders ?? [], [session]);
   const selectedFolderBytes = useMemo(
     () => selectedFoldersSize(folderCandidates, selectedFolders),
     [folderCandidates, selectedFolders],
@@ -645,7 +645,8 @@ export function UninstallHub() {
               onClick={() =>
                 setExpanded(current => {
                   const next = new Set(current);
-                  next.has(node.path) ? next.delete(node.path) : next.add(node.path);
+                  if (next.has(node.path)) next.delete(node.path);
+                  else next.add(node.path);
                   return next;
                 })
               }
@@ -984,7 +985,8 @@ export function UninstallHub() {
                               onChange={() =>
                                 setSelectedRegistry(current => {
                                   const next = new Set(current);
-                                  next.has(key.id) ? next.delete(key.id) : next.add(key.id);
+                                  if (next.has(key.id)) next.delete(key.id);
+                                  else next.add(key.id);
                                   return next;
                                 })
                               }

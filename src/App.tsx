@@ -2528,6 +2528,8 @@ function App() {
       window.clearTimeout(t3);
       window.clearTimeout(t4);
     };
+    // Carga inicial escalonada: roda só na largada, não quando as funções de carga são recriadas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialLoadAllowed, windowLabel]);
 
   useEffect(() => {
@@ -2658,6 +2660,8 @@ function App() {
     if (activeArea === "Inicialização e segurança") {
       void loadStartupItems();
     }
+    // Recarrega só na troca de área, não quando as funções de carga são recriadas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeArea]);
 
   const loadStartupItems = async () => {
@@ -2861,7 +2865,7 @@ function App() {
       path: file.path,
     }).catch(() => setError("Não foi possível abrir esse item."));
 
-  const processes = overview?.topProcesses ?? [];
+  const processes = useMemo(() => overview?.topProcesses ?? [], [overview]);
   const sortedProcesses = useMemo(
     () => sortProcesses(processes, processSort, processSortDirection),
     [processes, processSort, processSortDirection],

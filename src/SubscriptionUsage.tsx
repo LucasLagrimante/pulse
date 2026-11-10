@@ -258,7 +258,7 @@ function ProviderCard({
   onDrop?: DragEventHandler<HTMLElement>;
   onDragEnd?: DragEventHandler<HTMLElement>;
 }) {
-  const windows = Array.isArray(provider.windows) ? provider.windows : [];
+  const windows = useMemo(() => (Array.isArray(provider.windows) ? provider.windows : []), [provider.windows]);
   const plan = planLabel(provider.plan);
   const credits = measuredNumber(provider.creditsRemaining);
   const creditsTotal = measuredNumber(provider.creditsTotal);

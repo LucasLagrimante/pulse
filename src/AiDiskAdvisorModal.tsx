@@ -172,6 +172,8 @@ export function AiDiskAdvisorModal({
     return () => {
       isMounted = false;
     };
+    // customPrompt fica de fora de propósito: a prévia não é refeita a cada tecla digitada.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, cachedScan, selectedProvider, isEditingPrompt]);
 
   if (!isOpen) return null;

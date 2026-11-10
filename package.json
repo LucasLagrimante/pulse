@@ -9,9 +9,10 @@
     "build": "tsc && vite build",
     "build:native": "bash scripts/build-native.sh",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "tsc --noEmit && vitest run && vite build",
+    "verify": "tsc --noEmit && eslint src && vitest run && vite build",
     "tauri": "tauri",
     "tauri:build": "bash scripts/build-native.sh",
     "tauri:build:install": "bash scripts/build-native.sh --install",
@@ -31,6 +32,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "2.11.5",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
@@ -39,8 +41,12 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.2",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
     "jsdom": "^26.1.0",
     "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2",
     "vite": "^8.0.16",
     "vitest": "^3.2.4"
   },

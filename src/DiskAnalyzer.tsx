@@ -104,7 +104,7 @@ function computeTreemapBoxes(
     return result;
   }
 
-  let remaining = { ...bounds };
+  const remaining = { ...bounds };
   const isHorizontal = remaining.w >= remaining.h;
 
   let accumulated = 0;
