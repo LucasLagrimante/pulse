@@ -10,6 +10,7 @@ pub mod performance;
 pub mod performance_devices;
 pub mod privileges;
 pub mod process;
+pub mod process_identity;
 pub mod process_usage;
 pub mod quota_history;
 pub mod recent_files;

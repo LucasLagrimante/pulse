@@ -25,6 +25,10 @@ pub struct TopProcess {
     pub icon: Option<String>,
     #[serde(default)]
     pub path: Option<String>,
+    /// Categoria de pseudo-processo do Windows sem executável legível
+    /// (`kernel`, `memory`, `virtualization`, `security`).
+    #[serde(default)]
+    pub system_kind: Option<String>,
 }
 
 fn default_process_count() -> usize {
@@ -203,6 +207,14 @@ fn attach_process_icons(processes: &mut [TopProcess]) {
                     process.icon = Some(icon);
                     continue;
                 }
+            }
+            // Pseudo-processo: usa o executável que de fato o representa
+            // (ex.: wsl.exe para vmmemWSL) ou fica com o glifo do frontend.
+            if let Some(known) = crate::process_identity::known_process(&process.name) {
+                process.icon = known
+                    .icon_source
+                    .and_then(crate::app_icons::icon_for_command);
+                continue;
             }
             let exe_name = if process.name.to_lowercase().ends_with(".exe") {
                 process.name.clone()
@@ -495,6 +507,7 @@ pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
                 overview.startup_item_count = items.len() as u32;
             }
 
+            crate::process_identity::enrich(&mut overview.top_processes);
             overview.gpu_percent = attach_usage_metrics(&mut overview.top_processes);
             attach_process_icons(&mut overview.top_processes);
 

@@ -1,6 +1,7 @@
-import { AppWindow, Search, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ProcessSortColumn, ProcessSortDirection, TopProcess } from "./App";
+import { ProcessFallbackIcon } from "./Identity";
 import "./DataTable.css";
 import "./ActivityProcessTable.css";
 
@@ -190,7 +191,7 @@ export function ActivityProcessTable({
                   <span className="dt-rank">{String(index + 1).padStart(2, "0")}</span>
                   <div className="dt-identity" title={[label, process.name, process.publisher, process.path].filter(Boolean).join(" · ")}>
                     <span className={`dt-icon${process.icon ? "" : " is-empty"}`} aria-hidden="true">
-                      {process.icon ? <img src={process.icon} alt="" /> : <AppWindow size={16} strokeWidth={1.6} />}
+                      {process.icon ? <img src={process.icon} alt="" /> : <ProcessFallbackIcon kind={process.systemKind} />}
                     </span>
                     <span className="dt-name">
                       <strong>{label}</strong>

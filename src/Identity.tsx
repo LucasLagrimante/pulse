@@ -1,3 +1,6 @@
+import { Cpu, MemoryStick, Server, ShieldCheck } from "lucide-react";
+import type { SystemProcessKind } from "./App";
+
 /** Pulse: a continuous signal folded into a P. Shared by shell and loading states. */
 export function PulseMark({ animated = false }: { animated?: boolean }) {
   return <svg className={`pulse-mark${animated ? " pulse-mark-loading" : ""}`} viewBox="0 0 48 48" fill="none" aria-hidden="true">
@@ -52,4 +55,34 @@ export function PulseLoading({ compact = false }: { compact?: boolean }) {
       <span className="boot-author">POR LUCAS LAGRIMANTE</span>
     </>}
   </div>;
+}
+
+// Glifo semântico para pseudo-processos do Windows; os demais usam a janela genérica
+const SYSTEM_KIND_ICONS = {
+  kernel: Cpu,
+  memory: MemoryStick,
+  virtualization: Server,
+  security: ShieldCheck,
+} as const;
+
+export function ProcessFallbackIcon({ kind }: { kind?: SystemProcessKind | null }) {
+  const KindIcon = kind != null ? SYSTEM_KIND_ICONS[kind] : undefined;
+  if (KindIcon) {
+    return <KindIcon className="process-fallback-symbol" size={16} strokeWidth={1.6} aria-hidden="true" />;
+  }
+  return (
+    <svg
+      className="process-fallback-symbol"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <path d="M3 9h18 M9 21V9" />
+    </svg>
+  );
 }

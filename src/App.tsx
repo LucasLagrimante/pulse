@@ -7,7 +7,7 @@ import "./App.css";
 import "./identity.css";
 import "./DataTable.css";
 import { ActivityProcessTable } from "./ActivityProcessTable";
-import { PulseMark, ModuleIcon, PulseLoading, FileIcon } from "./Identity";
+import { PulseMark, ModuleIcon, PulseLoading, FileIcon, ProcessFallbackIcon } from "./Identity";
 import {
   DetailedResourceChart,
   HardwareGaugeBar,
@@ -161,7 +161,11 @@ export type TopProcess = {
   gpuPercent?: number | null;
   icon?: string | null;
   path?: string | null;
+  /** Pseudo-processo do Windows sem executável legível (kernel, VM, Defender). */
+  systemKind?: SystemProcessKind | null;
 };
+
+export type SystemProcessKind = "kernel" | "memory" | "virtualization" | "security";
 
 export type ProcessSortColumn = "memory" | "cpu" | "gpu";
 export type ProcessSortDirection = "asc" | "desc";
@@ -625,23 +629,6 @@ export class CrashBoundary extends Component<CrashBoundaryProps, CrashBoundarySt
   }
 }
 
-export function ProcessFallbackIcon() {
-  return (
-    <svg
-      className="process-fallback-symbol"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3" y="3" width="18" height="18" rx="3" />
-      <path d="M3 9h18 M9 21V9" />
-    </svg>
-  );
-}
 
 export function ProcessList({ processes }: { processes: TopProcess[] }) {
   return (
@@ -655,7 +642,7 @@ export function ProcessList({ processes }: { processes: TopProcess[] }) {
                 {p.icon ? (
                   <img src={p.icon} alt="" className="process-icon-img" />
                 ) : (
-                  <ProcessFallbackIcon />
+                  <ProcessFallbackIcon kind={p.systemKind} />
                 )}
               </span>
               <span className="process-name" title={[p.displayName || p.name, p.name, p.publisher].filter(Boolean).join(" · ")}>
@@ -2025,7 +2012,7 @@ export function TrayFlyout({
                 <span className="flyout-process-rank">{String(i + 1).padStart(2, "0")}</span>
                 <div className="flyout-process-identity">
                   <span className={`flyout-process-icon ${p.icon ? "" : "flyout-process-icon-empty"}`} aria-hidden="true">
-                    {p.icon ? <img src={p.icon} alt="" /> : <ProcessFallbackIcon />}
+                    {p.icon ? <img src={p.icon} alt="" /> : <ProcessFallbackIcon kind={p.systemKind} />}
                   </span>
                   <span className="flyout-process-name" title={[p.displayName || p.name, p.name, p.publisher].filter(Boolean).join(" · ")}>
                     <strong>{p.displayName || p.name}</strong>

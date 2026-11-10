@@ -17,7 +17,7 @@ Central nativa de observabilidade, diagnóstico e controle local para Windows 11
 CPU, memória, disco por volume, GPU, rede e processos em uma tela unificada com cache nativo de 3,5 s e contagem de itens de inicialização.
 
 ### 2. Atividade (Processos agrupados)
-Processos agrupados por aplicativo com consumo real de Memória, CPU e GPU, ordenação multi-coluna, filtro por nome/editor, linha destacada com ação de fechar própria, identificação dedicada do host WSL (`vmmemWSL`) e encerramento seguro de árvore de processos.
+Processos agrupados por aplicativo com consumo real de Memória, CPU e GPU, ordenação multi-coluna, filtro por nome/editor, linha destacada com ação de fechar própria, nome, editor e ícone resolvidos também para processos elevados ou protegidos (como o Microsoft Defender), identificação dedicada do host WSL (`vmmemWSL`) e de componentes do kernel (Compressão de memória, Sistema) e encerramento seguro de árvore de processos.
 
 ### 3. Desempenho e telemetria em tempo real
 Gráficos SVG vetoriais de CPU, RAM, GPU, download, upload e discos físicos, além de sensores térmicos verificados. Sensores sem suporte do hardware aparecem como **Indisponível** com justificativa técnica, nunca como zero fictício.

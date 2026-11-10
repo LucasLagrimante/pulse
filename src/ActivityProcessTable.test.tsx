@@ -44,6 +44,27 @@ describe("ActivityProcessTable", () => {
     expect(within(chromeRow).getByTitle(/GPU indisponível/)).toHaveTextContent("—");
   });
 
+  it("usa glifo de categoria para pseudo-processos do Windows sem ícone", () => {
+    render(
+      <ActivityProcessTable
+        processes={[
+          { name: "Memory Compression", id: 9, memoryMb: 700, displayName: "Compressão de memória", systemKind: "memory" },
+          { name: "desconhecido", id: 10, memoryMb: 100 },
+        ]}
+        limit={25}
+        memoryTotalGb={16}
+        onTerminate={vi.fn()}
+        sortBy="memory"
+        sortDirection="desc"
+        onSortChange={vi.fn()}
+      />,
+    );
+    const [systemRow, unknownRow] = Array.from(document.querySelectorAll(".dt-row")) as HTMLElement[];
+    expect(systemRow).toHaveTextContent("Compressão de memória");
+    expect(systemRow.querySelector(".dt-icon svg")).toHaveClass("lucide-memory-stick");
+    expect(unknownRow.querySelector(".dt-icon svg")).not.toHaveClass("lucide-memory-stick");
+  });
+
   it("impede o Pulse de encerrar a si mesmo", () => {
     renderTable();
     expect(screen.getByRole("button", { name: "Fechar pulse-windows.exe" })).toBeDisabled();
