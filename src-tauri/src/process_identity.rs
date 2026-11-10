@@ -227,8 +227,8 @@ mod win32 {
                 && length >= 4
             {
                 let pairs = std::slice::from_raw_parts(pointer as *const u16, (length / 2) as usize);
-                for pair in pairs.chunks_exact(2) {
-                    translations.push((pair[0], pair[1]));
+                for &[language, codepage] in pairs.as_chunks::<2>().0 {
+                    translations.push((language, codepage));
                 }
             }
             translations.push((0x0409, 0x04B0));

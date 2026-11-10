@@ -813,9 +813,9 @@ mod tests {
         let dark = tray_icon_for_theme("dark");
 
         assert_eq!((light.width(), light.height()), (32, 32));
-        assert!(light.rgba().chunks_exact(4).any(|pixel| pixel[3] > 0));
+        assert!(light.rgba().as_chunks::<4>().0.iter().any(|pixel| pixel[3] > 0));
         assert_ne!(light.rgba(), dark.rgba());
-        assert!(light.rgba().chunks_exact(4).any(|pixel| pixel[3] == 0));
+        assert!(light.rgba().as_chunks::<4>().0.iter().any(|pixel| pixel[3] == 0));
     }
 
     #[test]
@@ -825,7 +825,7 @@ mod tests {
         let mut older = 0u64;
         let mut latest = 0u64;
 
-        for (index, pixel) in icon.rgba().chunks_exact(4).enumerate() {
+        for (index, pixel) in icon.rgba().as_chunks::<4>().0.iter().enumerate() {
             let is_signal =
                 pixel[3] > 0 && pixel[0] > 180 && (90..190).contains(&pixel[1]) && pixel[2] < 80;
             if !is_signal {

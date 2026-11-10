@@ -331,11 +331,13 @@ fn command_path(name: &str) -> Option<PathBuf> {
 fn decode_command_output(bytes: &[u8]) -> String {
     let looks_like_utf16le = bytes.len() >= 2
         && bytes.len().is_multiple_of(2)
-        && bytes.chunks_exact(2).filter(|pair| pair[1] == 0).count() >= bytes.len() / 4;
+        && bytes.as_chunks::<2>().0.iter().filter(|pair| pair[1] == 0).count() >= bytes.len() / 4;
     if looks_like_utf16le {
         let units = bytes
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]));
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u16::from_le_bytes(*pair));
         return String::from_utf16_lossy(&units.collect::<Vec<_>>());
     }
     String::from_utf8_lossy(bytes).into_owned()

@@ -299,7 +299,7 @@ unsafe fn bitmap_to_rgba(
                 }
             }
         } else {
-            for pixel in rgba.chunks_exact_mut(4) {
+            for pixel in rgba.as_chunks_mut::<4>().0 {
                 pixel[3] = 255;
             }
         }
