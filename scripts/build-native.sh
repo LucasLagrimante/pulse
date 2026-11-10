@@ -112,6 +112,9 @@ cat > "$STAGING/run-build.bat" <<BATEOF
 setlocal
 taskkill /IM pulse-windows.exe /F >nul 2>&1
 set "CARGO_TARGET_DIR=$TARGET_DIR_WIN"
+rem PATH herdado do WSL pode vir sem .cargo\bin (ambiente da sessão WSL defasado)
+if exist "%USERPROFILE%\.cargo\bin\cargo.exe" set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
+where cargo >nul 2>&1 || (echo cargo nao encontrado no PATH do Windows & exit /b 4)
 call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 2
 cd /d "$STAGING_WIN\src-tauri" || exit /b 3
 echo === tauri build (Rust release + bundler NSIS) ===
