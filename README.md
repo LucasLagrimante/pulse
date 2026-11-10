@@ -3,7 +3,7 @@
 Central nativa para Windows 11 que reúne observabilidade, diagnóstico e controle local do sistema em uma interface única. O Pulse explica atividade de processos, desempenho, armazenamento, inicialização e sinais de segurança sem conta e sem telemetria. Veja em [Privacidade e rede](#privacidade-e-rede) as únicas funções opcionais que acessam a internet.
 
 > [!IMPORTANT]
-> Compile e execute o Pulse em um terminal **Windows** (PowerShell, Prompt de Comando ou Windows Terminal com perfil PowerShell). O build nativo não funciona a partir do WSL sem instalar e configurar um toolchain Rust para Linux com cross-compilation para MSVC.
+> O backend só compila com o toolchain MSVC do Windows. No PowerShell use `npx tauri build`; no WSL use `npm run build:native`, que compila no Windows a partir do WSL. Veja [Gerar o instalador](#gerar-o-instalador).
 
 ## Recursos
 
@@ -48,44 +48,48 @@ O primeiro build demora mais porque o Cargo precisa baixar e compilar as depend�
 
 ## Gerar o instalador
 
-No PowerShell, na raiz do repositório, execute:
+O único formato configurado em `src-tauri/tauri.conf.json` é o NSIS (`"targets": "nsis"`), então nenhum comando abaixo precisa de `--bundles`.
+
+### No WSL (fluxo do projeto)
+
+O repositório vive no WSL e o backend é compilado no Windows (MSVC) pelo `scripts/build-native.sh`. Só o instalador local, sem alterar `landing/`:
+
+```bash
+npm run build:native -- --no-landing
+```
+
+| Comando | O que faz |
+| :--- | :--- |
+| `npm run build:native -- --no-landing` | Frontend + Rust + instalador NSIS, sem sincronizar a Landing Page |
+| `npm run build:native` | Igual, mas ao final sincroniza versão/SHA-256 em `landing/index.html` e `landing/public/*` |
+| `npm run build:native -- --rust --no-landing` | Reaproveita o `dist/` atual e recompila só backend + instalador |
+| `npm run build:native -- --install --no-landing` | Gera o instalador e já o abre (pede elevação via UAC) |
+
+`npm run tauri:build` e `npm run tauri:build:install` são apelidos do mesmo script e aceitam as mesmas flags (`--rust`, `--install`, `--no-landing`). Qualquer outra flag, como `--bundles`, aborta com `argumento desconhecido`.
+
+### No PowerShell (Windows nativo)
+
+Com o repositório em um caminho NTFS e os [requisitos](#requisitos) instalados:
 
 ```powershell
 npm install
 npm run verify
-npm run tauri:build -- --bundles nsis
+npx tauri build
 ```
 
-O instalador é criado em:
+Esse caminho não sincroniza a Landing Page.
+
+### Saída
 
 ```text
-src-tauri\target\release\bundle\nsis\
-```
-
-Para gerar todos os formatos configurados no Tauri, também é possível usar `npm run tauri:build` sem o `-- --bundles nsis`.
-
-Para buildar e já abrir o instalador em seguida (pede elevação via UAC):
-
-```powershell
-npm run tauri:build:install
+src-tauri\target\release\bundle\nsis\Pulse_<versão>_x64-setup.exe
 ```
 
 > [!NOTE]
-> Prefira `tauri:build` a `tauri build`: ele encerra a instância do Pulse em execução antes de compilar. O app minimizado no tray trava `src-tauri\target\release\pulse-windows.exe` e o link falha com `Access is denied (os error 5)`. O lock só aparece quando fontes Rust mudam e forçam o relink — builds só-frontend passam mesmo com o app aberto.
+> Encerre o Pulse antes de compilar (`node scripts/kill-running-app.mjs`; `build:native` já faz isso). O app minimizado no tray trava `src-tauri\target\release\pulse-windows.exe` e o link falha com `Access is denied (os error 5)`. O lock só aparece quando fontes Rust mudam e forçam o relink — builds só-frontend passam mesmo com o app aberto.
 
-## Atenção ao WSL
-
-Estar em `/mnt/c/Users/<usuario>/Projects/pulse` **não transforma o terminal WSL em um terminal Windows**. Neste caso, o comando pode falhar assim:
-
-```text
-failed to run 'cargo metadata': No such file or directory (os error 2)
-```
-
-Esse erro significa que o Tauri tentou encontrar o `cargo` dentro do Linux. Saia do WSL e rode o build no PowerShell. Se estiver em um prompt WSL e quiser iniciar o comando no Windows sem trocar de janela, use:
-
-```bash
-powershell.exe -NoProfile -Command "Set-Location 'C:\caminho\para\pulse'; npm run tauri:build -- --bundles nsis"
-```
+> [!WARNING]
+> `npx tauri build` executado **dentro do WSL** falha com `failed to run 'cargo metadata': No such file or directory (os error 2)`: o Tauri procura o `cargo` no Linux. No WSL, use sempre `npm run build:native`.
 
 ## Verificação
 

@@ -29,6 +29,7 @@
 #    npm run build:native              # frontend + backend + instalador NSIS
 #    npm run build:native -- --rust    # so backend + instalador
 #    scripts/build-native.sh --rust
+#    npm run build:native -- --no-landing  # não toca em landing/ (sem sync)
 # ============================================================================
 
 set -euo pipefail
@@ -36,10 +37,12 @@ cd "$(dirname "$0")/.."
 
 SKIP_FRONTEND=0
 RUN_INSTALLER=0
+SYNC_LANDING=1
 for arg in "$@"; do
   case "$arg" in
     --rust) SKIP_FRONTEND=1 ;;
     --install) RUN_INSTALLER=1 ;;
+    --no-landing) SYNC_LANDING=0 ;;
     *) echo "argumento desconhecido: $arg" >&2; exit 2 ;;
   esac
 done
@@ -130,8 +133,12 @@ mkdir -p src-tauri/target/release
 cp -f "$TARGET_DIR/release/pulse-windows.exe" src-tauri/target/release/ 2>/dev/null || true
 cp -rf "$TARGET_DIR/release/bundle" src-tauri/target/release/ 2>/dev/null || true
 
-echo "==> 5/5  sincronizando instalador e metadados com a Landing Page"
-node scripts/sync-landing.mjs
+if [ "$SYNC_LANDING" -eq 1 ]; then
+  echo "==> 5/5  sincronizando instalador e metadados com a Landing Page"
+  node scripts/sync-landing.mjs
+else
+  echo "==> 5/5  sync da Landing Page ignorado (--no-landing)"
+fi
 
 echo
 echo "==> artefatos"
