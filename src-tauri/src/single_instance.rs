@@ -62,6 +62,34 @@ pub mod windows {
             }
             Ok(Self { handle })
         }
+
+        /// Usado pela cópia elevada do Pulse: a instância anterior ainda está
+        /// encerrando, então espera o mutex ser liberado em vez de focá-la e sair.
+        /// Esgotado o prazo, cai no comportamento normal de `acquire`.
+        pub fn acquire_after_relaunch(
+            name: &str,
+            timeout: std::time::Duration,
+        ) -> Result<Self, AcquireError> {
+            let wide_name: Vec<u16> = OsStr::new(name)
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+            let started = std::time::Instant::now();
+            while started.elapsed() < timeout {
+                let handle = unsafe { CreateMutexW(std::ptr::null_mut(), 1, wide_name.as_ptr()) };
+                if handle.is_null() {
+                    return Err(AcquireError::CreationFailed);
+                }
+                if unsafe { GetLastError() } != ERROR_ALREADY_EXISTS {
+                    return Ok(Self { handle });
+                }
+                unsafe {
+                    CloseHandle(handle);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            Self::acquire(name)
+        }
     }
 
     impl Drop for InstanceGuard {

@@ -8,6 +8,7 @@ pub mod disk_cleanup;
 pub mod domain;
 pub mod performance;
 pub mod performance_devices;
+pub mod privileges;
 pub mod process;
 pub mod process_usage;
 pub mod quota_history;
@@ -131,6 +132,8 @@ pub fn run() {
             ai_disk_advisor::launch_ai_disk_terminal,
             ai_disk_advisor::get_ai_cleanup_plan_status,
             ai_disk_advisor::open_ai_cleanup_plan,
+            privileges::get_privilege_status,
+            privileges::relaunch_as_admin,
             disk_cleanup::analyze_disk_cleanup,
             disk_cleanup::clean_disk_categories,
             services::list_windows_services,

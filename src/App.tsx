@@ -24,6 +24,7 @@ const UninstallHub = lazy(() => import("./UninstallHub").then(module => ({ defau
 import { ensureDiskAnalyzerLoaded } from "./diskScanStore";
 import { formatCountdown, formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, type ProviderUsage } from "./subscriptionHelpers";
 import { ProviderIcon } from "./ProviderIcon";
+import { PrivilegeIndicator } from "./PrivilegeIndicator";
 
 export const ALL_NAVIGATION_ITEMS = [
   "Visão geral",
@@ -3065,6 +3066,7 @@ function App() {
                 {overview ? "ATIVA" : "INICIANDO"}
               </b>
             </div>
+            <PrivilegeIndicator />
             <label className="header-toggle">
               <span>INICIAR COM WINDOWS</span>
               <input

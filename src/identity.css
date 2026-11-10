@@ -377,6 +377,116 @@ button:disabled {
   color: var(--neu-warning) !important;
 }
 
+/* Indicador de permissão: a pílula é o próprio botão que abre os detalhes */
+.command-bar > .privilege-indicator {
+  position: relative;
+  padding: 0 !important;
+}
+
+.command-bar .privilege-indicator .privilege-trigger {
+  padding: 6px 14px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-size: 0.62rem !important;
+  font-weight: 400;
+  color: var(--neu-text-muted) !important;
+  gap: 8px;
+}
+
+.command-bar .privilege-indicator .privilege-trigger:hover {
+  transform: none;
+  color: var(--neu-text-primary) !important;
+}
+
+.command-bar .privilege-indicator .privilege-trigger:focus-visible {
+  outline: 2px solid var(--neu-accent);
+  outline-offset: 2px;
+}
+
+.privilege-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  width: min(380px, 86vw);
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: var(--neu-border);
+  border-radius: 14px;
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-raised-lg);
+  color: var(--neu-text-secondary);
+  /* A pílula usa fonte mono; o painel volta à fonte de leitura do app */
+  font-family: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.privilege-panel strong {
+  color: var(--neu-text-title);
+  font-size: 0.86rem;
+}
+
+.privilege-panel p {
+  margin: 0;
+}
+
+/* Neutraliza a tipografia mono herdada de `.command-bar span/b` (App.css) */
+.command-bar .privilege-panel b,
+.command-bar .privilege-panel span:not(.privilege-area) {
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: normal;
+}
+
+.privilege-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.privilege-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--neu-surface-sunken);
+}
+
+.privilege-list b {
+  color: var(--neu-text-primary);
+  font-weight: 600;
+}
+
+.privilege-list small,
+.privilege-note {
+  color: var(--neu-text-muted);
+  font-size: 0.72rem;
+}
+
+.privilege-area {
+  color: var(--neu-accent);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+}
+
+.command-bar .privilege-panel .privilege-relaunch {
+  justify-content: center;
+  color: var(--neu-accent) !important;
+}
+
 /* Botões da Command Bar */
 .command-bar button,
 .theme-toggle-button {
