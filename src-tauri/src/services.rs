@@ -870,6 +870,20 @@ pub async fn list_windows_services(force_refresh: Option<bool>) -> ServicesSnaps
     snapshot
 }
 
+/// Snapshot para a análise com IA: reaproveita o último coletado mesmo fora do
+/// TTL (é a lista que o usuário está vendo na tela) e só enumera se não houver.
+pub async fn snapshot_for_analysis() -> ServicesSnapshot {
+    let last = SERVICES_CACHE
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|cache| cache.snapshot.clone()))
+        .filter(|snapshot| snapshot.unavailable_reason.is_none());
+    match last {
+        Some(snapshot) => snapshot,
+        None => list_windows_services(Some(false)).await,
+    }
+}
+
 /// Inicia ou para um serviço. Operação restrita: só atua em serviços de
 /// usuário e devolve a mensagem de erro original quando o Windows recusa.
 #[tauri::command]

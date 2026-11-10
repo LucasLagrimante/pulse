@@ -12,7 +12,7 @@ use std::os::windows::process::CommandExt;
 use crate::disk_analyzer::{get_cached_disk_scan, DiskItemNode};
 
 #[cfg(windows)]
-const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+pub(crate) const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -295,8 +295,10 @@ fn wsl_distros(running_only: bool) -> Vec<String> {
                 let text = String::from_utf16_lossy(
                     &output
                         .stdout
-                        .chunks_exact(2)
-                        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(|pair| u16::from_le_bytes(*pair))
                         .collect::<Vec<_>>(),
                 );
                 let fallback = String::from_utf8_lossy(&output.stdout);
@@ -326,7 +328,7 @@ fn wsl_distros(running_only: bool) -> Vec<String> {
 
 /// Quanto a detecção pode mexer no WSL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WslProbe {
+pub(crate) enum WslProbe {
     /// Só distros já ligadas: detecção automática (botão e prévia do modal).
     RunningOnly,
     /// Pode ligar o WSL: o usuário clicou em abrir o terminal.
@@ -349,16 +351,16 @@ fn command_exists_in_wsl(distro: &str, cmd: &str) -> bool {
 }
 
 #[derive(Debug, Clone)]
-struct CliDetection {
-    is_available: bool,
-    is_wsl: bool,
-    distro: Option<String>,
-    environment: String,
+pub(crate) struct CliDetection {
+    pub(crate) is_available: bool,
+    pub(crate) is_wsl: bool,
+    pub(crate) distro: Option<String>,
+    pub(crate) environment: String,
 }
 
 /// Executável de cada provedor suportado. Qualquer outro id vindo do IPC é
 /// recusado: o valor nunca pode virar nome de programa arbitrário.
-fn cli_binary(provider_id: &str) -> Result<&'static str, String> {
+pub(crate) fn cli_binary(provider_id: &str) -> Result<&'static str, String> {
     match provider_id {
         "claude" => Ok("claude"),
         "antigravity" => Ok("agy"),
@@ -390,15 +392,15 @@ const MAX_PROMPT_CHARS: usize = 4000;
 /// Programa e argumentos já separados (argv). Nunca passa por um shell do
 /// Windows, então nenhum caractere do prompt é interpretado como código.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct CliInvocation {
-    program: String,
-    args: Vec<String>,
+pub(crate) struct CliInvocation {
+    pub(crate) program: String,
+    pub(crate) args: Vec<String>,
 }
 
 impl CliInvocation {
     /// Linha equivalente para colar no PowerShell. Cada argumento vai entre
     /// aspas simples, onde o PowerShell não expande `$`, `` ` `` nem `$(...)`.
-    fn display(&self) -> String {
+    pub(crate) fn display(&self) -> String {
         let mut parts = vec![self.program.clone()];
         parts.extend(self.args.iter().map(|arg| powershell_quote(arg)));
         parts.join(" ")
@@ -423,7 +425,7 @@ fn powershell_quote(value: &str) -> String {
 /// Normaliza o prompt para trafegar como um único argumento: remove caracteres
 /// de controle, troca aspas duplas (que o Windows PowerShell 5.1 não escapa ao
 /// repassar argumentos) e barras finais (que escapariam a aspa de fechamento).
-fn sanitize_prompt(prompt: &str) -> String {
+pub(crate) fn sanitize_prompt(prompt: &str) -> String {
     let cleaned: String = prompt
         .chars()
         .map(|ch| match ch {
@@ -437,7 +439,7 @@ fn sanitize_prompt(prompt: &str) -> String {
     cleaned.trim().trim_end_matches('\\').trim_end().to_owned()
 }
 
-fn detect_cli(cmd_name: &str, probe: WslProbe) -> CliDetection {
+pub(crate) fn detect_cli(cmd_name: &str, probe: WslProbe) -> CliDetection {
     if command_exists_in_windows(cmd_name) {
         return CliDetection {
             is_available: true,
@@ -590,7 +592,7 @@ fn cleanup_plan_path(context_file_path: &Path) -> PathBuf {
 
 /// Converte `C:\\Users\\x` em `/mnt/c/Users/x` para o CLI que roda dentro do
 /// WSL enxergar o arquivo. Caminhos sem letra de unidade seguem intactos.
-fn to_wsl_path(windows_path: &str) -> String {
+pub(crate) fn to_wsl_path(windows_path: &str) -> String {
     let mut chars = windows_path.chars();
     match (chars.next(), chars.next()) {
         (Some(drive), Some(':')) if drive.is_ascii_alphabetic() => {
@@ -651,17 +653,8 @@ fn build_prompt_and_invocation(
         .join(", ");
 
     // No WSL o CLI só enxerga o disco do Windows por `/mnt/<letra>`
-    let runs_in_wsl = detection.is_wsl && detection.distro.is_some();
-    let cli_path = |path: &Path| {
-        let raw = path.display().to_string();
-        if runs_in_wsl {
-            to_wsl_path(&raw)
-        } else {
-            raw
-        }
-    };
-    let file_path_str = cli_path(context_file_path);
-    let plan_path_str = cli_path(&cleanup_plan_path(context_file_path));
+    let file_path_str = path_for_cli(context_file_path, detection);
+    let plan_path_str = path_for_cli(&cleanup_plan_path(context_file_path), detection);
 
     let default_prompt = format!(
         "Analise o relatório de armazenamento do Pulse para a unidade {drive_path}. Objetivo: quais pastas e arquivos são maiores e onde tem espaço seguro para limpar o disco e liberar espaço? Relatório detalhado salvo em: '{file_path_str}'. Top pastas: [{dirs_summary}]. Top arquivos: [{files_summary}]. Candidatos a limpeza ({total_candidates}): [{candidates_summary}]. Forneça comandos de PowerShell ou CMD práticos e seguros para liberar espaço. Ao final, salve sua resposta completa (maiores consumidores, itens seguros para apagar, alertas do que não remover, comandos e ganho estimado) em Markdown no arquivo '{plan_path_str}', sobrescrevendo se existir, e informe o caminho.",
@@ -677,13 +670,24 @@ fn build_prompt_and_invocation(
             .unwrap_or(&default_prompt),
     );
 
+    let invocation = build_cli_invocation(cli_cmd, &prompt, detection);
+    (prompt, invocation)
+}
+
+/// Monta o argv do CLI com o prompt já sanitizado: no Windows nativo chama o
+/// binário direto; no WSL passa por `wsl.exe -d <distro>` com script fixo.
+pub(crate) fn build_cli_invocation(
+    cli_cmd: &str,
+    prompt: &str,
+    detection: &CliDetection,
+) -> CliInvocation {
     let cli_args: Vec<String> = cli_prompt_flags(cli_cmd)
         .iter()
         .map(|flag| (*flag).to_owned())
-        .chain(std::iter::once(prompt.clone()))
+        .chain(std::iter::once(prompt.to_owned()))
         .collect();
 
-    let invocation = match detection.distro.as_deref().filter(|_| detection.is_wsl) {
+    match detection.distro.as_deref().filter(|_| detection.is_wsl) {
         Some(distro) => CliInvocation {
             program: "wsl.exe".into(),
             args: ["-d", distro, "-e", "sh", "-lc", WSL_EXEC_SCRIPT, cli_cmd]
@@ -696,9 +700,26 @@ fn build_prompt_and_invocation(
             program: cli_cmd.to_owned(),
             args: cli_args,
         },
-    };
+    }
+}
 
-    (prompt, invocation)
+/// Caminho que o CLI enxerga: no WSL o disco do Windows fica em `/mnt/<letra>`.
+pub(crate) fn path_for_cli(path: &Path, detection: &CliDetection) -> String {
+    let raw = path.display().to_string();
+    if detection.is_wsl && detection.distro.is_some() {
+        to_wsl_path(&raw)
+    } else {
+        raw
+    }
+}
+
+/// Nome de exibição do provedor (o id já foi validado por `cli_binary`).
+pub(crate) fn provider_display_name(provider: &str) -> &'static str {
+    match provider {
+        "claude" => "Claude Code",
+        "antigravity" => "Antigravity (AGY)",
+        _ => "Codex CLI",
+    }
 }
 
 fn prepare_analysis(
@@ -740,12 +761,7 @@ fn prepare_analysis(
         &detection,
     );
 
-    let provider_name = match provider.as_str() {
-        "claude" => "Claude Code",
-        "antigravity" => "Antigravity (AGY)",
-        _ => "Codex CLI",
-    }
-    .to_string();
+    let provider_name = provider_display_name(&provider).to_string();
 
     let preview = AiDiskAnalysisPreview {
         provider,
@@ -849,7 +865,7 @@ fn store_provider_cache(providers: Vec<String>) {
 
 /// Atualiza o cache quando o modal detecta um provedor diferente do salvo
 /// (CLI instalado ou removido depois da última detecção).
-fn reconcile_provider_cache(provider_id: &str, is_available: bool) {
+pub(crate) fn reconcile_provider_cache(provider_id: &str, is_available: bool) {
     let Some(cache) = load_provider_cache() else {
         return;
     };
@@ -901,7 +917,7 @@ pub struct AiCleanupPlanStatus {
     pub size_bytes: u64,
 }
 
-fn cleanup_plan_status_at(path: &Path) -> AiCleanupPlanStatus {
+pub(crate) fn cleanup_plan_status_at(path: &Path) -> AiCleanupPlanStatus {
     let meta = fs::metadata(path)
         .ok()
         .filter(|m| m.is_file() && m.len() > 0);
@@ -979,14 +995,9 @@ fn resolve_windows_program(name: &str) -> Option<PathBuf> {
         .find_map(|ext| candidates.iter().find(|path| has_ext(path, ext)).cloned())
 }
 
-#[tauri::command]
-pub fn launch_ai_disk_terminal(
-    provider: String,
-    custom_prompt: Option<String>,
-) -> Result<AiTerminalLaunchResult, String> {
-    let (preview, invocation) =
-        prepare_analysis(provider.clone(), custom_prompt, WslProbe::AllowStart)?;
-
+/// Abre o CLI num console novo com o argv pronto. `Ok(true)` = terminal aberto;
+/// `Ok(false)` = fora do Windows (dev/testes), onde só o comando é devolvido.
+pub(crate) fn spawn_cli_terminal(invocation: &CliInvocation) -> Result<bool, String> {
     #[cfg(windows)]
     {
         // Sem `powershell -Command`, `cmd /c` ou `wt.exe`: o processo recebe o
@@ -1012,32 +1023,62 @@ pub fn launch_ai_disk_terminal(
             .map_err(|error| {
                 format!("Não foi possível abrir o terminal ({error}). Copie o comando e execute-o manualmente.")
             })?;
-
-        Ok(AiTerminalLaunchResult {
-            success: true,
-            provider,
-            command: preview.command,
-            context_file_path: preview.context_file_path,
-            terminal_type: "Console do Windows".into(),
-            message: "Terminal aberto com o CLI e o contexto de armazenamento.".into(),
-        })
+        Ok(true)
     }
 
     #[cfg(not(windows))]
     {
-        // Fora do Windows (dev/testes) não há terminal a abrir: só devolve o
-        // comando para cópia manual, sem passar nada por `sh -c`.
+        // Fora do Windows não há terminal a abrir: nada passa por `sh -c`.
         let _ = invocation;
-        Ok(AiTerminalLaunchResult {
+        Ok(false)
+    }
+}
+
+/// Resultado padrão de `spawn_cli_terminal` para a interface.
+pub(crate) fn launch_result(
+    launched: bool,
+    provider: String,
+    command: String,
+    context_file_path: String,
+    success_message: &str,
+) -> AiTerminalLaunchResult {
+    if launched {
+        AiTerminalLaunchResult {
+            success: true,
+            provider,
+            command,
+            context_file_path,
+            terminal_type: "Console do Windows".into(),
+            message: success_message.into(),
+        }
+    } else {
+        AiTerminalLaunchResult {
             success: false,
             provider,
-            command: preview.command,
-            context_file_path: preview.context_file_path,
+            command,
+            context_file_path,
             terminal_type: "Manual".into(),
             message: "Abertura automática disponível apenas no Windows. Copie o comando gerado."
                 .into(),
-        })
+        }
     }
+}
+
+#[tauri::command]
+pub fn launch_ai_disk_terminal(
+    provider: String,
+    custom_prompt: Option<String>,
+) -> Result<AiTerminalLaunchResult, String> {
+    let (preview, invocation) =
+        prepare_analysis(provider.clone(), custom_prompt, WslProbe::AllowStart)?;
+    let launched = spawn_cli_terminal(&invocation)?;
+    Ok(launch_result(
+        launched,
+        provider,
+        preview.command,
+        preview.context_file_path,
+        "Terminal aberto com o CLI e o contexto de armazenamento.",
+    ))
 }
 
 #[cfg(test)]

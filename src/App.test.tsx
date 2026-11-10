@@ -1461,7 +1461,7 @@ describe("Pulse application shell", () => {
       "page",
     );
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Itens de Inicialização" })).toBeInTheDocument();
+      expect(screen.getByLabelText("Buscar itens de inicialização")).toBeInTheDocument();
     });
   });
 
@@ -2180,15 +2180,18 @@ describe("Pulse application shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /Inicialização e segurança/ }));
 
     await screen.findByText("Slow");
-    expect(
-      (screen.getByRole("option", { name: "Ativos e mais lentos primeiro" }) as HTMLOptionElement)
-        .selected,
-    ).toBe(true);
-    expect(screen.getAllByText(/Quick|Slow|Off/).map(element => element.textContent)).toEqual([
-      "Slow",
-      "Quick",
-      "Off",
-    ]);
+    // Ordem recomendada é o padrão: nenhuma coluna do cabeçalho fica ativa.
+    for (const name of ["Ordenar por programa", "Ordenar por impacto", "Ordenar por estado"]) {
+      expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
+    }
+    const names = () => screen.getAllByText(/^(Quick|Slow|Off)$/).map(element => element.textContent);
+    expect(names()).toEqual(["Slow", "Quick", "Off"]);
+
+    // Coluna Programa ordena A-Z; clicar de novo volta à ordem recomendada.
+    fireEvent.click(screen.getByRole("button", { name: "Ordenar por programa" }));
+    expect(names()).toEqual(["Off", "Quick", "Slow"]);
+    fireEvent.click(screen.getByRole("button", { name: "Ordenar por programa" }));
+    expect(names()).toEqual(["Slow", "Quick", "Off"]);
   });
 
   it("enables and displays the Debug diagnostic module", async () => {
@@ -2592,7 +2595,7 @@ describe("Pulse application shell", () => {
       [/Atividade/, "Grupos de aplicativos em execução"],
       [/Desempenho/, "GPU"],
       [/Armazenamento/, "ANÁLISE DE DISCO (TREE SIZE)"],
-      [/Inicialização e segurança/, "Itens de Inicialização"],
+      [/Inicialização e segurança/, "Desativados"],
     ] as const) {
       fireEvent.click(screen.getByRole("button", { name: buttonName }));
       await waitFor(() => expect(screen.getByText(heading)).toBeInTheDocument());

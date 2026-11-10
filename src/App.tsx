@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Component, type ErrorInfo, type KeyboardEvent as ReactKeyboardEvent, lazy, type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Moon, Sun } from "lucide-react";
+import { Moon, Search, Sun } from "lucide-react";
 import "./App.css";
 import "./identity.css";
 import "./DataTable.css";
@@ -27,6 +27,13 @@ import { ensureDiskAnalyzerLoaded } from "./diskScanStore";
 import { formatCountdown, formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, type ProviderUsage } from "./subscriptionHelpers";
 import { ProviderIcon } from "./ProviderIcon";
 import { PrivilegeIndicator } from "./PrivilegeIndicator";
+
+/** Colunas ordenáveis da Inicialização; clicar de novo volta à ordem recomendada. */
+const STARTUP_SORT_COLUMNS: { id: "name" | "slowest" | "status"; label: string; hint: string; start?: boolean }[] = [
+  { id: "name", label: "Programa", hint: "Ordenar por nome (A-Z)", start: true },
+  { id: "slowest", label: "Impacto", hint: "Mais lentos primeiro" },
+  { id: "status", label: "Estado", hint: "Ativados primeiro" },
+];
 
 export const ALL_NAVIGATION_ITEMS = [
   "Visão geral",
@@ -2100,6 +2107,7 @@ function App() {
   const [files, setFiles] = useState<RecentFile[]>([]);
   const [startupItems, setStartupItems] = useState<StartupItem[]>([]);
   const [startupItemsLoaded, setStartupItemsLoaded] = useState(false);
+  const [startupLoadError, setStartupLoadError] = useState("");
   const [startupEnabled, setStartupEnabled] = useState(false);
   const [fileQuery, setFileQuery] = useState("");
   const [fileCategory, setFileCategory] = useState("");
@@ -2670,12 +2678,14 @@ function App() {
       const items = Array.isArray(result) ? result : [];
       setStartupItems(items);
       setStartupItemsLoaded(true);
+      setStartupLoadError("");
       setOverview(previous =>
         previous ? { ...previous, startupItemCount: items.length } : previous,
       );
-    } catch {
+    } catch (cause) {
       setStartupItems([]);
       setStartupItemsLoaded(false);
+      setStartupLoadError(String(cause));
     }
   };
 
@@ -2957,6 +2967,7 @@ function App() {
                   <button
                     aria-current={activeArea === item ? "page" : undefined}
                     className={`nav-item ${activeArea === item ? "active" : ""}`}
+                    title={item}
                     onClick={() => setActiveArea(item)}
                   >
                     <ModuleIcon name={item} index={ALL_NAVIGATION_ITEMS.indexOf(item)} />
@@ -3562,138 +3573,181 @@ function App() {
             )}
 
             {activeArea === "Inicialização e segurança" && (
-              <section className="module-dashboard">
-                <div className="startup-stats-row">
-                  <div className="startup-stat-card">
-                    <span className="stat-label">Total de Itens</span>
-                    <strong className="stat-value">{startupStats.total}</strong>
-                    <small className="stat-sub">Registrados no boot</small>
+              <section className="module-dashboard st-hub" aria-label="Inicialização e segurança">
+                <div className="dt dt--startup">
+                  <div className="dt-toolbar">
+                    <div className="dt-toolbar-start">
+                      <label className="dt-search">
+                        <Search size={15} aria-hidden="true" />
+                        <input
+                          type="search"
+                          placeholder="Filtrar por nome, comando ou origem"
+                          value={startupSearch}
+                          onChange={e => setStartupSearch(e.target.value)}
+                          aria-label="Buscar itens de inicialização"
+                        />
+                      </label>
+                    </div>
+                    <dl className="dt-summary" aria-label="Resumo dos itens de inicialização">
+                      <div>
+                        <dt>Itens</dt>
+                        <dd>{startupItemsLoaded ? startupStats.total : "—"}</dd>
+                      </div>
+                      <div>
+                        <dt>Ativados</dt>
+                        <dd className="st-summary-active">{startupItemsLoaded ? startupStats.active : "—"}</dd>
+                      </div>
+                      <div>
+                        <dt>Desativados</dt>
+                        <dd>{startupItemsLoaded ? startupStats.disabled : "—"}</dd>
+                      </div>
+                      <div>
+                        <dt>Alto impacto</dt>
+                        <dd className={startupStats.slowest > 0 ? "st-summary-slow" : undefined}>
+                          {startupItemsLoaded ? startupStats.slowest : "—"}
+                        </dd>
+                      </div>
+                    </dl>
                   </div>
-                  <div className="startup-stat-card">
-                    <span className="stat-label">Ativados</span>
-                    <strong className="stat-value stat-active">{startupStats.active}</strong>
-                    <small className="stat-sub">Iniciam com o Windows</small>
-                  </div>
-                  <div className="startup-stat-card">
-                    <span className="stat-label">Desativados</span>
-                    <strong className="stat-value stat-disabled">{startupStats.disabled}</strong>
-                    <small className="stat-sub">Ignorados no boot</small>
-                  </div>
-                  <div className={`startup-stat-card ${startupStats.slowest > 0 ? "stat-card-warning" : ""}`}>
-                    <span className="stat-label">Mais Lentos</span>
-                    <strong className="stat-value stat-slow">{startupStats.slowest}</strong>
-                    <small className="stat-sub">Alto impacto no boot</small>
-                  </div>
-                </div>
+                  <p className="dt-note">
+                    Registro HKCU/HKLM, pasta Inicializar e pacotes do Windows. Ativar e desativar usa o
+                    StartupApproved, o mesmo do Gerenciador de Tarefas; impacto medido pelo log de desempenho de boot.
+                  </p>
 
-                {startupStats.slowest > 0 && (
-                  <div className="startup-alert" role="note">
-                    <span className="startup-alert-badge">AVISO DE DESEMPENHO</span>
-                    <p>
-                      <strong>{startupStats.slowest} {startupStats.slowest === 1 ? "aplicativo de alto impacto detectado" : "aplicativos de alto impacto detectados"}.</strong> Eles demandam mais tempo de CPU e disco na inicialização. Desativar itens desnecessários acelera o boot do Windows.
-                    </p>
-                  </div>
-                )}
+                  {startupStats.slowest > 0 && (
+                    <div className="startup-alert" role="note">
+                      <span className="startup-alert-badge">AVISO DE DESEMPENHO</span>
+                      <p>
+                        <strong>{startupStats.slowest} {startupStats.slowest === 1 ? "aplicativo de alto impacto detectado" : "aplicativos de alto impacto detectados"}.</strong> Eles demandam mais tempo de CPU e disco na inicialização. Desativar itens desnecessários acelera o boot do Windows.
+                      </p>
+                    </div>
+                  )}
 
-                <section className="panel startup-card">
-                  <div className="panel-title">
-                    <h3>Itens de Inicialização</h3>
-                    <small className="source-note">Registro HKCU/HKLM e StartupApproved</small>
-                  </div>
-
-                  <div className="startup-tools">
-                    <input
-                      type="search"
-                      placeholder="Buscar por nome ou comando..."
-                      value={startupSearch}
-                      onChange={e => setStartupSearch(e.target.value)}
-                      aria-label="Buscar itens de inicialização"
-                    />
-                    <select
-                      className="sort-select"
-                      aria-label="Ordenar inicialização"
-                      value={startupSort}
-                      onChange={e => setStartupSort(e.target.value as "recommended" | "slowest" | "name" | "status")}
-                    >
-                      <option value="recommended">Ativos e mais lentos primeiro</option>
-                      <option value="slowest">Mais lentos primeiro</option>
-                      <option value="name">Nome (A-Z)</option>
-                      <option value="status">Ativados primeiro</option>
-                    </select>
-                  </div>
-
-                  <div className="startup-list">
-                    {filteredStartupItems.length ? (
-                      filteredStartupItems.map(item => {
-                        const isHigh =
-                          item.impact === "Alto impacto" ||
-                          (item.startupTimeMs != null && item.startupTimeMs >= 1000);
-                        const isMed =
-                          item.impact === "Médio impacto" ||
-                          (item.startupTimeMs != null &&
-                            item.startupTimeMs >= 300 &&
-                            item.startupTimeMs < 1000);
-                        const impactClass = isHigh
-                          ? "impact-high"
-                          : isMed
-                            ? "impact-medium"
-                            : "impact-low";
-                        const durationStr = formatStartupDuration(item.startupTimeMs);
-
+                  <div className="dt-table">
+                    <div className="dt-head">
+                      {STARTUP_SORT_COLUMNS.map(({ id, label, hint, start }) => {
+                        const isActive = startupSort === id;
                         return (
-                          <div
-                            className={`startup-item row-hl ${!item.enabled ? "item-disabled" : ""} ${isHigh ? "item-high-impact" : ""}`}
-                            key={`${item.origin}-${item.name}`}
+                          <button
+                            key={id}
+                            type="button"
+                            className={`dt-sort${start ? " is-start" : ""}${isActive ? " is-active" : ""}`}
+                            aria-label={`Ordenar por ${label.toLowerCase()}`}
+                            aria-pressed={isActive}
+                            title={isActive ? "Voltar à ordem recomendada (ativos e mais lentos primeiro)" : hint}
+                            onClick={() => setStartupSort(isActive ? "recommended" : id)}
                           >
-                            <span className={`startup-icon ${item.icon ? "" : "startup-icon-empty"}`} aria-hidden="true">
-                              {item.icon ? (
-                                <img src={item.icon} alt="" loading="lazy" />
-                              ) : (
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6}>
-                                  <rect x="3.75" y="3.75" width="16.5" height="16.5" rx="4.5" />
-                                  <path d="M8.25 9.25h7.5M8.25 13h4.75" strokeLinecap="round" />
-                                </svg>
-                              )}
-                            </span>
-                            <div className="startup-item-content">
-                              <div className="startup-item-header">
-                                <strong className="startup-name">{item.name}</strong>
+                            {label}
+                            {isActive && (
+                              <span className="dt-sort-arrow" aria-hidden="true">
+                                {id === "name" ? "↑" : "↓"}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                      <span className="dt-center" aria-hidden="true">Iniciar</span>
+                    </div>
+
+                    {startupLoadError && !startupItemsLoaded ? (
+                      <div className="dt-empty" role="alert">
+                        <p>Não foi possível ler os itens de inicialização: {startupLoadError}</p>
+                        <button type="button" className="dt-empty-reset" onClick={() => void loadStartupItems()}>
+                          Tentar de novo
+                        </button>
+                      </div>
+                    ) : !startupItemsLoaded ? (
+                      <div className="dt-empty" role="status">
+                        <p>Lendo os itens de inicialização do Windows…</p>
+                      </div>
+                    ) : filteredStartupItems.length === 0 ? (
+                      <div className="dt-empty" role="status">
+                        {startupSearch.trim() ? (
+                          <>
+                            <p>Nenhum item corresponde a “{startupSearch.trim()}”.</p>
+                            <button type="button" className="dt-empty-reset" onClick={() => setStartupSearch("")}>
+                              Limpar filtro
+                            </button>
+                          </>
+                        ) : (
+                          <p>Nenhum item de inicialização encontrado.</p>
+                        )}
+                      </div>
+                    ) : (
+                      <ul className="dt-list" role="list">
+                        {filteredStartupItems.map(item => {
+                          const isHigh =
+                            item.impact === "Alto impacto" ||
+                            (item.startupTimeMs != null && item.startupTimeMs >= 1000);
+                          const isMed =
+                            item.impact === "Médio impacto" ||
+                            (item.startupTimeMs != null &&
+                              item.startupTimeMs >= 300 &&
+                              item.startupTimeMs < 1000);
+                          const impactClass = isHigh
+                            ? "impact-high"
+                            : isMed
+                              ? "impact-medium"
+                              : "impact-low";
+                          const durationStr = formatStartupDuration(item.startupTimeMs);
+
+                          return (
+                            <li
+                              className={`dt-row row-hl st-row${!item.enabled ? " is-disabled" : ""}${isHigh ? " is-high-impact" : ""}`}
+                              key={`${item.origin}-${item.name}`}
+                            >
+                              <div className="dt-identity" title={`${item.name} · ${item.command}`}>
+                                <span className="dt-icon" aria-hidden="true">
+                                  {item.icon ? (
+                                    <img src={item.icon} alt="" loading="lazy" />
+                                  ) : (
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth={1.6}>
+                                      <rect x="3.75" y="3.75" width="16.5" height="16.5" rx="4.5" />
+                                      <path d="M8.25 9.25h7.5M8.25 13h4.75" strokeLinecap="round" />
+                                    </svg>
+                                  )}
+                                </span>
+                                <span className="dt-name">
+                                  <strong>{item.name}</strong>
+                                  <small>
+                                    {item.origin} · {item.command}
+                                  </small>
+                                </span>
+                              </div>
+                              <span className="st-impact-cell">
                                 <span className={`impact-badge ${impactClass}`}>
                                   {item.impact || "Não medido"}
                                   {durationStr ? ` · ${durationStr}` : ""}
                                 </span>
-                                <span
-                                  className={`status-badge ${item.enabled ? "status-enabled" : "status-disabled"}`}
-                                >
+                              </span>
+                              <span className="st-status-cell">
+                                <span className={`status-badge ${item.enabled ? "status-enabled" : "status-disabled"}`}>
                                   {item.enabled ? "Ativado" : "Desativado"}
                                 </span>
-                              </div>
-                              <small title={item.command}>
-                                {item.origin} · {item.command}
-                              </small>
-                            </div>
-                            {item.canChange ? (
-                              <div className="startup-toggle-cell">
-                                <input
-                                  aria-label={`${item.enabled ? "Desativar" : "Ativar"} ${item.name}`}
-                                  type="checkbox"
-                                  checked={item.enabled}
-                                  onChange={e => handleToggleStartup(item, e.target.checked)}
-                                />
-                              </div>
-                            ) : (
-                              <small className="startup-readonly">
-                                {item.unavailableReason ?? "Somente leitura"}
-                              </small>
-                            )}
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <p className="muted">Nenhum item de inicialização encontrado.</p>
+                              </span>
+                              <span className="dt-action">
+                                {item.canChange ? (
+                                  <span className="startup-toggle-cell">
+                                    <input
+                                      aria-label={`${item.enabled ? "Desativar" : "Ativar"} ${item.name}`}
+                                      type="checkbox"
+                                      checked={item.enabled}
+                                      onChange={e => handleToggleStartup(item, e.target.checked)}
+                                    />
+                                  </span>
+                                ) : (
+                                  <small className="st-readonly" title={item.unavailableReason ?? "Somente leitura"}>
+                                    Somente leitura
+                                  </small>
+                                )}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
                     )}
                   </div>
-                </section>
+                </div>
               </section>
             )}
 

@@ -199,7 +199,10 @@ button:disabled {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 228px minmax(0, 1fr);
+  /* Largura medida para o maior rótulo ("Inicialização e segurança": ~158px em
+     Segoe UI semibold 0.88rem, ~169px em fontes de fallback) caber numa linha
+     ao lado do ícone, com folga. */
+  grid-template-columns: 268px minmax(0, 1fr);
   background: var(--neu-bg) !important;
   width: 100%;
   height: 100%;
@@ -292,6 +295,15 @@ button:disabled {
   display: flex;
   align-items: center;
   cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Rótulo sempre em uma linha; reticências só como rede de segurança */
+.nav-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-item:hover {
@@ -1701,58 +1713,6 @@ select:focus {
    Módulo Inicialização e Segurança
    ========================================================================== */
 
-.startup-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 18px !important;
-  border-radius: 18px !important;
-  background: var(--neu-surface) !important;
-  box-shadow: var(--neu-shadow-raised-sm) !important;
-  border: var(--neu-border) !important;
-  margin-bottom: 10px;
-  transition: all 0.2s ease;
-}
-
-.startup-item:hover {
-  box-shadow: var(--neu-shadow-raised) !important;
-}
-
-.startup-icon {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 12px;
-  background: var(--neu-surface);
-  box-shadow: var(--neu-shadow-inset-xs);
-  border: var(--neu-border-subtle);
-  overflow: hidden;
-}
-
-.startup-icon img {
-  display: block;
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
-}
-
-.startup-icon svg {
-  width: 18px;
-  height: 18px;
-  color: var(--neu-text-muted);
-}
-
-.startup-icon-empty {
-  opacity: 0.7;
-}
-
-.startup-name {
-  color: var(--neu-text-title) !important;
-  font-size: 0.95rem;
-}
-
 .impact-badge,
 .status-badge {
   padding: 3px 8px;
@@ -1770,6 +1730,28 @@ select:focus {
 
 .status-disabled {
   color: var(--neu-text-muted);
+}
+
+.impact-badge,
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.impact-badge.impact-high {
+  color: var(--neu-danger);
+  background: color-mix(in srgb, var(--neu-danger) 10%, var(--neu-surface));
+}
+
+.impact-badge.impact-medium {
+  color: var(--neu-warning);
+  background: color-mix(in srgb, var(--neu-warning) 10%, var(--neu-surface));
+}
+
+.impact-badge.impact-low {
+  color: var(--neu-text-secondary);
 }
 
 /* ==========================================================================
@@ -2241,8 +2223,15 @@ select:focus {
 
 /* Responsividade */
 @media (max-width: 1050px) {
-  .app-shell { grid-template-columns: 190px minmax(0, 1fr); }
+  .app-shell { grid-template-columns: 228px minmax(0, 1fr); }
   .focused-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nav-item {
+    width: calc(100% - 16px) !important;
+    margin: 6px 8px !important;
+    padding: 10px !important;
+    gap: 8px !important;
+    font-size: 0.8rem !important;
+  }
 }
 
 @media (max-width: 760px) {
@@ -2348,7 +2337,6 @@ select:focus {
 [data-theme] .process-name,
 [data-theme] .process-name strong,
 [data-theme] .file-name,
-[data-theme] .startup-name,
 [data-theme] .quota-toolbar h3,
 [data-theme] .quota-provider-title strong,
 [data-theme] .quota-modal-header h3,
@@ -2410,9 +2398,6 @@ select:focus {
 
 [data-theme] .file-category-tag,
 [data-theme] .scan-folder-chip,
-[data-theme] .startup-stat-card,
-[data-theme] .startup-card,
-[data-theme] .startup-alert,
 [data-theme] .quota-summary-panel,
 [data-theme] .quota-provider-card,
 [data-theme] .quota-page-empty,
@@ -3675,6 +3660,52 @@ body:has(.tray-flyout-container),
   border: 1px solid var(--neu-divider) !important;
   box-shadow: var(--neu-shadow-raised-lg) !important;
   color: var(--neu-text-primary) !important;
+}
+
+/* Botões do rodapé e do card de plano/parecer (fora de `.modal-actions`) */
+[data-theme] .disk-ai-modal-card .button-primary,
+[data-theme] .disk-ai-modal-card .button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--neu-divider) !important;
+  border-radius: 9px;
+  background: var(--neu-surface) !important;
+  box-shadow: var(--neu-shadow-raised-xs);
+  color: var(--neu-text-primary) !important;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+[data-theme] .disk-ai-modal-card .button-secondary:hover:not(:disabled) {
+  border-color: var(--neu-accent) !important;
+  background: var(--neu-surface-hover) !important;
+  color: var(--neu-text-title) !important;
+}
+
+[data-theme] .disk-ai-modal-card .button-primary {
+  border-color: var(--neu-accent) !important;
+  background: var(--neu-accent) !important;
+  color: var(--neu-on-accent) !important;
+}
+
+[data-theme] .disk-ai-modal-card .button-primary:hover:not(:disabled) {
+  border-color: var(--neu-accent-hover) !important;
+  background: var(--neu-accent-hover) !important;
+}
+
+[data-theme] .disk-ai-modal-card .button-primary:disabled,
+[data-theme] .disk-ai-modal-card .button-secondary:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 [data-theme] .disk-ai-modal-header,

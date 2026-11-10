@@ -1,5 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
+import { Download, Play, RefreshCw, Search, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { AI_PROVIDERS, type SupportedAiProvider } from "./AiDiskAdvisorModal";
+import { AiProviderCycleButton } from "./AiProviderCycleButton";
+import { AiServicesAdvisorModal } from "./AiServicesAdvisorModal";
+import "./DataTable.css";
 import "./ServicesHub.css";
 import {
   clearBatchMessages,
@@ -234,6 +239,50 @@ export function sortServices(services: WindowsService[]): WindowsService[] {
   });
 }
 
+export type ServiceSortColumn = "name" | "category" | "state" | "startType";
+export type ServiceSortDirection = "asc" | "desc";
+
+const CATEGORY_RANK: Record<string, number> = { review: 0, unknown: 1, user: 2, system: 3 };
+const START_TYPE_RANK: Record<string, number> = { "Automático": 0, Manual: 1, Desativado: 2 };
+
+/**
+ * Ordena pela coluna do cabeçalho. "Estado" crescente é a ordem padrão de
+ * `sortServices` (ativos primeiro); empates caem sempre na ordem alfabética.
+ */
+export function sortServicesBy(
+  services: WindowsService[],
+  column: ServiceSortColumn = "state",
+  direction: ServiceSortDirection = "asc",
+): WindowsService[] {
+  const byLabel = (a: WindowsService, b: WindowsService) =>
+    serviceLabel(a).localeCompare(serviceLabel(b), "pt-BR", { sensitivity: "base" });
+  const rankOf = (service: WindowsService): number => {
+    switch (column) {
+      case "category":
+        return CATEGORY_RANK[service.category] ?? 9;
+      case "startType":
+        return START_TYPE_RANK[service.startType] ?? 9;
+      case "state":
+        return STATE_RANK[service.state] ?? 9;
+      default:
+        return 0;
+    }
+  };
+  const sign = direction === "asc" ? 1 : -1;
+  return [...services].sort((a, b) => {
+    if (column === "name") return byLabel(a, b) * sign;
+    const diff = rankOf(a) - rankOf(b);
+    return diff !== 0 ? diff * sign : byLabel(a, b);
+  });
+}
+
+const SERVICE_SORT_COLUMNS: { id: ServiceSortColumn; label: string; start?: boolean }[] = [
+  { id: "name", label: "Serviço", start: true },
+  { id: "category", label: "Origem" },
+  { id: "state", label: "Estado" },
+  { id: "startType", label: "Início" },
+];
+
 const FALLBACK_ICON =
   "data:image/svg+xml;utf8," +
   encodeURIComponent(
@@ -273,6 +322,12 @@ export function ServicesHub() {
   const [category, setCategory] = useState<ServiceCategoryFilter>("all");
   const [busyService, setBusyService] = useState("");
   const [notice, setNotice] = useState("");
+  const [sortBy, setSortBy] = useState<ServiceSortColumn>("state");
+  const [sortDirection, setSortDirection] = useState<ServiceSortDirection>("asc");
+
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [aiModalProvider, setAiModalProvider] = useState<SupportedAiProvider>("antigravity");
+  const [availableAiProviders, setAvailableAiProviders] = useState<SupportedAiProvider[] | null>(null);
 
   // Instalações vivem fora do componente: o hub é desmontado ao trocar de área,
   // mas o winget segue rodando e o progresso precisa estar lá na volta.
@@ -346,9 +401,43 @@ export function ServicesHub() {
   );
 
   const visibleServices = useMemo(
-    () => filterServices(services?.services ?? [], query, filter, category),
-    [services, query, filter, category],
+    () => sortServicesBy(filterServices(services?.services ?? [], query, filter, category), sortBy, sortDirection),
+    [services, query, filter, category, sortBy, sortDirection],
   );
+
+  const handleSort = (column: ServiceSortColumn) => {
+    if (column === sortBy) {
+      setSortDirection(current => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortBy(column);
+    setSortDirection("asc");
+  };
+
+  const hasServicesForAi = tab === "services" && services != null && !services.unavailableReason;
+
+  // Descobre os CLIs de IA só quando o botão vai aparecer (o backend guarda em cache).
+  useEffect(() => {
+    if (!hasServicesForAi || availableAiProviders != null) return;
+    let active = true;
+    invoke<string[]>("detect_ai_cli_providers")
+      .then(ids => {
+        if (active && Array.isArray(ids)) {
+          setAvailableAiProviders(ids.filter((id): id is SupportedAiProvider => AI_PROVIDERS.some(p => p.id === id)));
+        }
+      })
+      .catch(() => {
+        // Sem detecção o botão segue alternando entre os três suportados
+      });
+    return () => {
+      active = false;
+    };
+  }, [hasServicesForAi, availableAiProviders]);
+
+  const openAiModal = (provider: SupportedAiProvider) => {
+    setAiModalProvider(provider);
+    setShowAiModal(true);
+  };
 
   const visibleUpdates = useMemo(() => {
     if (!updates) return [];
@@ -427,6 +516,26 @@ export function ServicesHub() {
     { value: "unknown", label: "Sem dados" },
   ];
 
+  const skeletonRows = (prefix: string) => (
+    <ul className="dt-list sh-skeleton-list" aria-busy="true" aria-label={`Carregando lista de ${prefix}`}>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <li className="dt-row sh-skeleton-row" key={`${prefix}-skeleton-${i}`} aria-hidden="true">
+          <div className="dt-identity">
+            <span className="sh-skeleton-box sh-skeleton-icon" />
+            <span className="dt-name">
+              <span className="sh-skeleton-box sh-skeleton-title" />
+              <span className="sh-skeleton-box sh-skeleton-sub" />
+            </span>
+          </div>
+          <span className="sh-skeleton-box sh-skeleton-badge" />
+          <span className="sh-skeleton-box sh-skeleton-status" />
+          <span className="sh-skeleton-box sh-skeleton-pid" />
+          <span className="sh-skeleton-box sh-skeleton-btn" />
+        </li>
+      ))}
+    </ul>
+  );
+
   return (
     <section className="module-dashboard sh-hub" aria-label="Serviços e atualizações">
       <nav className="storage-tabs-bar" role="tablist" aria-label="Serviços e atualizações">
@@ -457,79 +566,91 @@ export function ServicesHub() {
       </nav>
 
       {tab === "services" && (
-        <div className="sh-panel module-dashboard" role="tabpanel">
-          <div className="sh-stats">
-            <article className="sh-stat">
-              <span className="stat-label">EM EXECUÇÃO</span>
-              <span className="stat-value">{services ? formatCount(services.runningCount) : "—"}</span>
-            </article>
-            <article className="sh-stat">
-              <span className="stat-label">PARADOS</span>
-              <span className="stat-value">{services ? formatCount(services.stoppedCount) : "—"}</span>
-            </article>
-            <article className="sh-stat">
-              <span className="stat-label">PAUSADOS</span>
-              <span className="stat-value">{services ? formatCount(services.pausedCount) : "—"}</span>
-            </article>
-            <article className="sh-stat">
-              <span className="stat-label">TOTAL</span>
-              <span className="stat-value">{services ? formatCount(services.totalCount) : "—"}</span>
-            </article>
+        <div className="dt dt--services" role="tabpanel">
+          <div className="dt-toolbar">
+            <div className="dt-toolbar-start">
+              <label className="dt-search">
+                <Search size={15} aria-hidden="true" />
+                <input
+                  type="search"
+                  placeholder="Buscar por nome ou executável"
+                  aria-label="Buscar serviços por nome ou executável"
+                  value={query}
+                  onChange={event => setQuery(event.target.value)}
+                />
+              </label>
+              <select
+                className="sh-filter"
+                aria-label="Filtrar serviços por estado"
+                value={filter}
+                onChange={event => setFilter(event.target.value as ServiceFilter)}
+              >
+                <option value="all">Todos os estados</option>
+                <option value="running">Em execução</option>
+                <option value="stopped">Parados</option>
+                <option value="paused">Pausados</option>
+              </select>
+              <button
+                type="button"
+                className="sh-btn"
+                onClick={() => void refreshEverything()}
+                disabled={servicesState === "loading"}
+              >
+                <RefreshCw size={13} aria-hidden="true" />
+                {servicesState === "loading" ? "ATUALIZANDO…" : "ATUALIZAR TUDO"}
+              </button>
+            </div>
+            <dl className="dt-summary" aria-label="Resumo dos serviços">
+              <div>
+                <dt>Em execução</dt>
+                <dd>{services ? formatCount(services.runningCount) : "—"}</dd>
+              </div>
+              <div>
+                <dt>Parados</dt>
+                <dd>{services ? formatCount(services.stoppedCount) : "—"}</dd>
+              </div>
+              <div>
+                <dt>Pausados</dt>
+                <dd>{services ? formatCount(services.pausedCount) : "—"}</dd>
+              </div>
+              <div>
+                <dt>Total</dt>
+                <dd>{services ? formatCount(services.totalCount) : "—"}</dd>
+              </div>
+            </dl>
           </div>
 
-          <div className="sh-toolbar">
-            <input
-              type="search"
-              className="sh-search"
-              placeholder="Buscar por nome ou executável"
-              aria-label="Buscar serviços por nome ou executável"
-              value={query}
-              onChange={event => setQuery(event.target.value)}
-            />
-            <select
-              className="sh-filter"
-              aria-label="Filtrar serviços por estado"
-              value={filter}
-              onChange={event => setFilter(event.target.value as ServiceFilter)}
-            >
-              <option value="all">Todos</option>
-              <option value="running">Em execução</option>
-              <option value="stopped">Parados</option>
-              <option value="paused">Pausados</option>
-            </select>
-            <button
-              type="button"
-              className="btn-primary disk-scan-btn"
-              onClick={() => void refreshEverything()}
-              disabled={servicesState === "loading"}
-            >
-              {servicesState === "loading" ? "ATUALIZANDO…" : "ATUALIZAR TUDO"}
-            </button>
-          </div>
-
-          <div
-            className="sh-categories"
-            role="group"
-            aria-label="Filtrar serviços por origem"
-          >
-            {CATEGORY_CHIPS.map(chip => {
-              const count = chip.value === "all" ? categoryCounts.system + categoryCounts.user + categoryCounts.review + categoryCounts.unknown : categoryCounts[chip.value];
-              const selected = category === chip.value;
-              return (
-                <button
-                  key={chip.value}
-                  type="button"
-                  aria-pressed={selected}
-                  className={`sh-chip ${selected ? "active" : ""} sh-chip-${chip.value}`}
-                  onClick={() => setCategory(chip.value)}
-                >
-                  {chip.label}
-                  <span className="sh-chip-count">
-                    {services ? formatCount(count) : "—"}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="sh-filter-row">
+            <div className="sh-categories" role="group" aria-label="Filtrar serviços por origem">
+              {CATEGORY_CHIPS.map(chip => {
+                const count = chip.value === "all" ? categoryCounts.system + categoryCounts.user + categoryCounts.review + categoryCounts.unknown : categoryCounts[chip.value];
+                const selected = category === chip.value;
+                return (
+                  <button
+                    key={chip.value}
+                    type="button"
+                    aria-pressed={selected}
+                    className={`sh-chip ${selected ? "active" : ""} sh-chip-${chip.value}`}
+                    onClick={() => setCategory(chip.value)}
+                  >
+                    {chip.label}
+                    <span className="sh-chip-count">
+                      {services ? formatCount(count) : "—"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {hasServicesForAi && (
+              <AiProviderCycleButton
+                className="disk-ai-advisor-trigger-btn sh-ai-trigger"
+                available={availableAiProviders}
+                prefix="REVISAR SEGURANÇA COM"
+                suffix="NO TERMINAL"
+                purpose="para revisar os serviços em execução em busca de keylogger, spyware ou acesso indevido"
+                onOpen={openAiModal}
+              />
+            )}
           </div>
 
           {servicesUnavailable && (
@@ -549,101 +670,113 @@ export function ServicesHub() {
           )}
 
           {servicesState === "loading" && services == null && (
-            <>
-              <div className="sh-loading-banner" role="status" aria-live="polite">
-                <span className="sh-loading-spinner" aria-hidden="true" />
-                <div className="sh-loading-text">
-                  <strong>Consultando Gerenciador de Controle de Serviços (SCM)…</strong>
-                  <small>Classificando serviços por conta de execução, diretório e integridade</small>
-                </div>
+            <div className="sh-loading-banner" role="status" aria-live="polite">
+              <span className="sh-loading-spinner" aria-hidden="true" />
+              <div className="sh-loading-text">
+                <strong>Consultando Gerenciador de Controle de Serviços (SCM)…</strong>
+                <small>Classificando serviços por conta de execução, diretório e integridade</small>
               </div>
-              <div className="sh-list sh-skeleton-list" aria-busy="true" aria-label="Carregando lista de serviços">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <article className="sh-item sh-skeleton-item" key={`service-skeleton-${i}`} aria-hidden="true">
-                    <div className="sh-skeleton-box sh-skeleton-icon" />
-                    <div className="sh-item-main">
-                      <div className="sh-skeleton-box sh-skeleton-title" />
-                      <div className="sh-skeleton-box sh-skeleton-sub" />
-                      <div className="sh-skeleton-box sh-skeleton-path" />
-                    </div>
-                    <div className="sh-item-meta">
-                      <div className="sh-skeleton-box sh-skeleton-badge" />
-                      <div className="sh-skeleton-box sh-skeleton-status" />
-                      <div className="sh-skeleton-box sh-skeleton-pid" />
-                    </div>
-                    <div className="sh-skeleton-box sh-skeleton-btn" />
-                  </article>
-                ))}
-              </div>
-            </>
+            </div>
           )}
 
-          {servicesState === "ready" && services != null && !servicesUnavailable && (
-            <div className="sh-list" role="list">
-              {visibleServices.length === 0 ? (
-                <p className="sh-empty muted">Nenhum serviço corresponde aos filtros aplicados.</p>
-              ) : (
-                visibleServices.map(service => {
-                  const running = service.state === "Em execução";
-                  const reasons = service.suspicionReasons ?? [];
+          {!servicesUnavailable && (
+            <div className="dt-table">
+              <div className="dt-head">
+                {SERVICE_SORT_COLUMNS.map(({ id, label, start }) => {
+                  const isActive = sortBy === id;
                   return (
-                    <article
-                      className={`sh-item row-hl sh-item-${service.category}`}
-                      key={service.name}
-                      role="listitem"
+                    <button
+                      key={id}
+                      type="button"
+                      className={`dt-sort${start ? " is-start" : ""}${isActive ? " is-active" : ""}`}
+                      aria-label={`Ordenar por ${label.toLowerCase()}${isActive ? (sortDirection === "desc" ? ", decrescente" : ", crescente") : ""}`}
+                      aria-pressed={isActive}
+                      onClick={() => handleSort(id)}
                     >
-                      <img
-                        className="sh-item-icon"
-                        src={service.icon ?? FALLBACK_ICON}
-                        alt=""
-                        width={20}
-                        height={20}
-                      />
-                      <div className="sh-item-main">
-                        <strong title={serviceLabel(service)}>{serviceLabel(service)}</strong>
-                        <small className="sh-item-name">{service.name}</small>
-                        <small className="sh-item-path" title={service.executablePath ?? undefined}>
-                          {service.executablePath ?? "Executável indisponível"}
-                        </small>
-                        {reasons.length > 0 && (
-                          <ul className="sh-reasons" aria-label="Sinais que exigem revisão">
-                            {reasons.map(reason => (
-                              <li key={reason}>{reason}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                      <div className="sh-item-meta">
-                        <span
-                          className={`sh-cat sh-cat-${service.category}`}
-                          title={categoryTitle(service)}
-                        >
-                          {categoryLabel(service.category)}
+                      {label}
+                      {isActive && (
+                        <span className="dt-sort-arrow" aria-hidden="true">
+                          {sortDirection === "desc" ? "↓" : "↑"}
                         </span>
-                        <span
-                          className={`status-badge ${running ? "status-enabled" : "status-disabled"}`}
-                        >
-                          {service.state}
-                        </span>
-                        <span className="sh-start-type">{service.startType}</span>
-                        <small className="sh-item-pid">{formatPid(service)}</small>
-                      </div>
-                      <button
-                        type="button"
-                        className={`btn-primary disk-scan-btn sh-action${running ? " row-hl-danger" : ""}`}
-                        aria-label={`${running ? "Parar" : "Iniciar"} ${serviceLabel(service)}`}
-                        disabled={busyService === service.name}
-                        onClick={() => void runServiceAction(service, running ? "stop" : "start")}
-                      >
-                        {busyService === service.name
-                          ? "AGUARDE…"
-                          : running
-                            ? "PARAR"
-                            : "INICIAR"}
-                      </button>
-                    </article>
+                      )}
+                    </button>
                   );
-                })
+                })}
+                <span className="dt-center" aria-hidden="true">Ação</span>
+              </div>
+
+              {servicesState === "loading" && services == null ? (
+                skeletonRows("serviços")
+              ) : services == null ? null : visibleServices.length === 0 ? (
+                <div className="dt-empty" role="status">
+                  <p>Nenhum serviço corresponde aos filtros aplicados.</p>
+                  {query.trim() && (
+                    <button type="button" className="dt-empty-reset" onClick={() => setQuery("")}>
+                      Limpar busca
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <ul className="dt-list" role="list">
+                  {visibleServices.map(service => {
+                    const running = service.state === "Em execução";
+                    const busy = busyService === service.name;
+                    const reasons = service.suspicionReasons ?? [];
+                    const label = serviceLabel(service);
+                    return (
+                      <li
+                        className={`dt-row row-hl sh-row sh-row-${service.category}${busy ? " is-busy" : ""}`}
+                        key={service.name}
+                      >
+                        <div className="dt-identity" title={[label, service.executablePath].filter(Boolean).join(" · ")}>
+                          <span className="dt-icon" aria-hidden="true">
+                            <img src={service.icon ?? FALLBACK_ICON} alt="" />
+                          </span>
+                          <span className="dt-name">
+                            <strong>{label}</strong>
+                            <small>
+                              <span>{service.name}</span> · {service.executablePath ?? "Executável indisponível"}
+                            </small>
+                            {reasons.length > 0 && (
+                              <ul className="sh-reasons" aria-label="Sinais que exigem revisão">
+                                {reasons.map(reason => (
+                                  <li key={reason}>{reason}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </span>
+                        </div>
+                        <span className="dt-cell sh-cell-end">
+                          <span className={`sh-cat sh-cat-${service.category}`} title={categoryTitle(service)}>
+                            {categoryLabel(service.category)}
+                          </span>
+                        </span>
+                        <span className="sh-state-cell">
+                          <span className={`sh-state ${running ? "is-running" : ""}`}>{service.state}</span>
+                          <small className="sh-item-pid">{formatPid(service)}</small>
+                        </span>
+                        <span className="dt-cell sh-cell-end">{service.startType}</span>
+                        <span className="dt-action">
+                          <button
+                            type="button"
+                            className={`row-action${running ? " row-hl-danger" : ""}`}
+                            aria-label={`${running ? "Parar" : "Iniciar"} ${label}`}
+                            title={`${running ? "Parar" : "Iniciar"} o serviço ${label}`}
+                            disabled={busy}
+                            onClick={() => void runServiceAction(service, running ? "stop" : "start")}
+                          >
+                            {running ? (
+                              <Square size={12} strokeWidth={2.2} aria-hidden="true" />
+                            ) : (
+                              <Play size={13} strokeWidth={2.2} aria-hidden="true" />
+                            )}
+                            <span>{busy ? "Aguarde…" : running ? "Parar" : "Iniciar"}</span>
+                          </button>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </div>
           )}
@@ -651,80 +784,63 @@ export function ServicesHub() {
       )}
 
       {tab === "updates" && (
-        <div className="sh-panel module-dashboard" role="tabpanel">
-          <div className="sh-stats">
-            <article className="sh-stat">
-              <span className="stat-label">ATUALIZAÇÕES PENDENTES</span>
-              <span className="stat-value">
-                {updates ? (
-                  formatCount(updates.totalCount)
-                ) : (
-                  <span className="sh-skeleton-box sh-skeleton-stat-num" aria-hidden="true" />
-                )}
-              </span>
-            </article>
-            <article className="sh-stat">
-              <span className="stat-label">EM SEGUNDO PLANO</span>
-              <span className="stat-value">
-                {busyAll ? "1 em lote" : formatCount(runningCount)}
-              </span>
-            </article>
-            <article className="sh-stat">
-              <span className="stat-label">REPOSITÓRIO</span>
-              <span className="stat-value sh-stat-compact">
-                {updates ? (
-                  updateSourcesLabel
-                ) : (
-                  <span className="sh-skeleton-box sh-skeleton-stat-num" aria-hidden="true" />
-                )}
-              </span>
-            </article>
-            <article className="sh-stat">
-              <span className="stat-label">STATUS DO SISTEMA</span>
-              <span className="stat-value sh-stat-compact">
-                {updatesState === "loading"
-                  ? "Verificando…"
-                  : updates && updates.totalCount > 0
-                    ? `${updates.totalCount} pendente(s)`
-                    : "Em dia"}
-              </span>
-            </article>
-          </div>
-
-          <div className="sh-toolbar">
-            <input
-              type="search"
-              className="sh-search"
-              placeholder="Buscar aplicativo desatualizado (nome, ID ou versão)"
-              aria-label="Buscar aplicativo por nome, ID ou versão"
-              value={updatesQuery}
-              onChange={event => setUpdatesQuery(event.target.value)}
-              disabled={updatesState === "loading" && updates == null}
-            />
-            <div className="sh-toolbar-actions">
-              <button
-                type="button"
-                className="btn-primary disk-scan-btn sh-btn-secondary"
-                onClick={() => void loadUpdates(true)}
-                disabled={updatesState === "loading" || busyAll}
-                title="Reconsultar atualizações disponíveis no winget"
-              >
-                {updatesState === "loading" ? "VERIFICANDO…" : "VERIFICAR"}
-              </button>
-              <button
-                type="button"
-                className="btn-primary disk-scan-btn"
-                onClick={() => void runUpgradeAll()}
-                disabled={
-                  busyAll ||
-                  updatesState === "loading" ||
-                  updates == null ||
-                  updates.totalCount === 0
-                }
-              >
-                {busyAll ? "ATUALIZANDO TUDO…" : "ATUALIZAR TUDO"}
-              </button>
+        <div className="dt dt--updates" role="tabpanel">
+          <div className="dt-toolbar">
+            <div className="dt-toolbar-start">
+              <label className="dt-search">
+                <Search size={15} aria-hidden="true" />
+                <input
+                  type="search"
+                  placeholder="Buscar aplicativo (nome, ID ou versão)"
+                  aria-label="Buscar aplicativo por nome, ID ou versão"
+                  value={updatesQuery}
+                  onChange={event => setUpdatesQuery(event.target.value)}
+                  disabled={updatesState === "loading" && updates == null}
+                />
+              </label>
+              <div className="sh-toolbar-actions">
+                <button
+                  type="button"
+                  className="sh-btn"
+                  onClick={() => void loadUpdates(true)}
+                  disabled={updatesState === "loading" || busyAll}
+                  title="Reconsultar atualizações disponíveis no winget"
+                >
+                  <RefreshCw size={13} aria-hidden="true" />
+                  {updatesState === "loading" ? "VERIFICANDO…" : "VERIFICAR"}
+                </button>
+                <button
+                  type="button"
+                  className="sh-btn sh-btn-primary"
+                  onClick={() => void runUpgradeAll()}
+                  disabled={
+                    busyAll ||
+                    updatesState === "loading" ||
+                    updates == null ||
+                    updates.totalCount === 0
+                  }
+                >
+                  <Download size={13} aria-hidden="true" />
+                  {busyAll ? "ATUALIZANDO TUDO…" : "ATUALIZAR TUDO"}
+                </button>
+              </div>
             </div>
+            <dl className="dt-summary" aria-label="Resumo das atualizações">
+              <div>
+                <dt>Pendentes</dt>
+                <dd>{updates ? formatCount(updates.totalCount) : "—"}</dd>
+              </div>
+              <div>
+                <dt>Em segundo plano</dt>
+                <dd>{busyAll ? "1 em lote" : formatCount(runningCount)}</dd>
+              </div>
+              <div>
+                <dt>Repositório</dt>
+                <dd className="sh-summary-text" title={updates ? updateSourcesLabel : undefined}>
+                  {updates ? updateSourcesLabel : "—"}
+                </dd>
+              </div>
+            </dl>
           </div>
 
           {busyAll && (
@@ -769,114 +885,118 @@ export function ServicesHub() {
           )}
 
           {updatesState === "loading" && updates == null && (
-            <>
-              <div className="sh-loading-banner" role="status" aria-live="polite">
-                <span className="sh-loading-spinner" aria-hidden="true" />
-                <div className="sh-loading-text">
-                  <strong>Consultando repositório oficial do Gerenciador de Pacotes do Windows (winget)…</strong>
-                  <small>Comparando versões instaladas com manifestos recentes do repositório</small>
-                </div>
+            <div className="sh-loading-banner" role="status" aria-live="polite">
+              <span className="sh-loading-spinner" aria-hidden="true" />
+              <div className="sh-loading-text">
+                <strong>Consultando repositório oficial do Gerenciador de Pacotes do Windows (winget)…</strong>
+                <small>Comparando versões instaladas com manifestos recentes do repositório</small>
               </div>
-              <div className="sh-list sh-skeleton-list" aria-busy="true" aria-label="Carregando lista de atualizações">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <article className="sh-item sh-skeleton-item" key={`update-skeleton-${i}`} aria-hidden="true">
-                    <div className="sh-skeleton-box sh-skeleton-icon" />
-                    <div className="sh-item-main">
-                      <div className="sh-skeleton-box sh-skeleton-title" />
-                      <div className="sh-skeleton-box sh-skeleton-sub" />
-                      <div className="sh-skeleton-box sh-skeleton-path" />
-                    </div>
-                    <div className="sh-item-meta">
-                      <div className="sh-skeleton-box sh-skeleton-version" />
-                    </div>
-                    <div className="sh-skeleton-box sh-skeleton-btn" />
-                  </article>
-                ))}
-              </div>
-            </>
+            </div>
           )}
 
-          {updatesState === "ready" && updates != null && !updatesUnavailable && (
-            <div className="sh-list" role="list">
-              {updates.updates.length === 0 ? (
-                <p className="sh-empty muted">Nenhuma atualização pendente no momento.</p>
+          {!updatesUnavailable && (
+            <div className="dt-table">
+              <div className="dt-head">
+                <span>Aplicativo</span>
+                <span className="sh-head-right">Instalada</span>
+                <span className="sh-head-right">Disponível</span>
+                <span className="dt-center" aria-hidden="true">Ação</span>
+              </div>
+
+              {updatesState === "loading" && updates == null ? (
+                skeletonRows("atualizações")
+              ) : updates == null ? null : updates.updates.length === 0 ? (
+                <div className="dt-empty" role="status">
+                  <p>Nenhuma atualização pendente no momento.</p>
+                </div>
               ) : visibleUpdates.length === 0 ? (
-                <p className="sh-empty muted">Nenhum aplicativo corresponde aos filtros aplicados.</p>
+                <div className="dt-empty" role="status">
+                  <p>Nenhum aplicativo corresponde aos filtros aplicados.</p>
+                  <button type="button" className="dt-empty-reset" onClick={() => setUpdatesQuery("")}>
+                    Limpar busca
+                  </button>
+                </div>
               ) : (
-                visibleUpdates.map(update => {
-                  const job = updateJobs[update.id];
-                  const running = job?.state === "running";
-                  const done = job?.state === "done";
-                  return (
-                    <article
-                      className={`sh-item row-hl sh-item-update ${running ? "is-running" : ""} ${done ? "is-done" : ""}`}
-                      key={`${update.source}:${update.id}`}
-                      role="listitem"
-                    >
-                      <div className="sh-item-icon-wrapper" aria-hidden="true">
-                        {update.icon ? (
-                          <img
-                            className="sh-item-icon"
-                            src={update.icon}
-                            alt=""
-                            width={22}
-                            height={22}
-                          />
-                        ) : (
-                          <span className="sh-item-monogram">
-                            {update.name.slice(0, 2).toUpperCase()}
-                          </span>
-                        )}
-                      </div>
-                      <div className="sh-item-main">
-                        <strong>{update.name}</strong>
-                        <small className="sh-item-name">{update.id}</small>
-                        <small className="sh-item-path">Origem: {update.source || "Origem desconhecida"}</small>
-                        {running && (
-                          <div
-                            className="sh-progress sh-progress-inline"
-                            role="progressbar"
-                            aria-label={`Atualização de ${update.name} em andamento`}
-                          >
-                            <span className="sh-progress-bar sh-progress-indeterminate" />
-                          </div>
-                        )}
-                        {job?.log && job.state !== "error" && (
-                          <small className="sh-progress-log">{job.log}</small>
-                        )}
-                        {job?.state === "error" && (
-                          <small className="sh-item-error" role="alert">
-                            {job.message}
-                          </small>
-                        )}
-                      </div>
-                      <div className="sh-item-meta">
-                        <span className="sh-version">
-                          {update.currentVersion || "Indisponível"}
-                          <em>→</em>
-                          <b>{update.availableVersion || "Indisponível"}</b>
-                        </span>
-                        {running && job?.startedAt != null && (
-                          <small className="sh-item-elapsed">{formatElapsed(now - job.startedAt)}</small>
-                        )}
-                        {done && <small className="sh-item-elapsed sh-item-elapsed-done">ATUALIZADO</small>}
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-primary disk-scan-btn sh-action"
-                        disabled={running}
-                        onClick={() => void runUpgrade(update)}
+                <ul className="dt-list" role="list">
+                  {visibleUpdates.map(update => {
+                    const job = updateJobs[update.id];
+                    const running = job?.state === "running";
+                    const done = job?.state === "done";
+                    return (
+                      <li
+                        className={`dt-row row-hl sh-row-update${running ? " is-running" : ""}${done ? " is-done" : ""}`}
+                        key={`${update.source}:${update.id}`}
                       >
-                        {running ? "ATUALIZANDO…" : "ATUALIZAR"}
-                      </button>
-                    </article>
-                  );
-                })
+                        <div className="dt-identity">
+                          <span className="dt-icon" aria-hidden="true">
+                            {update.icon ? (
+                              <img src={update.icon} alt="" />
+                            ) : (
+                              update.name.slice(0, 2).toUpperCase()
+                            )}
+                          </span>
+                          <span className="dt-name">
+                            <strong>{update.name}</strong>
+                            <small>
+                              <span>{update.id}</span> · <span>Origem: {update.source || "Origem desconhecida"}</span>
+                            </small>
+                            {running && (
+                              <span
+                                className="sh-progress sh-progress-inline"
+                                role="progressbar"
+                                aria-label={`Atualização de ${update.name} em andamento`}
+                              >
+                                <span className="sh-progress-bar sh-progress-indeterminate" />
+                              </span>
+                            )}
+                            {job?.log && job.state !== "error" && (
+                              <small className="sh-progress-log">{job.log}</small>
+                            )}
+                            {job?.state === "error" && (
+                              <small className="sh-item-error" role="alert">
+                                {job.message}
+                              </small>
+                            )}
+                          </span>
+                        </div>
+                        <span className={`dt-cell is-numeric${update.currentVersion ? "" : " is-missing"}`}>
+                          {update.currentVersion || "Indisponível"}
+                        </span>
+                        <span className="sh-version-cell">
+                          <b className="sh-version-new">{update.availableVersion || "Indisponível"}</b>
+                          {running && job?.startedAt != null && (
+                            <small className="sh-item-elapsed">{formatElapsed(now - job.startedAt)}</small>
+                          )}
+                          {done && <small className="sh-item-elapsed sh-item-elapsed-done">ATUALIZADO</small>}
+                        </span>
+                        <span className="dt-action">
+                          <button
+                            type="button"
+                            className="row-action"
+                            aria-label={`Atualizar ${update.name}`}
+                            title={`Atualizar ${update.name} para ${update.availableVersion || "a versão disponível"} via winget`}
+                            disabled={running}
+                            onClick={() => void runUpgrade(update)}
+                          >
+                            <Download size={13} strokeWidth={2.1} aria-hidden="true" />
+                            <span>{running ? "Atualizando…" : "Atualizar"}</span>
+                          </button>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </div>
           )}
         </div>
       )}
+
+      <AiServicesAdvisorModal
+        isOpen={showAiModal}
+        onClose={() => setShowAiModal(false)}
+        initialProvider={aiModalProvider}
+      />
     </section>
   );
 }

@@ -162,6 +162,18 @@
   outline: none;
 }
 
+/* O campo é a cápsula `.dt-search`: neutraliza o estilo global de busca
+   (`input[type="search"]` com !important no identity.css), que desenhava uma
+   segunda caixa dentro dela. */
+.dt-search input[type="search"],
+.dt-search input[type="search"]:focus {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
 .dt-search input::placeholder {
   color: var(--neu-text-muted);
 }

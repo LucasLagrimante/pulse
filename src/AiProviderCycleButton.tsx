@@ -13,6 +13,8 @@ export type AiProviderCycleButtonProps = {
   /** Texto depois do nome, ex.: "NO TERMINAL". */
   suffix?: string;
   className: string;
+  /** Finalidade exibida no tooltip, ex.: "para analisar as maiores pastas e liberar espaço". */
+  purpose?: string;
   onOpen: (provider: SupportedAiProvider) => void;
 };
 
@@ -26,6 +28,7 @@ export function AiProviderCycleButton({
   prefix,
   suffix,
   className,
+  purpose = "para analisar as maiores pastas e liberar espaço",
   onOpen,
 }: AiProviderCycleButtonProps) {
   const providers = available?.length
@@ -56,7 +59,7 @@ export function AiProviderCycleButton({
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
       aria-label={`${prefix} ${suffix ?? ""} — escolha entre ${choices}`.replace(/\s+/g, " ")}
-      title={`Abrir terminal com ${choices} para analisar as maiores pastas e liberar espaço`}
+      title={`Abrir terminal com ${choices} ${purpose}`}
     >
       <span className="ai-provider-cycle-icon" key={`icon-${current.id}`} aria-hidden="true">
         <ProviderIcon providerId={current.id} size={13} />

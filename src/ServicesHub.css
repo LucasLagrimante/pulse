@@ -11,93 +11,6 @@
   gap: 10px;
 }
 
-.sh-panel {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  gap: 10px;
-}
-
-/* Cartões de estatística */
-.sh-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.sh-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 9px 12px;
-  border: 1px solid var(--neu-divider);
-  border-radius: 6px;
-  background: var(--neu-surface-sunken);
-  box-shadow: var(--neu-shadow-raised-xs);
-  color: var(--neu-text-primary);
-}
-
-.sh-stat strong {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--neu-text-title);
-  font-variant-numeric: tabular-nums;
-}
-
-.sh-stat small {
-  color: var(--neu-text-muted);
-  font-size: 0.65rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.sh-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  border: 1px solid var(--neu-divider);
-  border-radius: 6px;
-  background: var(--neu-surface-sunken);
-  box-shadow: var(--neu-shadow-raised-xs);
-}
-
-.sh-search {
-  flex: 1 1 200px;
-  min-width: 0;
-  background: var(--neu-surface);
-  border: 1px solid var(--neu-divider);
-  border-radius: 6px;
-  color: var(--neu-text-primary);
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: .72rem;
-  padding: 6px 10px;
-  transition: border-color 140ms ease;
-}
-
-.sh-search:focus-visible,
-.sh-filter:focus-visible {
-  outline: 2px solid var(--neu-accent);
-  outline-offset: 1px;
-  border-color: var(--neu-accent);
-}
-
-.sh-filter {
-  background: var(--neu-surface);
-  border: 1px solid var(--neu-divider);
-  border-radius: 6px;
-  color: var(--neu-text-primary);
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: .68rem;
-  padding: 6px 10px;
-  cursor: pointer;
-}
-
 /* Filtro por origem (Sistema / Usuário / Revisão) */
 .sh-categories {
   display: flex;
@@ -150,112 +63,6 @@
   color: var(--neu-accent);
 }
 
-/* Listas longas */
-.sh-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.sh-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  flex-shrink: 0;
-  border: 1px solid var(--neu-divider);
-  border-radius: 6px;
-  background: var(--neu-surface);
-  box-shadow: var(--neu-shadow-raised-xs);
-  transition: border-color 120ms ease, background 120ms ease;
-}
-
-.sh-item:hover {
-  border-color: var(--neu-accent);
-  background: var(--neu-surface-hover);
-}
-
-.sh-item-icon {
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  image-rendering: pixelated;
-}
-
-.sh-item-icon-wrapper {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border-radius: 6px;
-  border: 1px solid var(--neu-divider);
-  background: var(--neu-surface-sunken);
-  overflow: hidden;
-}
-
-.sh-item-monogram {
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--neu-signal-secondary);
-}
-
-.sh-item-icon-wrapper .sh-item-icon {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-
-.sh-item-main {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  flex: 1;
-  min-width: 0;
-}
-
-.sh-item-main strong {
-  color: var(--neu-text-title);
-  font-size: .82rem;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sh-item-name,
-.sh-item-path,
-.sh-item-pid {
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: .6rem;
-  color: var(--neu-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sh-item-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.sh-start-type {
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: .58rem;
-  color: var(--neu-signal-secondary);
-  border: 1px solid color-mix(in srgb, var(--neu-signal-secondary) 25%, var(--neu-divider));
-  background: color-mix(in srgb, var(--neu-signal-secondary) 10%, transparent);
-  border-radius: 3px;
-  padding: 1px 6px;
-}
-
 /* Badge de origem do serviço */
 .sh-cat {
   font-family: "Cascadia Mono", Consolas, monospace;
@@ -280,10 +87,6 @@
   background: color-mix(in srgb, var(--neu-warning) 12%, transparent);
 }
 
-.sh-item-review {
-  border-color: color-mix(in srgb, var(--neu-warning) 40%, var(--neu-divider));
-}
-
 .sh-reasons {
   list-style: none;
   margin: 3px 0 0;
@@ -298,31 +101,6 @@
   font-size: .58rem;
   color: var(--neu-warning);
   overflow-wrap: anywhere;
-}
-
-.sh-version {
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: .68rem;
-  color: var(--neu-text-secondary);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.sh-version b {
-  color: var(--neu-success);
-  font-weight: 600;
-}
-
-.sh-version em {
-  font-style: normal;
-  color: var(--neu-text-muted);
-}
-
-.sh-action {
-  flex-shrink: 0;
-  min-width: 92px;
-  text-align: center;
 }
 
 .sh-unavailable,
@@ -449,27 +227,6 @@
   flex-shrink: 0;
 }
 
-.sh-btn-secondary {
-  background: var(--neu-surface) !important;
-  color: var(--neu-text-secondary) !important;
-  border: 1px solid var(--neu-divider) !important;
-  box-shadow: var(--neu-shadow-raised-xs) !important;
-}
-
-.sh-btn-secondary:hover:not(:disabled) {
-  background: var(--neu-surface-hover) !important;
-  border-color: var(--neu-accent) !important;
-  color: var(--neu-text-title) !important;
-}
-
-.sh-stat-compact {
-  font-size: 0.78rem !important;
-  font-weight: 500 !important;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .sh-running-note {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .62rem;
@@ -531,9 +288,8 @@
   pointer-events: none;
 }
 
-.sh-skeleton-item {
+.sh-skeleton-row {
   opacity: 0.85;
-  border-color: var(--neu-divider);
 }
 
 .sh-skeleton-box {
@@ -591,11 +347,6 @@
   height: 10px;
 }
 
-.sh-skeleton-version {
-  width: 140px;
-  height: 14px;
-}
-
 .sh-skeleton-btn {
   width: 92px;
   height: 28px;
@@ -624,12 +375,177 @@
   height: 12px;
 }
 
-.sh-skeleton-stat-num {
-  display: inline-block;
-  width: 46px;
-  height: 18px;
+/* --- Tabelas no padrão compartilhado `.dt-*` (DataTable.css) ------------- */
+.dt--services {
+  --dt-cols: minmax(0, 1fr) 92px 128px 96px 112px;
+}
+
+.dt--updates {
+  --dt-cols: minmax(0, 1fr) 128px 140px 124px;
+}
+
+.sh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--neu-divider);
+  border-radius: 6px;
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-raised-xs);
+  color: var(--neu-text-primary);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.sh-btn:hover:not(:disabled) {
+  background: var(--neu-surface-hover);
+  border-color: var(--neu-accent);
+  color: var(--neu-text-title);
+}
+
+.sh-btn-primary {
+  border-color: var(--neu-accent);
+  background: var(--neu-accent);
+  color: var(--neu-on-accent);
+  font-weight: 600;
+}
+
+.sh-btn-primary:hover:not(:disabled) {
+  border-color: var(--neu-accent-hover);
+  background: var(--neu-accent-hover);
+  color: var(--neu-on-accent);
+}
+
+.sh-btn:focus-visible {
+  outline: 2px solid var(--neu-accent);
+  outline-offset: 2px;
+}
+
+.sh-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Chips de origem à esquerda, botão de IA à direita */
+.sh-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  flex-shrink: 0;
+}
+
+.sh-ai-trigger {
+  margin-left: auto;
+  padding: 5px 10px;
+  border-radius: 6px;
+}
+
+.sh-summary-text {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .78rem !important;
+}
+
+.sh-head-right,
+.sh-cell-end {
+  text-align: right;
+}
+
+/* Busca mais estreita: filtro de estado e atualizar cabem na mesma linha */
+.dt--services .dt-search {
+  flex-basis: 200px;
+}
+
+.sh-state-cell,
+.sh-version-cell {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sh-state {
+  color: var(--neu-text-secondary);
+  font-size: .72rem;
+  white-space: nowrap;
+}
+
+.sh-state.is-running {
+  color: var(--neu-success);
+  font-weight: 600;
+}
+
+.sh-item-pid {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .6rem;
+  color: var(--neu-text-muted);
+  white-space: nowrap;
+}
+
+.sh-version-new {
+  color: var(--neu-success);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .76rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Serviço com sinal forte: faixa de aviso fixa, sem depender do hover */
+.sh-row-review::before {
+  box-shadow: inset 3px 0 0 var(--neu-warning);
+}
+
+.dt-row.sh-row-update.is-running::before {
+  background: color-mix(in srgb, var(--neu-success) 7%, transparent);
+  box-shadow: inset 3px 0 0 var(--neu-success);
+}
+
+.dt-name .sh-progress-inline,
+.dt-name .sh-progress-log,
+.dt-name .sh-item-error {
+  display: block;
   margin-top: 2px;
 }
 
-.sh-item-update.is-running { border-color: color-mix(in srgb, var(--neu-success) 35%, var(--neu-divider)); }
-.sh-item-update.is-done { border-color: color-mix(in srgb, var(--neu-success) 25%, var(--neu-divider)); }
+@media (max-width: 760px) {
+  .dt--services {
+    --dt-cols: minmax(0, 1fr) 80px 104px 44px;
+  }
+
+  .dt--services .dt-head > :nth-child(4),
+  .dt--services .dt-row > :nth-child(4) {
+    display: none;
+  }
+
+  .dt--updates {
+    --dt-cols: minmax(0, 1fr) 96px 104px 44px;
+  }
+}
+
+.sh-filter {
+  height: 36px;
+  padding: 0 10px;
+  border: var(--neu-border-subtle);
+  border-radius: 12px;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-inset-xs);
+  color: var(--neu-text-primary);
+  font-size: .76rem;
+  cursor: pointer;
+}
+
+.sh-filter:focus-visible {
+  outline: 2px solid var(--neu-accent);
+  outline-offset: 1px;
+}

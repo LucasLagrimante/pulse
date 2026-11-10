@@ -1,4 +1,5 @@
 pub mod ai_disk_advisor;
+pub mod ai_services_advisor;
 pub mod app_icons;
 pub mod app_updates;
 pub mod audio;
@@ -134,6 +135,10 @@ pub fn run() {
             ai_disk_advisor::launch_ai_disk_terminal,
             ai_disk_advisor::get_ai_cleanup_plan_status,
             ai_disk_advisor::open_ai_cleanup_plan,
+            ai_services_advisor::get_ai_services_analysis_preview,
+            ai_services_advisor::launch_ai_services_terminal,
+            ai_services_advisor::get_ai_services_review_status,
+            ai_services_advisor::open_ai_services_review,
             disk_cleanup::analyze_disk_cleanup,
             disk_cleanup::clean_disk_categories,
             disk_cleanup::get_auto_cleanup,

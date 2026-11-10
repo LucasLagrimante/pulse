@@ -15,6 +15,7 @@ import {
   matchesServiceQuery,
   serviceLabel,
   sortServices,
+  sortServicesBy,
   type ServicesSnapshot,
   type UpdatesSnapshot,
   type WindowsService,
@@ -285,12 +286,11 @@ describe("Aba de serviços", () => {
     await abrirAbaServicos();
     await waitFor(() => expect(screen.getByText("Audio do Windows")).toBeTruthy());
     expect(screen.getByText("Fila de Impressao")).toBeTruthy();
-    const cards = screen.getByText("TOTAL").parentElement as HTMLElement;
-    expect(within(cards).getByText("3")).toBeTruthy();
-    expect(screen.getByText("EM EXECUÇÃO")).toBeTruthy();
-    expect(within(screen.getByText("EM EXECUÇÃO").parentElement as HTMLElement).getByText("1")).toBeTruthy();
-    expect(screen.getByText("PARADOS")).toBeTruthy();
-    expect(screen.getByText("PAUSADOS")).toBeTruthy();
+    const resumo = within(screen.getByLabelText("Resumo dos serviços"));
+    expect(within(resumo.getByText("Total").parentElement as HTMLElement).getByText("3")).toBeTruthy();
+    expect(within(resumo.getByText("Em execução").parentElement as HTMLElement).getByText("1")).toBeTruthy();
+    expect(resumo.getByText("Parados")).toBeTruthy();
+    expect(resumo.getByText("Pausados")).toBeTruthy();
   });
 
   it("mostra PID apenas do serviço em execução", async () => {
@@ -409,7 +409,7 @@ const motivos = screen.getByLabelText("Sinais que exigem revisão");
     render(<ServicesHub />);
     await abrirAbaServicos();
     await waitFor(() => expect(screen.getByText("Audio do Windows")).toBeTruthy());
-    const row = screen.getByText("Audio do Windows").closest("article") as HTMLElement;
+    const row = screen.getByText("Audio do Windows").closest("li") as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: /^Parar / }));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("set_windows_service_state", { name: "AudioSrv", action: "stop" }),
@@ -420,7 +420,7 @@ const motivos = screen.getByLabelText("Sinais que exigem revisão");
     render(<ServicesHub />);
     await abrirAbaServicos();
     await waitFor(() => expect(screen.getByText("Fila de Impressao")).toBeTruthy());
-    const row = screen.getByText("Fila de Impressao").closest("article") as HTMLElement;
+    const row = screen.getByText("Fila de Impressao").closest("li") as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: /^Iniciar / }));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("set_windows_service_state", { name: "Spooler", action: "start" }),
@@ -436,7 +436,7 @@ const motivos = screen.getByLabelText("Sinais que exigem revisão");
     render(<ServicesHub />);
     await abrirAbaServicos();
     await waitFor(() => expect(screen.getByText("Audio do Windows")).toBeTruthy());
-    const row = screen.getByText("Audio do Windows").closest("article") as HTMLElement;
+    const row = screen.getByText("Audio do Windows").closest("li") as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: /^Parar / }));
     await waitFor(() =>
       expect(screen.getAllByRole("alert").some(node => node.textContent?.includes("Acesso negado"))).toBe(true),
@@ -507,7 +507,7 @@ describe("Aba de atualizações", () => {
     );
     await openUpdatesTab();
     await waitFor(() => expect(screen.getByText("Docker Desktop")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "ATUALIZAR" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Atualizar / }));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("upgrade_winget_package", { id: "Docker.DockerDesktop" }),
     );
@@ -531,7 +531,7 @@ describe("Aba de atualizações", () => {
     });
     await openUpdatesTab();
     await waitFor(() => expect(screen.getByText("Docker Desktop")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "ATUALIZAR" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Atualizar / }));
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain("Acesso negado ao instalar o pacote"),
     );
@@ -697,7 +697,7 @@ describe("atualizações em paralelo", () => {
     const { jobs, upgrade } = jobTracker();
     await openTwoUpdates(upgrade);
 
-    const botoes = screen.getAllByRole("button", { name: "ATUALIZAR" }) as HTMLButtonElement[];
+    const botoes = screen.getAllByRole("button", { name: /^Atualizar / }) as HTMLButtonElement[];
     fireEvent.click(botoes[0]);
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("upgrade_winget_package", { id: "Docker.DockerDesktop" }),
@@ -725,7 +725,7 @@ describe("atualizações em paralelo", () => {
   it("mostra a linha de log do winget no item que está instalando", async () => {
     const job = deferred<string>();
     await openTwoUpdates(() => job.promise);
-    fireEvent.click(screen.getAllByRole("button", { name: "ATUALIZAR" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /^Atualizar / })[0]);
     await waitFor(() =>
       expect(screen.getByRole("progressbar", { name: /Docker Desktop em andamento/ })).toBeTruthy(),
     );
@@ -742,7 +742,7 @@ describe("atualizações em paralelo", () => {
   it("mantém o erro do primeiro pacote quando o segundo termina", async () => {
     const { jobs, upgrade } = jobTracker();
     await openTwoUpdates(upgrade);
-    const botoes = screen.getAllByRole("button", { name: "ATUALIZAR" }) as HTMLButtonElement[];
+    const botoes = screen.getAllByRole("button", { name: /^Atualizar / }) as HTMLButtonElement[];
     fireEvent.click(botoes[0]);
     fireEvent.click(botoes[1]);
     await waitFor(() => expect(jobs["Anki.Anki"]).toBeTruthy());
@@ -757,7 +757,7 @@ describe("atualizações em paralelo", () => {
   it("ignora clique repetido no mesmo pacote enquanto ele instala", async () => {
     const job = deferred<string>();
     await openTwoUpdates(() => job.promise);
-    const botao = screen.getAllByRole("button", { name: "ATUALIZAR" })[0];
+    const botao = screen.getAllByRole("button", { name: /^Atualizar / })[0];
     fireEvent.click(botao);
     fireEvent.click(botao);
     fireEvent.click(botao);
@@ -773,7 +773,7 @@ describe("atualizações em paralelo", () => {
   it("só reconsulta a lista depois que a última instalação termina", async () => {
     const { jobs, upgrade } = jobTracker();
     await openTwoUpdates(upgrade);
-    const botoes = screen.getAllByRole("button", { name: "ATUALIZAR" }) as HTMLButtonElement[];
+    const botoes = screen.getAllByRole("button", { name: /^Atualizar / }) as HTMLButtonElement[];
     fireEvent.click(botoes[0]);
     fireEvent.click(botoes[1]);
     await waitFor(() => expect(jobs["Anki.Anki"]).toBeTruthy());
@@ -867,5 +867,66 @@ describe("atualizações em paralelo", () => {
       const after = vi.mocked(invoke).mock.calls.filter(call => call[0] === "list_pending_updates").length;
       expect(after).toBeGreaterThan(before);
     });
+  });
+});
+describe("ordenação por coluna", () => {
+  it("sortServicesBy ordena por nome, origem e estado com desempate alfabético", () => {
+    const byName = sortServicesBy(SAMPLE_SERVICES, "name", "asc").map(s => serviceLabel(s));
+    expect(byName).toEqual(["Audio do Windows", "Fila de Impressao", "Servico de Transferencia"]);
+    expect(sortServicesBy(SAMPLE_SERVICES, "name", "desc")[0].name).toBe("BITS");
+    // Revisão primeiro na origem crescente: o sinal aparece no topo.
+    expect(sortServicesBy(MIXED_SERVICES, "category", "asc")[0].name).toBe("AchadoNaReview");
+    expect(sortServicesBy(SAMPLE_SERVICES, "state", "asc").map(s => s.name)).toEqual(sortServices(SAMPLE_SERVICES).map(s => s.name));
+  });
+
+  it("clicar no cabeçalho Serviço reordena a lista e alterna a direção", async () => {
+    render(<ServicesHub />);
+    await abrirAbaServicos();
+    await waitFor(() => expect(screen.getByText("Audio do Windows")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Ordenar por serviço" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ordenar por serviço, crescente" }));
+    const first = document.querySelector(".dt--services .dt-row strong");
+    expect(first?.textContent).toBe("Servico de Transferencia");
+  });
+});
+
+describe("revisão de segurança com IA", () => {
+  it("o botão da aba Serviços abre o modal e gera o prompt sem alterar nada", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "detect_ai_cli_providers") return Promise.resolve(["claude"]);
+      if (cmd === "get_ai_services_review_status") {
+        return Promise.resolve({ path: "C:\\Temp\\pulse-services-security-review.md", exists: false, modifiedAtUnixMs: null, sizeBytes: 0 });
+      }
+      if (cmd === "get_ai_services_analysis_preview") {
+        return Promise.resolve({
+          provider: "claude",
+          providerName: "Claude Code",
+          command: "claude 'Faça uma revisão'",
+          prompt: "Faça uma revisão de segurança dos serviços",
+          contextFilePath: "C:\\Temp\\pulse-services-security-context.md",
+          runningCount: 120,
+          analyzedCount: 14,
+          reviewCount: 0,
+          withoutPublisherCount: 2,
+          highlighted: [],
+          collectedAtUnixMs: 1,
+          isAvailable: true,
+          environment: "Windows (nativo)",
+        });
+      }
+      return Promise.resolve(defaultInvoke(cmd));
+    });
+    render(<ServicesHub />);
+    await abrirAbaServicos();
+    await waitFor(() => expect(screen.getByText("Audio do Windows")).toBeTruthy());
+
+    fireEvent.click(await screen.findByRole("button", { name: /REVISAR SEGURANÇA COM/ }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("get_ai_services_analysis_preview", { provider: "claude", customPrompt: null }),
+    );
+    expect(await screen.findByText("Faça uma revisão de segurança dos serviços")).toBeTruthy();
+    expect(screen.getByText("14")).toBeTruthy();
+    // Gerar o prompt nunca dispara ação de serviço.
+    expect(invoke).not.toHaveBeenCalledWith("set_windows_service_state", expect.anything());
   });
 });
