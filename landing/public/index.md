@@ -5,8 +5,8 @@ Central nativa de observabilidade, diagnóstico e controle local para Windows 11
 - **Gratuito**, código aberto (MIT) e sem cadastro
 - **Local por padrão**: sem conta, sem telemetria e sem servidor do Pulse
 - **Windows 11 x64**, instalador NSIS de 3,6 MB
-- Versão atual: 1.1.0
-- SHA-256: `16a3cada988430b6d98fee8e5b202ad1307de02875bfb813c6aa22f724e3b2a0`
+- Versão atual: 1.1.1
+- SHA-256: `c2ac578b2439dab0597f4b4908de5c55ecaa50534a436bd9e5def6fff26fa0a6`
 - Assinatura de código: o instalador ainda não é assinado, então o SmartScreen pode avisar ("Mais informações" → "Executar assim mesmo"); confira o SHA-256 publicado. Política: https://github.com/LucasLagrimante/pulse#política-de-assinatura-de-código
 - Site: https://pulse.lagrimante.com.br/
 - Download direto: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe
@@ -17,7 +17,7 @@ Central nativa de observabilidade, diagnóstico e controle local para Windows 11
 CPU, memória, disco por volume, GPU, rede e processos em uma tela unificada com cache nativo de 3,5 s e contagem de itens de inicialização.
 
 ### 2. Atividade (Processos agrupados)
-Processos agrupados por aplicativo com consumo real de Memória, CPU e GPU, ordenação multi-coluna, identificação dedicada do host WSL (`vmmemWSL`) e encerramento seguro de árvore de processos.
+Processos agrupados por aplicativo com consumo real de Memória, CPU e GPU, ordenação multi-coluna, filtro por nome/editor, linha destacada com ação de fechar própria, identificação dedicada do host WSL (`vmmemWSL`) e encerramento seguro de árvore de processos.
 
 ### 3. Desempenho e telemetria em tempo real
 Gráficos SVG vetoriais de CPU, RAM, GPU, download, upload e discos físicos, além de sensores térmicos verificados. Sensores sem suporte do hardware aparecem como **Indisponível** com justificativa técnica, nunca como zero fictício.
