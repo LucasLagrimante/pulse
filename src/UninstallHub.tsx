@@ -1,14 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
   Folder,
   FolderOpen,
+  RefreshCw,
+  Search,
   ShieldAlert,
+  Trash2,
   Undo2,
 } from "lucide-react";
 
+import "./DataTable.css";
 import "./UninstallHub.css";
 
 export type InstalledApp = {
@@ -124,9 +128,55 @@ export type CleanupReport = {
   finishedAtUnixMs: number;
 };
 
+/** Pegada medida pelo backend na pasta de instalação (`measure_installed_app_sizes`). */
+export type AppFootprint = {
+  appId: string;
+  measuredBytes?: number | null;
+  /** `false` = orçamento/prazo esgotado: `measuredBytes` é um mínimo. */
+  complete: boolean;
+  fileCount: number;
+  installLocation?: string | null;
+  unavailableReason?: string | null;
+};
+
+export type AppSortColumn = "name" | "installed" | "size";
+export type AppSortDirection = "asc" | "desc";
+
+/** Tamanho que a tela usa: medido no disco > estimativa do instalador. */
+export type EffectiveSize = {
+  bytes: number;
+  source: "measured" | "partial" | "registry";
+};
+
 type Stage = "restore" | "running" | "registry" | "folders" | "done";
 
 const UNAVAILABLE = "Indisponível";
+const MEASURE_BATCH = 12;
+
+const SORT_COLUMNS: { id: AppSortColumn; label: string; name: string; hint: string; start?: boolean }[] = [
+  { id: "name", label: "Programa", name: "nome", hint: "Ordem alfabética do nome exibido pelo Windows.", start: true },
+  { id: "installed", label: "Instalado em", name: "data de instalação", hint: "Data gravada pelo instalador (InstallDate)." },
+  {
+    id: "size",
+    label: "Tamanho",
+    name: "tamanho",
+    hint: "Pasta de instalação medida pelo Pulse; sem pasta, usa a estimativa do instalador. Sem tamanho vai para o fim.",
+  },
+];
+
+function sizeTitle(item: InstalledApp, size: EffectiveSize | null, footprint?: AppFootprint): string {
+  const registry =
+    typeof item.estimatedSizeKb === "number" && item.estimatedSizeKb > 0
+      ? `O instalador declarou ${formatEstimatedSize(item.estimatedSizeKb)}.`
+      : "O instalador não declarou tamanho.";
+  if (!size) return `${footprint?.unavailableReason ?? "Pasta de instalação não informada"}. ${registry}`;
+  const where = footprint?.installLocation ? ` em ${footprint.installLocation}` : "";
+  const files = footprint?.fileCount ? ` (${footprint.fileCount.toLocaleString("pt-BR")} arquivos)` : "";
+  if (size.source === "measured") return `Medido pelo Pulse${where}${files}. ${registry}`;
+  if (size.source === "partial")
+    return `Pasta grande demais para medir por completo${where}: o valor é um mínimo. ${registry}`;
+  return `Estimativa do instalador (EstimatedSize), não medida no disco. ${footprint?.unavailableReason ?? ""}`.trim();
+}
 
 export function formatBytes(bytes: number | null | undefined): string {
   if (bytes == null || typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) {
@@ -166,10 +216,66 @@ export function filterApps(apps: InstalledApp[], query: string): InstalledApp[] 
   return apps.filter(app => matchesQuery(app, query));
 }
 
-export function sortApps(apps: InstalledApp[]): InstalledApp[] {
-  return [...apps].sort((left, right) =>
-    left.displayName.localeCompare(right.displayName, "pt-BR", { sensitivity: "base" }),
-  );
+/** `InstallDate` do registro vem como `AAAAMMDD`; qualquer outra coisa é desconhecida. */
+export function parseInstallDate(raw: string | null | undefined): Date | null {
+  const match = /^(\d{4})(\d{2})(\d{2})$/.exec((raw ?? "").trim());
+  if (!match) return null;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(year, month - 1, day);
+  const valid =
+    year >= 1990 && date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+  return valid ? date : null;
+}
+
+export function formatInstallDate(raw: string | null | undefined): string {
+  const date = parseInstallDate(raw);
+  return date ? date.toLocaleDateString("pt-BR") : "—";
+}
+
+export function effectiveSize(app: InstalledApp, footprint?: AppFootprint): EffectiveSize | null {
+  const measured = footprint?.measuredBytes;
+  const estimated =
+    typeof app.estimatedSizeKb === "number" && Number.isFinite(app.estimatedSizeKb) && app.estimatedSizeKb > 0
+      ? app.estimatedSizeKb * 1024
+      : null;
+  if (typeof measured === "number" && Number.isFinite(measured) && measured >= 0) {
+    if (footprint?.complete) return { bytes: measured, source: "measured" };
+    // Medição parcial é um mínimo: se o registro declara mais, o maior dos dois é o mais próximo do real.
+    return { bytes: Math.max(measured, estimated ?? 0), source: "partial" };
+  }
+  return estimated != null ? { bytes: estimated, source: "registry" } : null;
+}
+
+const byName = (left: InstalledApp, right: InstalledApp) =>
+  left.displayName.localeCompare(right.displayName, "pt-BR", { sensitivity: "base" });
+
+/**
+ * Ordena sem fingir dado: itens sem tamanho/data vão sempre para o fim,
+ * independentemente da direção; empates caem na ordem alfabética.
+ */
+export function sortApps(
+  apps: InstalledApp[],
+  column: AppSortColumn = "name",
+  direction: AppSortDirection = "asc",
+  footprints: Map<string, AppFootprint> = new Map(),
+): InstalledApp[] {
+  if (column === "name") {
+    const sorted = [...apps].sort(byName);
+    return direction === "asc" ? sorted : sorted.reverse();
+  }
+  const keyOf = (app: InstalledApp): number | null =>
+    column === "size"
+      ? effectiveSize(app, footprints.get(app.id))?.bytes ?? null
+      : parseInstallDate(app.installDate)?.getTime() ?? null;
+  const sign = direction === "asc" ? 1 : -1;
+  return [...apps].sort((left, right) => {
+    const a = keyOf(left);
+    const b = keyOf(right);
+    if (a == null && b == null) return byName(left, right);
+    if (a == null) return 1;
+    if (b == null) return -1;
+    return a === b ? byName(left, right) : (a - b) * sign;
+  });
 }
 
 export function existingRegistryKeys(keys: RegistryKeyRef[]): RegistryKeyRef[] {
@@ -228,6 +334,11 @@ export function UninstallHub() {
   const [loadState, setLoadState] = useState<"idle" | "loading" | "ready">("idle");
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [sortBy, setSortBy] = useState<AppSortColumn>("name");
+  const [sortDirection, setSortDirection] = useState<AppSortDirection>("asc");
+  const [footprints, setFootprints] = useState<Map<string, AppFootprint>>(new Map());
+  const [measuring, setMeasuring] = useState(false);
+  const measureRun = useRef(0);
 
   const [capabilities, setCapabilities] = useState<UninstallCapabilities>();
   const [app, setApp] = useState<InstalledApp>();
@@ -264,10 +375,75 @@ export function UninstallHub() {
       .catch(() => setCapabilities(undefined));
   }, [loadApps, loadState]);
 
+  // Mede a pasta de instalação em lotes pequenos e sequenciais (o backend
+  // limita orçamento e prazo por lote); cada lote atualiza a tela na hora.
+  useEffect(() => {
+    const ids = (snapshot?.apps ?? []).filter(item => item.installLocation?.trim()).map(item => item.id);
+    const run = ++measureRun.current;
+    if (ids.length === 0) {
+      setMeasuring(false);
+      return;
+    }
+    setMeasuring(true);
+    void (async () => {
+      let queue = ids;
+      for (let attempt = 0; attempt < 4 && queue.length > 0; attempt += 1) {
+        const deferred: string[] = [];
+        for (let index = 0; index < queue.length; index += MEASURE_BATCH) {
+          if (measureRun.current !== run) return;
+          let batch: AppFootprint[] = [];
+          try {
+            const result = await invoke<AppFootprint[]>("measure_installed_app_sizes", {
+              appIds: queue.slice(index, index + MEASURE_BATCH),
+            });
+            batch = Array.isArray(result) ? result : [];
+          } catch {
+            batch = [];
+          }
+          if (measureRun.current !== run) return;
+          deferred.push(...batch.filter(item => item.unavailableReason === "Medição adiada").map(item => item.appId));
+          const settled = batch.filter(item => item.unavailableReason !== "Medição adiada");
+          if (settled.length) {
+            setFootprints(current => {
+              const next = new Map(current);
+              for (const item of settled) next.set(item.appId, item);
+              return next;
+            });
+          }
+        }
+        queue = deferred;
+      }
+      if (measureRun.current === run) setMeasuring(false);
+    })();
+    return () => {
+      measureRun.current += 1;
+    };
+  }, [snapshot]);
+
   const apps = useMemo(
-    () => sortApps(filterApps(snapshot?.apps ?? [], query)),
-    [snapshot, query],
+    () => sortApps(filterApps(snapshot?.apps ?? [], query), sortBy, sortDirection, footprints),
+    [snapshot, query, sortBy, sortDirection, footprints],
   );
+
+  const sizes = useMemo(() => {
+    const map = new Map<string, EffectiveSize | null>();
+    for (const item of apps) map.set(item.id, effectiveSize(item, footprints.get(item.id)));
+    return map;
+  }, [apps, footprints]);
+  const largestSize = Math.max(0, ...[...sizes.values()].map(size => size?.bytes ?? 0));
+  const knownSizes = [...sizes.values()].filter((size): size is EffectiveSize => size != null);
+  const totalKnownBytes = knownSizes.reduce((sum, size) => sum + size.bytes, 0);
+  const measuredCount = knownSizes.filter(size => size.source !== "registry").length;
+
+  const handleSort = (column: AppSortColumn) => {
+    if (column === sortBy) {
+      setSortDirection(current => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortBy(column);
+    // Nome começa em A→Z; tamanho e data começam pelo maior/mais recente.
+    setSortDirection(column === "name" ? "asc" : "desc");
+  };
 
   const registryCandidates = useMemo(
     () => existingRegistryKeys(session?.targets.registryKeys ?? []),
@@ -438,65 +614,171 @@ export function UninstallHub() {
 
   return (
     <section className="un-hub" aria-label="Desinstalar programas">
-      <header className="un-toolbar">
-        <div>
-          <strong>{snapshot?.totalCount ?? 0} programas instalados</strong>
-          <small>
-            {snapshot?.partialReason
-              ? `Leitura parcial: ${snapshot.partialReason}`
-              : "Desinstalador padrão do fabricante, com rastreamento de resíduos."}
-          </small>
-        </div>
-        <div className="un-toolbar-actions">
-          <input
-            type="search"
-            className="un-search"
-            placeholder="Filtrar por nome ou fabricante"
-            aria-label="Filtrar programas"
-            value={query}
-            onChange={event => setQuery(event.target.value)}
-          />
-          <button type="button" className="un-btn" onClick={() => void loadApps(true)} disabled={loadState === "loading"}>
-            {loadState === "loading" ? "CARREGANDO…" : "ATUALIZAR"}
-          </button>
-        </div>
-      </header>
-
-      {error && <p className="un-alert" role="alert">{error}</p>}
-
-      {loadState === "loading" && <p className="un-loading" role="status">Lendo o registro de programas instalados…</p>}
-
-      <ul className="un-list" role="list">
-        {apps.map(item => (
-          <li key={item.id}>
-            <button type="button" className="un-item" onClick={() => void openApp(item)}>
-              <span className="un-monogram" aria-hidden="true">
-                {item.icon ? (
-                  <img src={item.icon} alt="" className="un-item-icon" />
-                ) : (
-                  monogram(item)
-                )}
-              </span>
-              <span className="un-item-text">
-                <strong>{item.displayName}</strong>
-                <small>
-                  {item.publisher ?? `Fabricante ${UNAVAILABLE.toLowerCase()}`}
-                  {item.version ? ` · versão ${item.version}` : ""}
-                </small>
-              </span>
-              <span className="un-item-meta">
-                <b>{formatEstimatedSize(item.estimatedSizeKb)}</b>
-                <small>{item.isMsi ? "Windows Installer" : "Desinstalador próprio"}</small>
-              </span>
+      <div className="dt dt--uninstall">
+        <div className="dt-toolbar">
+          <div className="dt-toolbar-start">
+            <label className="dt-search">
+              <Search size={15} aria-hidden="true" />
+              <input
+                type="search"
+                placeholder="Filtrar por nome ou fabricante"
+                aria-label="Filtrar programas"
+                value={query}
+                onChange={event => setQuery(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="un-btn un-refresh"
+              onClick={() => void loadApps(true)}
+              disabled={loadState === "loading"}
+            >
+              <RefreshCw size={13} aria-hidden="true" />
+              {loadState === "loading" ? "CARREGANDO…" : "ATUALIZAR"}
             </button>
-          </li>
-        ))}
-        {loadState === "ready" && apps.length === 0 && (
-          <li className="un-empty">
-            {query ? "Nenhum programa corresponde ao filtro." : "Nenhum programa instalado foi encontrado neste computador."}
-          </li>
-        )}
-      </ul>
+          </div>
+          <dl className="dt-summary" aria-label="Resumo dos programas exibidos">
+            <div>
+              <dt>Programas</dt>
+              <dd>
+                {apps.length}
+                {snapshot && apps.length !== snapshot.totalCount ? ` / ${snapshot.totalCount}` : ""}
+              </dd>
+            </div>
+            <div>
+              <dt>Espaço somado</dt>
+              <dd title={`Soma dos ${knownSizes.length} programas com tamanho conhecido`}>
+                {knownSizes.length ? formatBytes(totalKnownBytes) : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt>Medidos no disco</dt>
+              <dd title="Programas cuja pasta de instalação foi medida pelo Pulse; os demais usam a estimativa do instalador">
+                {measuring ? `${measuredCount}…` : `${measuredCount} de ${apps.length}`}
+              </dd>
+            </div>
+          </dl>
+        </div>
+        <p className="dt-note">
+          {snapshot?.partialReason
+            ? `Leitura parcial: ${snapshot.partialReason}`
+            : "Tamanho medido pelo Pulse na pasta de instalação; quando o instalador não informa a pasta, vale a estimativa dele (marcada como estimado)."}
+        </p>
+
+        {error && <p className="un-alert" role="alert">{error}</p>}
+
+        <div className="dt-table">
+          <div className="dt-head">
+            {SORT_COLUMNS.map(({ id, label, name, hint, start }) => {
+              const isActive = sortBy === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={`dt-sort${start ? " is-start" : ""}${isActive ? " is-active" : ""}`}
+                  aria-label={`Ordenar por ${name}${isActive ? (sortDirection === "desc" ? ", decrescente" : ", crescente") : ""}`}
+                  aria-pressed={isActive}
+                  title={hint}
+                  onClick={() => handleSort(id)}
+                >
+                  {label}
+                  {isActive && (
+                    <span className="dt-sort-arrow" aria-hidden="true">
+                      {sortDirection === "desc" ? "↓" : "↑"}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            <span className="dt-center" aria-hidden="true">Ação</span>
+          </div>
+
+          {loadState === "loading" && !snapshot ? (
+            <div className="dt-empty" role="status">
+              <p>Lendo o registro de programas instalados…</p>
+            </div>
+          ) : apps.length === 0 ? (
+            <div className="dt-empty" role="status">
+              {query.trim() ? (
+                <>
+                  <p>Nenhum programa corresponde a “{query.trim()}”.</p>
+                  <button type="button" className="dt-empty-reset" onClick={() => setQuery("")}>
+                    Limpar filtro
+                  </button>
+                </>
+              ) : (
+                <p>Nenhum programa instalado foi encontrado neste computador.</p>
+              )}
+            </div>
+          ) : (
+            <ul className="dt-list" role="list">
+              {apps.map(item => {
+                const size = sizes.get(item.id) ?? null;
+                const footprint = footprints.get(item.id);
+                const percent = size && largestSize > 0 ? Math.max((size.bytes / largestSize) * 100, 1.5) : null;
+                const details = [
+                  item.publisher ?? `Fabricante ${UNAVAILABLE.toLowerCase()}`,
+                  item.version ? `v${item.version}` : null,
+                  item.isMsi ? "Windows Installer" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                const opening = app?.id === item.id;
+                return (
+                  <li key={item.id} className={`dt-row row-hl${opening ? " is-busy" : ""}`}>
+                    <div className="dt-identity" title={[item.displayName, item.installLocation].filter(Boolean).join(" · ")}>
+                      <span className="dt-icon" aria-hidden="true">
+                        {item.icon ? <img src={item.icon} alt="" /> : monogram(item)}
+                      </span>
+                      <span className="dt-name">
+                        <strong>{item.displayName}</strong>
+                        <small>{details}</small>
+                      </span>
+                    </div>
+                    <span
+                      className={`dt-cell is-numeric${parseInstallDate(item.installDate) ? "" : " is-missing"}`}
+                      title={parseInstallDate(item.installDate) ? "Data gravada pelo instalador" : "O instalador não gravou a data"}
+                    >
+                      {formatInstallDate(item.installDate)}
+                    </span>
+                    <span
+                      className={`dt-usage dt-usage--size${size ? "" : " is-missing"}`}
+                      title={sizeTitle(item, size, footprint)}
+                    >
+                      <span className="dt-usage-value">
+                        {size ? `${size.source === "partial" ? "≥ " : ""}${formatBytes(size.bytes)}` : UNAVAILABLE}
+                      </span>
+                      {size && (
+                        <span className={`un-size-source is-${size.source}`}>
+                          {size.source === "measured" ? "medido" : size.source === "partial" ? "parcial" : "estimado"}
+                        </span>
+                      )}
+                      {percent != null && (
+                        <span className="dt-usage-track" aria-hidden="true">
+                          <span className="dt-usage-fill" style={{ width: `${percent}%` }} />
+                        </span>
+                      )}
+                    </span>
+                    <span className="dt-action">
+                      <button
+                        type="button"
+                        className="row-action row-hl-danger"
+                        aria-label={`Desinstalar ${item.displayName}`}
+                        title={`Desinstalar ${item.displayName} com o desinstalador do fabricante`}
+                        disabled={opening}
+                        onClick={() => void openApp(item)}
+                      >
+                        <Trash2 size={14} strokeWidth={2.1} aria-hidden="true" />
+                        <span>Desinstalar</span>
+                      </button>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
 
       {app && session && (
         <div className="un-modal-backdrop">

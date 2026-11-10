@@ -10,13 +10,16 @@ import {
   existingRegistryKeys,
   filterApps,
   formatBytes,
+  effectiveSize,
   formatEstimatedSize,
+  formatInstallDate,
   monogram,
   nodeCheckState,
   selectedFoldersSize,
   sortApps,
   stageLabel,
   toggleNode,
+  type AppFootprint,
   type CleanupReport,
   type FolderNode,
   type InstalledApp,
@@ -217,6 +220,38 @@ describe("helpers puros", () => {
     expect(filterApps(snapshot().apps, "   ")).toHaveLength(2);
   });
 
+  it("data de instalação AAAAMMDD vira dd/mm/aaaa e inválida vira —", () => {
+    expect(formatInstallDate("20240315")).toBe("15/03/2024");
+    expect(formatInstallDate("20241345")).toBe("—");
+    expect(formatInstallDate(null)).toBe("—");
+  });
+
+  it("tamanho efetivo prefere o medido; parcial nunca fica abaixo da estimativa", () => {
+    const item = app({ estimatedSizeKb: 1024 });
+    const measured: AppFootprint = { appId: item.id, measuredBytes: 5_000_000, complete: true, fileCount: 3 };
+    expect(effectiveSize(item, measured)).toEqual({ bytes: 5_000_000, source: "measured" });
+    expect(effectiveSize(item, { ...measured, measuredBytes: 10, complete: false })).toEqual({
+      bytes: 1024 * 1024,
+      source: "partial",
+    });
+    expect(effectiveSize(item)).toEqual({ bytes: 1024 * 1024, source: "registry" });
+    expect(effectiveSize(app({ estimatedSizeKb: null }))).toBeNull();
+  });
+
+  it("ordena por tamanho e por data com desconhecidos sempre no fim", () => {
+    const big = app({ id: "big", displayName: "Grande", estimatedSizeKb: 10, installDate: "20200101" });
+    const small = app({ id: "small", displayName: "Pequeno", estimatedSizeKb: 900, installDate: "20240101" });
+    const unknown = app({ id: "unknown", displayName: "Abc", estimatedSizeKb: null, installDate: null });
+    const footprints = new Map<string, AppFootprint>([
+      ["big", { appId: "big", measuredBytes: 9_000_000_000, complete: true, fileCount: 1 }],
+    ]);
+    const names = (list: InstalledApp[]) => list.map(item => item.displayName);
+    expect(names(sortApps([small, unknown, big], "size", "desc", footprints))).toEqual(["Grande", "Pequeno", "Abc"]);
+    expect(names(sortApps([small, unknown, big], "size", "asc", footprints))).toEqual(["Pequeno", "Grande", "Abc"]);
+    expect(names(sortApps([big, unknown, small], "installed", "desc"))).toEqual(["Pequeno", "Grande", "Abc"]);
+    expect(names(sortApps([big, unknown, small], "name", "desc"))).toEqual(["Pequeno", "Grande", "Abc"]);
+  });
+
   it("descendentes incluem o próprio nó", () => {
     const tree = targets().folders[0];
     expect(descendantsOf(tree)).toEqual([
@@ -271,8 +306,12 @@ describe("lista de instalados", () => {
     render(<UninstallHub />);
     expect(await screen.findByText("Foto Studio")).toBeInTheDocument();
     expect(screen.getByText("7-Zip")).toBeInTheDocument();
-    expect(screen.getByText("50,0 MB")).toBeInTheDocument();
-    expect(screen.getByText("Tamanho indisponível")).toBeInTheDocument();
+    const fotoRow = screen.getByText("Foto Studio").closest(".dt-row") as HTMLElement;
+    expect(within(fotoRow).getByText("50,0 MB")).toBeInTheDocument();
+    expect(within(fotoRow).getByText("estimado")).toBeInTheDocument();
+    // Sem estimativa nem pasta medida: "Indisponível", nunca "0 B".
+    expect(screen.getByText("Indisponível")).toBeInTheDocument();
+    expect(screen.queryByText("0 B")).not.toBeInTheDocument();
   });
 
   it("declara leitura parcial em vez de fingir lista completa", async () => {
@@ -297,6 +336,39 @@ describe("lista de instalados", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Falha ao abrir o registro");
   });
 
+  it("mede a pasta de instalação e reordena pelo tamanho real", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "measure_installed_app_sizes") {
+        const ids = (args as { appIds: string[] }).appIds;
+        return Promise.resolve(
+          ids.map(appId =>
+            appId === "HKLM|b|64"
+              ? { appId, measuredBytes: null, complete: false, fileCount: 0, unavailableReason: "Pasta compartilhada com outro programa" }
+              : { appId, measuredBytes: 3 * 1024 ** 3, complete: true, fileCount: 40, installLocation: "C:\\Program Files\\Foto" },
+          ),
+        );
+      }
+      return Promise.resolve(defaultInvoke(cmd));
+    });
+    render(<UninstallHub />);
+    expect(await screen.findByText("medido")).toBeInTheDocument();
+    const fotoRow = screen.getByText("Foto Studio").closest(".dt-row") as HTMLElement;
+    expect(within(fotoRow).getByText("3,00 GB")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Ordenar por tamanho" }));
+    const rows = Array.from(document.querySelectorAll(".dt-row")) as HTMLElement[];
+    expect(rows[0]).toHaveTextContent("Foto Studio");
+    expect(screen.getByRole("button", { name: "Ordenar por tamanho, decrescente" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("cada botão Desinstalar pertence à própria linha", async () => {
+    render(<UninstallHub />);
+    await screen.findByText("Foto Studio");
+    const zipRow = screen.getByText("7-Zip").closest(".dt-row") as HTMLElement;
+    expect(within(zipRow).getByRole("button", { name: "Desinstalar 7-Zip" })).toBeInTheDocument();
+    expect(within(zipRow).queryByRole("button", { name: "Desinstalar Foto Studio" })).not.toBeInTheDocument();
+  });
+
   it("filtra pela busca", async () => {
     render(<UninstallHub />);
     await screen.findByText("Foto Studio");
@@ -309,7 +381,7 @@ describe("lista de instalados", () => {
 describe("modal de desinstalação", () => {
   it("abre na etapa de restauração ao clicar no programa", async () => {
     render(<UninstallHub />);
-    fireEvent.click(await screen.findByText("Foto Studio"));
+    fireEvent.click(await screen.findByRole("button", { name: "Desinstalar Foto Studio" }));
     expect(await screen.findByRole("dialog")).toHaveTextContent("Desinstalar Foto Studio");
     expect(screen.getByText("ETAPA 1 DE 4")).toBeInTheDocument();
     expect(vi.mocked(invoke)).toHaveBeenCalledWith("start_uninstall_session", {
@@ -331,7 +403,7 @@ describe("modal de desinstalação", () => {
       ),
     );
     render(<UninstallHub />);
-    fireEvent.click(await screen.findByText("Foto Studio"));
+    fireEvent.click(await screen.findByRole("button", { name: "Desinstalar Foto Studio" }));
     const checkbox = await screen.findByRole("checkbox", { name: /ponto de restauração/i });
     expect(checkbox).toBeDisabled();
     expect(screen.getAllByText(/Requer privilégio administrativo/).length).toBeGreaterThan(0);
@@ -339,7 +411,7 @@ describe("modal de desinstalação", () => {
 
   it("seguir executa o desinstalador padrão com o restore point pedido", async () => {
     render(<UninstallHub />);
-    fireEvent.click(await screen.findByText("Foto Studio"));
+    fireEvent.click(await screen.findByRole("button", { name: "Desinstalar Foto Studio" }));
     fireEvent.click(await screen.findByRole("button", { name: /SEGUIR PARA O DESINSTALADOR/ }));
     await waitFor(() =>
       expect(vi.mocked(invoke)).toHaveBeenCalledWith("run_app_uninstaller", {
@@ -351,7 +423,7 @@ describe("modal de desinstalação", () => {
 
   it("avança para o registro e mostra o resultado do desinstalador", async () => {
     render(<UninstallHub />);
-    fireEvent.click(await screen.findByText("Foto Studio"));
+    fireEvent.click(await screen.findByRole("button", { name: "Desinstalar Foto Studio" }));
     fireEvent.click(await screen.findByRole("button", { name: /SEGUIR PARA O DESINSTALADOR/ }));
     expect(await screen.findByText("ETAPA 3 DE 4")).toBeInTheDocument();
     expect(screen.getByText("HKLM\\SOFTWARE\\Foto")).toBeInTheDocument();
@@ -370,14 +442,14 @@ describe("modal de desinstalação", () => {
       ),
     );
     render(<UninstallHub />);
-    fireEvent.click(await screen.findByText("Foto Studio"));
+    fireEvent.click(await screen.findByRole("button", { name: "Desinstalar Foto Studio" }));
     fireEvent.click(await screen.findByRole("button", { name: /SEGUIR PARA O DESINSTALADOR/ }));
     expect(await screen.findByText(/ainda lista este programa/)).toBeInTheDocument();
   });
 
   it("remove chaves marcadas com o id exato vindo do backend", async () => {
     render(<UninstallHub />);
-    fireEvent.click(await screen.findByText("Foto Studio"));
+    fireEvent.click(await screen.findByRole("button", { name: "Desinstalar Foto Studio" }));
     fireEvent.click(await screen.findByRole("button", { name: /SEGUIR PARA O DESINSTALADOR/ }));
     fireEvent.click(await screen.findByRole("checkbox", { name: /HKLM.SOFTWARE.Foto/ }));
     fireEvent.click(screen.getByRole("button", { name: /REMOVER 1 CHAVE/ }));
@@ -392,7 +464,7 @@ describe("modal de desinstalação", () => {
 
   it("marcar e desmarcar todas age sobre a lista de chaves", async () => {
     render(<UninstallHub />);
-    fireEvent.click(await screen.findByText("Foto Studio"));
+    fireEvent.click(await screen.findByRole("button", { name: "Desinstalar Foto Studio" }));
     fireEvent.click(await screen.findByRole("button", { name: /SEGUIR PARA O DESINSTALADOR/ }));
     fireEvent.click(await screen.findByRole("button", { name: "MARCAR TODAS" }));
     expect(await screen.findByRole("button", { name: /REMOVER 1 CHAVE/ })).toBeEnabled();
@@ -404,7 +476,7 @@ describe("modal de desinstalação", () => {
 
   it("árvore de pastas seleciona a raiz e mostra o total", async () => {
     render(<UninstallHub />);
-    fireEvent.click(await screen.findByText("Foto Studio"));
+    fireEvent.click(await screen.findByRole("button", { name: "Desinstalar Foto Studio" }));
     fireEvent.click(await screen.findByRole("button", { name: /SEGUIR PARA O DESINSTALADOR/ }));
     fireEvent.click(await screen.findByRole("button", { name: "IR PARA AS PASTAS" }));
     expect(await screen.findByText("ETAPA 4 DE 4")).toBeInTheDocument();
@@ -433,7 +505,7 @@ describe("modal de desinstalação", () => {
       ),
     );
     render(<UninstallHub />);
-    fireEvent.click(await screen.findByText("Foto Studio"));
+    fireEvent.click(await screen.findByRole("button", { name: "Desinstalar Foto Studio" }));
     fireEvent.click(await screen.findByRole("button", { name: /SEGUIR PARA O DESINSTALADOR/ }));
     fireEvent.click(await screen.findByRole("button", { name: "IR PARA AS PASTAS" }));
     expect(screen.getByText("Link simbólico ou ponto de junção")).toBeInTheDocument();
@@ -442,7 +514,7 @@ describe("modal de desinstalação", () => {
 
   it("cancelar devolve a sessão e fecha a modal", async () => {
     render(<UninstallHub />);
-    fireEvent.click(await screen.findByText("Foto Studio"));
+    fireEvent.click(await screen.findByRole("button", { name: "Desinstalar Foto Studio" }));
     fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(vi.mocked(invoke)).toHaveBeenCalledWith("cancel_uninstall_session", {
@@ -457,7 +529,7 @@ describe("modal de desinstalação", () => {
         : Promise.resolve(defaultInvoke(cmd)),
     );
     render(<UninstallHub />);
-    fireEvent.click(await screen.findByText("Foto Studio"));
+    fireEvent.click(await screen.findByRole("button", { name: "Desinstalar Foto Studio" }));
     fireEvent.click(await screen.findByRole("button", { name: /SEGUIR PARA O DESINSTALADOR/ }));
     expect(await screen.findByText(/exigiu elevação/)).toBeInTheDocument();
     expect(screen.getByText("HKLM\\SOFTWARE\\Foto")).toBeInTheDocument();
@@ -483,7 +555,7 @@ describe("modal de desinstalação", () => {
       ),
     );
     render(<UninstallHub />);
-    fireEvent.click(await screen.findByText("Foto Studio"));
+    fireEvent.click(await screen.findByRole("button", { name: "Desinstalar Foto Studio" }));
     fireEvent.click(await screen.findByRole("button", { name: /SEGUIR PARA O DESINSTALADOR/ }));
     fireEvent.click(await screen.findByRole("checkbox", { name: /HKLM.SOFTWARE.Foto/ }));
     fireEvent.click(screen.getByRole("button", { name: /REMOVER 1 CHAVE/ }));

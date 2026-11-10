@@ -21,6 +21,7 @@
 //! - **Whitelist de itens.** O front-end envia ids que o backend ofereceu; ids
 //!   fora da sessão são recusados.
 
+pub mod footprint;
 pub mod installed;
 pub mod platform;
 pub mod registry;

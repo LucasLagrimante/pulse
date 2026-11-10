@@ -160,6 +160,7 @@ pub fn run() {
             // caminho completo.
             uninstall::installed::list_installed_apps,
             uninstall::get_uninstall_capabilities,
+            uninstall::footprint::measure_installed_app_sizes,
             uninstall::create_system_restore_point,
             uninstall::session::start_uninstall_session,
             uninstall::session::run_app_uninstaller,

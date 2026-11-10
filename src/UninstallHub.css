@@ -13,56 +13,6 @@
   position: relative;
 }
 
-.un-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 9px 12px;
-  flex-shrink: 0;
-  border: 1px solid var(--neu-divider);
-  border-radius: 6px;
-  background: var(--neu-surface-sunken);
-  box-shadow: var(--neu-shadow-raised-xs);
-}
-
-.un-toolbar strong {
-  display: block;
-  font-size: 13px;
-  color: var(--neu-text-title);
-}
-
-.un-toolbar small {
-  color: var(--neu-text-muted);
-  font-size: 11px;
-}
-
-.un-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.un-search {
-  flex: 1 1 220px;
-  min-width: 0;
-  padding: 6px 10px;
-  border: 1px solid var(--neu-divider);
-  border-radius: 6px;
-  background: var(--neu-surface);
-  color: var(--neu-text-primary);
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 12px;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
-}
-
-.un-search:focus-visible {
-  outline: 2px solid var(--neu-accent);
-  outline-offset: 1px;
-  border-color: var(--neu-accent);
-}
-
 .un-btn,
 .un-btn-primary,
 .un-btn-ghost {
@@ -79,6 +29,60 @@
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
+/* Tabela de programas: colunas + selo de origem do tamanho */
+.dt--uninstall {
+  --dt-cols: minmax(0, 1fr) 104px 150px 132px;
+}
+
+.un-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.dt-usage--size {
+  grid-template-columns: auto auto;
+  column-gap: 6px;
+  align-items: baseline;
+  justify-content: end;
+}
+
+.dt-usage--size .dt-usage-track {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+
+.un-size-source {
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: .56rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.un-size-source.is-measured {
+  background: color-mix(in srgb, var(--neu-success) 14%, transparent);
+  color: var(--neu-success);
+}
+
+.un-size-source.is-partial {
+  background: color-mix(in srgb, var(--neu-warning) 14%, transparent);
+  color: var(--neu-warning);
+}
+
+.un-size-source.is-registry {
+  background: var(--neu-track-bg);
+  color: var(--neu-text-muted);
+}
+
+@media (max-width: 760px) {
+  .dt--uninstall {
+    --dt-cols: minmax(0, 1fr) 84px 118px 44px;
+  }
+}
+
 .un-btn:hover:not(:disabled),
 .un-btn-ghost:hover:not(:disabled) {
   background: var(--neu-surface-hover);
@@ -90,14 +94,14 @@
 .un-btn-primary {
   border-color: var(--neu-accent);
   background: var(--neu-accent);
-  color: #ffffff;
+  color: var(--neu-on-accent);
   font-weight: 600;
 }
 
 .un-btn-primary:hover:not(:disabled) {
   background: var(--neu-accent-hover);
   border-color: var(--neu-accent-hover);
-  color: #ffffff;
+  color: var(--neu-on-accent);
 }
 
 .un-btn:disabled,
@@ -127,103 +131,6 @@
   flex-shrink: 0;
 }
 
-.un-loading,
-.un-empty {
-  margin: 0;
-  padding: 14px;
-  color: var(--neu-text-muted);
-  font-size: 12px;
-}
-
-.un-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.un-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 12px;
-  border: 1px solid var(--neu-divider);
-  border-radius: 6px;
-  background: var(--neu-surface);
-  color: var(--neu-text-primary);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  box-shadow: var(--neu-shadow-raised-xs);
-  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
-}
-
-.un-item:hover {
-  border-color: var(--neu-accent);
-  background: var(--neu-surface-hover);
-  box-shadow: var(--neu-shadow-raised-sm);
-}
-
-.un-monogram {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border-radius: 6px;
-  border: 1px solid var(--neu-divider);
-  background: var(--neu-surface-sunken);
-  color: var(--neu-signal-secondary);
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 12px;
-  font-weight: 600;
-  overflow: hidden;
-}
-
-.un-item-icon {
-  display: block;
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
-}
-
-.un-item-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.un-item-text strong {
-  display: block;
-  font-size: 13px;
-  color: var(--neu-text-title);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.un-item-text small,
-.un-item-meta small {
-  color: var(--neu-text-muted);
-  font-size: 11px;
-}
-
-.un-item-meta {
-  text-align: right;
-  flex-shrink: 0;
-}
-
-.un-item-meta b {
-  display: block;
-  font-size: 12px;
-  color: var(--neu-text-title);
-}
-
 /* Modal: overlay com desfoque e cartão neumórfico */
 .un-modal-backdrop {
   position: fixed;
@@ -232,7 +139,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--neu-scrim);
   backdrop-filter: blur(4px);
   animation: un-fade-in 160ms ease;
 }
