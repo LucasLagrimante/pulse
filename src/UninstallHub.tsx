@@ -379,8 +379,8 @@ export function UninstallHub() {
   const [loadState, setLoadState] = useState<"idle" | "loading" | "ready">("idle");
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-  const [sortBy, setSortBy] = useState<AppSortColumn>("name");
-  const [sortDirection, setSortDirection] = useState<AppSortDirection>("asc");
+  const [sortBy, setSortBy] = useState<AppSortColumn>("size");
+  const [sortDirection, setSortDirection] = useState<AppSortDirection>("desc");
   const [footprints, setFootprints] = useState<Map<string, AppFootprint>>(new Map());
   const [measuring, setMeasuring] = useState(false);
   const [fullMeasuringId, setFullMeasuringId] = useState<string | null>(null);

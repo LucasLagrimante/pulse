@@ -389,10 +389,13 @@ describe("lista de instalados", () => {
     const fotoRow = screen.getByText("Foto Studio").closest(".dt-row") as HTMLElement;
     expect(within(fotoRow).getByText("3,00 GB")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Ordenar por tamanho" }));
+    // Tamanho decrescente é a ordem padrão: o maior aparece primeiro sem clique.
     const rows = Array.from(document.querySelectorAll(".dt-row")) as HTMLElement[];
     expect(rows[0]).toHaveTextContent("Foto Studio");
     expect(screen.getByRole("button", { name: "Ordenar por tamanho, decrescente" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Ordenar por tamanho, decrescente" }));
+    expect(screen.getByRole("button", { name: "Ordenar por tamanho, crescente" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("mostra dados à parte e mede por completo sob demanda", async () => {
