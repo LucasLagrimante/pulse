@@ -3916,19 +3916,20 @@ body:has(.tray-flyout-container),
 /* ==========================================================================
    Flyout: card de cota clicável + contagem regressiva no hover
    ========================================================================== */
-.flyout-quota-mini-card.is-clickable {
+/* Cards de métrica (CPU/RAM/disco/GPU) e de cota abrem a área na janela principal */
+:is(.flyout-quota-mini-card, .flyout-metric-card).is-clickable {
   cursor: pointer;
   transition: transform .14s ease, box-shadow .14s ease;
 }
 
-[data-theme] .flyout-quota-mini-card.is-clickable:hover,
-[data-theme] .flyout-quota-mini-card.is-clickable:focus-visible {
+[data-theme] :is(.flyout-quota-mini-card, .flyout-metric-card).is-clickable:hover,
+[data-theme] :is(.flyout-quota-mini-card, .flyout-metric-card).is-clickable:focus-visible {
   box-shadow: var(--neu-shadow-raised-sm) !important;
   border-color: color-mix(in srgb, var(--neu-accent) 45%, var(--neu-divider)) !important;
   outline: none;
 }
 
-.flyout-quota-mini-card.is-clickable:active { transform: translateY(1px); }
+:is(.flyout-quota-mini-card, .flyout-metric-card).is-clickable:active { transform: translateY(1px); }
 
 .flyout-quota-bar.has-countdown {
   position: relative;

@@ -284,6 +284,45 @@ describe("Formatters and Components", () => {
       }
     });
 
+    it("opens the matching main window area when a tray metric card is clicked", async () => {
+      vi.mocked(invoke).mockImplementation((command: string) => {
+        if (command === "get_system_overview") {
+          return Promise.resolve({
+            cpuPercent: 18.0,
+            gpuPercent: 37.5,
+            memoryUsedGb: 6.0,
+            memoryTotalGb: 16.0,
+            diskUsedGb: 150.0,
+            diskTotalGb: 500.0,
+            startupItemCount: 2,
+            topProcesses: [],
+            sampledAtUnixMs: 1725000000,
+            source: "Native Win32",
+          }) as never;
+        }
+        return Promise.resolve() as never;
+      });
+
+      render(<TrayFlyout onOpenMain={vi.fn()} />);
+
+      const cases: Array<[RegExp, string]> = [
+        [/Abrir Desempenho — CPU/, "Desempenho"],
+        [/Abrir Desempenho — Memória RAM/, "Desempenho"],
+        [/Abrir Armazenamento — Disco C:/, "Armazenamento"],
+        [/Abrir Desempenho — GPU/, "Desempenho"],
+      ];
+      for (const [name, module] of cases) {
+        vi.mocked(invoke).mockClear();
+        fireEvent.click(await screen.findByRole("button", { name }));
+        expect(invoke).toHaveBeenCalledWith("show_main_module", { module });
+      }
+
+      // Teclado: Enter também abre a área
+      vi.mocked(invoke).mockClear();
+      fireEvent.keyDown(screen.getByRole("button", { name: /Abrir Armazenamento — Disco C:/ }), { key: "Enter" });
+      expect(invoke).toHaveBeenCalledWith("show_main_module", { module: "Armazenamento" });
+    });
+
     it("shows CPU temperature inline and a GPU card without an extra panel", async () => {
       vi.useFakeTimers();
       try {

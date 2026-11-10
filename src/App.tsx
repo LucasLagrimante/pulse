@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Component, type ErrorInfo, lazy, type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Component, type ErrorInfo, type KeyboardEvent as ReactKeyboardEvent, lazy, type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import "./App.css";
 import "./identity.css";
@@ -1559,6 +1559,26 @@ export function TrayFlyout({
     }
   };
 
+  // Abre a janela principal já na área pedida (mesmo fluxo dos cards de cota)
+  const openMainArea = (area: NavigationItem) => {
+    void Promise.resolve(invoke("show_main_module", { module: area })).catch(() => undefined);
+  };
+
+  // Props de card clicável/acessível por teclado que leva a uma área da janela principal
+  const metricCardLink = (area: NavigationItem, label: string) => ({
+    role: "button" as const,
+    tabIndex: 0,
+    "aria-label": label,
+    title: `Clique para abrir ${area}`,
+    onClick: () => openMainArea(area),
+    onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openMainArea(area);
+      }
+    },
+  });
+
   const handleExit = async () => {
     try {
       await invoke("exit_app");
@@ -1637,7 +1657,7 @@ export function TrayFlyout({
 
       <section className="flyout-metrics">
         <div className="flyout-metrics-row">
-          <div className="flyout-metric-card">
+          <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — CPU")}>
             <div className="flyout-metric-head">
               <span>CPU</span>
               <strong title={flyoutCpuSensor ? `${flyoutCpuSensor.label} · ${flyoutCpuSensor.source}` : undefined}>
@@ -1656,7 +1676,7 @@ export function TrayFlyout({
             />
           </div>
 
-          <div className="flyout-metric-card">
+          <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — Memória RAM")}>
             <div className="flyout-metric-head">
               <span>RAM</span>
               <strong>
@@ -1678,8 +1698,9 @@ export function TrayFlyout({
 
         <div className="flyout-metrics-row flyout-metrics-row--split">
           <div
-            className={`flyout-metric-card disk-health-card disk-health-${diskHealth}`}
+            className={`flyout-metric-card disk-health-card disk-health-${diskHealth} is-clickable`}
             style={showFlyoutGpuCard ? undefined : { gridColumn: "1 / -1" }}
+            {...metricCardLink("Armazenamento", "Abrir Armazenamento — Disco C:")}
           >
             <div className="flyout-metric-head">
               <div className="disk-metric-label">
@@ -1700,7 +1721,7 @@ export function TrayFlyout({
           </div>
 
           {showFlyoutGpuCard && (
-            <div className="flyout-metric-card">
+            <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — GPU")}>
               <div className="flyout-metric-head">
                 <span>GPU</span>
                 <strong
@@ -1903,9 +1924,7 @@ export function TrayFlyout({
               const trayWindows = selectFlyoutQuotaWindows(provider.windows);
               const planName = provider.plan?.trim() ? provider.plan.toUpperCase() : "ATUAL";
 
-              const openQuotas = () => {
-                void Promise.resolve(invoke("show_main_module", { module: "Cotas de IA" })).catch(() => undefined);
-              };
+              const openQuotas = () => openMainArea("Cotas de IA");
               const resetSummary = trayWindows
                 .map(window => {
                   const countdown = formatCountdown(window.resetsAtUnixSeconds);
@@ -3161,6 +3180,8 @@ function App() {
                   </div>
                   <ActivityProcessTable
                     processes={sortedProcesses}
+                    limit={TOP_PROCESS_LIMIT}
+                    memoryTotalGb={overview?.memoryTotalGb}
                     onTerminate={setProcessToClose}
                     terminatingId={terminatingProcessId}
                     sortBy={processSort}
@@ -3179,8 +3200,6 @@ function App() {
                     <strong>{metric(overview?.cpuPercent, "%")}</strong>
                     <DetailedResourceChart
                       title="USO DA CPU EM TEMPO REAL"
-                    limit={TOP_PROCESS_LIMIT}
-                    memoryTotalGb={overview?.memoryTotalGb}
                       history={cpuHistory}
                       currentValue={metric(overview?.cpuPercent, "%")}
                             color="var(--neu-accent)"
