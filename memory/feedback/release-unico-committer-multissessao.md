@@ -9,4 +9,5 @@ metadata:
 **How to apply:**
 - Antes de commitar, rodar `ListAgents`, avisar as outras sessões por `SendMessage` (com `notify_when_idle`) e pedir que não rodem `git add`, `reset` ou `commit`.
 - Só commitar quando todas confirmarem que terminaram. Revalidar tudo nesse momento (typecheck, testes, lp:check, clippy e cargo test), porque a validação anterior perde o valor quando alguém edita depois.
+- Depois do release, um `build:native` local regrava `release.json` e as landings (aqui e no `pulse-lp`) com o hash do bundle local. Nunca commitar esse estado; rodar `npm run lp:sync:release` para voltar ao SHA do asset do CI.
 - O hook de pré-commit roda uma revisão que passa de 120 s: rodar o `git commit` com timeout maior ou em background.
