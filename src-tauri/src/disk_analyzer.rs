@@ -1094,11 +1094,11 @@ pub async fn start_disk_scan(
 }
 
 #[cfg(windows)]
-struct ScopedBackgroundPriority;
+pub(crate) struct ScopedBackgroundPriority;
 
 #[cfg(windows)]
 impl ScopedBackgroundPriority {
-    fn enter() -> Self {
+    pub(crate) fn enter() -> Self {
         extern "system" {
             fn GetCurrentThread() -> *mut std::ffi::c_void;
             fn SetThreadPriority(h_thread: *mut std::ffi::c_void, n_priority: i32) -> i32;
@@ -1238,19 +1238,18 @@ async fn run_disk_scan(
             progress: Some(final_progress.clone()),
             // Single-copy: o resultado final vive no PERSISTED_CACHE (e no
             // disco). Evita a terceira cópia permanente da árvore em RAM.
-            result: if persisted { None } else { Some(result.clone()) },
+            result: if persisted {
+                None
+            } else {
+                Some(result.clone())
+            },
             error: None,
         });
         IS_SCANNING.store(false, Ordering::SeqCst);
 
         // Emite o progresso final para qualquer tela que esteja montada.
         let _ = window.emit("pulse://disk-scan-progress", final_progress);
-        (
-            result,
-            is_partial,
-            final_items_scanned,
-            stop_reason,
-        )
+        (result, is_partial, final_items_scanned, stop_reason)
     })
     .await
     .map_err(|error| {

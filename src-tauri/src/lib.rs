@@ -52,6 +52,7 @@ pub fn run() {
             }
             subscription_usage::init(app.handle().clone());
             disk_analyzer::init(app.handle().clone());
+            disk_cleanup::init(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -132,10 +133,13 @@ pub fn run() {
             ai_disk_advisor::launch_ai_disk_terminal,
             ai_disk_advisor::get_ai_cleanup_plan_status,
             ai_disk_advisor::open_ai_cleanup_plan,
-            privileges::get_privilege_status,
-            privileges::relaunch_as_admin,
             disk_cleanup::analyze_disk_cleanup,
             disk_cleanup::clean_disk_categories,
+            disk_cleanup::get_auto_cleanup,
+            privileges::get_privilege_status,
+            privileges::relaunch_as_admin,
+            disk_cleanup::get_cleanup_insights,
+            disk_cleanup::set_auto_cleanup,
             services::list_windows_services,
             services::set_windows_service_state,
             app_updates::list_pending_updates,

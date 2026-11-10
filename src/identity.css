@@ -995,11 +995,9 @@ button:disabled {
    ========================================================================== */
 
 .cleanup-category-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-content: start;
-  align-items: start;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
@@ -1013,9 +1011,268 @@ button:disabled {
   margin: 0;
 }
 
+/* Grupos por natureza (sistema, GPU, dev…): cabeçalho com total do grupo e
+   grade 2-col própria, para que "Maiores itens" não estique o vizinho. */
+.cleanup-group {
+  /* Filho do rolador flex: sem flex-shrink os grupos não colapsam e sobrepõem. */
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cleanup-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--neu-divider);
+  padding-bottom: 6px;
+}
+
+.cleanup-group-head small {
+  flex: 1;
+  min-width: 0;
+  color: var(--neu-text-muted);
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cleanup-group-head b {
+  margin-left: auto;
+  color: var(--neu-text-secondary);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.cleanup-group-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 10px;
+}
+
 @container (max-width: 800px) {
-  .cleanup-category-list {
+  .cleanup-group-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+.cleanup-hero {
+  display: flex;
+  align-items: flex-end;
+  gap: 28px;
+  min-width: 0;
+}
+
+.cleanup-hero-stat {
+  display: grid;
+  gap: 4px;
+  padding-right: 28px;
+  border-right: 1px solid var(--neu-divider);
+}
+
+.cleanup-hero-stat strong {
+  color: var(--neu-accent);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 1.6rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.cleanup-hero-stat small {
+  color: var(--neu-text-muted);
+}
+
+.cleanup-hero-stat strong,
+.cleanup-selection-summary strong {
+  white-space: nowrap;
+}
+
+.cleanup-share-track,
+.cleanup-size-track {
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--neu-track-bg);
+  overflow: hidden;
+}
+
+.cleanup-share-track {
+  width: min(260px, 100%);
+}
+
+.cleanup-share-track > span,
+.cleanup-size-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--neu-accent);
+  transition: width 0.25s ease;
+}
+
+.cleanup-size-track {
+  grid-column: 1 / -1;
+}
+
+.cleanup-category.is-empty {
+  opacity: 0.62;
+}
+
+.cleanup-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.56rem;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.cleanup-badge.is-safe {
+  color: var(--neu-success);
+  background: color-mix(in srgb, var(--neu-success) 12%, var(--neu-surface));
+}
+
+.cleanup-badge.is-review {
+  color: var(--neu-warning);
+  background: color-mix(in srgb, var(--neu-warning) 12%, var(--neu-surface));
+}
+
+.cleanup-badge.is-admin {
+  color: var(--neu-accent);
+  background: color-mix(in srgb, var(--neu-accent) 12%, var(--neu-surface));
+  cursor: help;
+}
+
+.cleanup-ghost-btn {
+  min-height: 36px;
+  white-space: nowrap;
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--neu-text-muted) !important;
+  box-shadow: none !important;
+}
+
+.cleanup-ghost-btn:hover:not(:disabled) {
+  color: var(--neu-text-title) !important;
+  background: var(--neu-surface-hover) !important;
+}
+
+.cleanup-insight.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 18px !important;
+  background: var(--neu-surface) !important;
+  border: var(--neu-border) !important;
+  box-shadow: var(--neu-shadow-raised-sm) !important;
+}
+
+.cleanup-insight-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cleanup-insight-head > span:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cleanup-insight-head strong {
+  color: var(--neu-text-title);
+  font-size: 0.88rem;
+}
+
+.cleanup-insight-head small,
+.cleanup-insight-size small {
+  color: var(--neu-text-muted);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cleanup-insight-size {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  max-width: 45%;
+  text-align: right;
+}
+
+.cleanup-insight-size small {
+  white-space: normal;
+}
+
+.cleanup-insight-size b {
+  color: var(--neu-signal-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cleanup-insight p {
+  margin: 0;
+  color: var(--neu-text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.cleanup-insight .cleanup-insight-warning {
+  color: var(--neu-warning);
+}
+
+.cleanup-insight-command {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-inset-sm);
+  color: var(--neu-text-primary);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.cleanup-dialog-list {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  list-style: none;
+  border-radius: 12px;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-inset-sm);
+}
+
+.cleanup-dialog-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--neu-text-primary);
+  font-size: 0.8rem;
+}
+
+.cleanup-dialog-list b {
+  color: var(--neu-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+@container (max-width: 900px) {
+  .cleanup-toolbar-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cleanup-toolbar-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 }
 
@@ -1142,6 +1399,107 @@ button:disabled {
 
 .disk-toolbar-label {
   color: var(--neu-text-muted);
+}
+
+/* Limpeza automática: faixa compacta fixa; a lista de categorias segue como
+   único rolador do módulo. */
+.auto-cleanup.panel {
+  /* .panel herda height: 100%; aqui a faixa só ocupa o próprio conteúdo. */
+  flex: 0 0 auto;
+  height: auto !important;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 10px 14px;
+  border-radius: 18px !important;
+  background: var(--neu-surface) !important;
+  border: var(--neu-border) !important;
+  box-shadow: var(--neu-shadow-raised-sm) !important;
+}
+
+.auto-cleanup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.auto-cleanup-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.auto-cleanup-copy small,
+.auto-cleanup-settings p,
+.auto-cleanup-category small {
+  color: var(--neu-text-muted);
+}
+
+.auto-cleanup-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.auto-cleanup-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--neu-divider);
+}
+
+.auto-cleanup-settings p {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.auto-cleanup-intervals {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.auto-cleanup-chip {
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--neu-divider);
+  background: var(--neu-surface);
+  color: var(--neu-text-secondary);
+  box-shadow: var(--neu-shadow-raised-xs);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.auto-cleanup-chip:hover:not(:disabled) {
+  background: var(--neu-surface-hover);
+  color: var(--neu-text-title);
+}
+
+.auto-cleanup-chip.is-active {
+  border-color: var(--neu-accent);
+  background: var(--neu-accent-soft);
+  color: var(--neu-text-title);
+  box-shadow: var(--neu-shadow-inset-sm);
+}
+
+.auto-cleanup-chip:focus-visible {
+  outline: 2px solid var(--neu-accent);
+  outline-offset: 2px;
+}
+
+.auto-cleanup-categories {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px 16px;
+}
+
+.auto-cleanup-category strong {
+  font-size: 0.8rem;
 }
 
 /* ==========================================================================
