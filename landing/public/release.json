@@ -1,14 +1,14 @@
 {
   "product": "Pulse",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "platform": "Windows 11 x64",
   "installer": {
     "filename": "Pulse-latest-x64-setup.exe",
     "url": "https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe",
-    "assetUrl": "https://github.com/LucasLagrimante/pulse/releases/download/v1.2.0/Pulse_1.2.0_x64-setup.exe",
-    "sizeBytes": 3750277,
+    "assetUrl": "https://github.com/LucasLagrimante/pulse/releases/download/v1.3.0/Pulse_1.3.0_x64-setup.exe",
+    "sizeBytes": 3752392,
     "sizeFormatted": "3,6 MB",
-    "sha256": "ae5ffc8fcba5e61ba52878141b0c4f4a0f753b048daa4a0826edb8418591f7d8"
+    "sha256": "c3e286584c137bbdc259c6cc8971017c8fb8569e4153e08b9254d9483dca1d24"
   },
   "updatedAt": "2026-11-10"
 }
