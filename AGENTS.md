@@ -219,7 +219,7 @@ pulse/
 
 ### 6.1. Fluxo de Build Nativa no WSL e Sincronização com a Landing Page
 Como o repositório reside no WSL (`~/projects/pulse`), mas o backend Rust/Tauri requer o compilador MSVC (`link.exe`, `vcvars64.bat`) e NSIS no Windows:
-1. `npm run build:native` (ou `npm run tauri:build`) compila o frontend no WSL (`dist/`), sincroniza os fontes para NTFS (`C:\Users\lucas\AppData\Local\Temp\pulse-src`) e compila o backend em `C:\Users\lucas\AppData\Local\Temp\pulse-target`.
+1. `npm run build:native` (ou `npm run tauri:build`) compila o frontend no WSL (`dist/`), sincroniza os fontes para NTFS (`%LOCALAPPDATA%\pulse-build\src`) e compila o backend em `%LOCALAPPDATA%\pulse-build\target` — fora do `%TEMP%`, porque limpezas por idade apagam arquivos do cache do cargo e quebram o build.
 2. Os artefatos compilados são copiados de volta para o WSL em:
    - Executável standalone: `src-tauri/target/release/pulse-windows.exe`
    - Instalador NSIS: `src-tauri/target/release/bundle/nsis/Pulse_<versão>_x64-setup.exe`

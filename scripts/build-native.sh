@@ -49,15 +49,27 @@ done
 
 CMD_EXE="/mnt/c/Windows/System32/cmd.exe"
 
-# Pastas de trabalho no %TEMP% do usuário Windows atual (sem caminho fixo de
-# usuário). PULSE_WIN_TEMP permite sobrescrever, ex.: 'D:\Temp'.
-WIN_TEMP_WIN="${PULSE_WIN_TEMP:-$("$CMD_EXE" /c 'echo %LOCALAPPDATA%\Temp' < /dev/null 2>/dev/null | tr -d '\r')}"
-if [ -z "$WIN_TEMP_WIN" ] || [[ "$WIN_TEMP_WIN" == *%* ]]; then
-  echo "não foi possível descobrir %LOCALAPPDATA% do Windows; defina PULSE_WIN_TEMP" >&2
+# Dois builds simultâneos compartilham staging e target: um apaga as fontes do
+# outro no meio da compilação ("couldn't find file build.rs" / Permission denied).
+exec 9>"${TMPDIR:-/tmp}/pulse-build-native.lock"
+if ! flock -n 9; then
+  echo "outro build:native já está em andamento; aguarde ele terminar" >&2
   exit 1
 fi
-STAGING_WIN="$WIN_TEMP_WIN\pulse-src"
-TARGET_DIR_WIN="$WIN_TEMP_WIN\pulse-target"
+
+# Pastas de trabalho em %LOCALAPPDATA%\pulse-build do usuário Windows atual
+# (sem caminho fixo de usuário). NÃO usar %TEMP%: limpezas por idade (plano de
+# IA, Storage Sense, CCleaner) apagam arquivos antigos de dentro do cache do
+# cargo — ex.: o bindgen.rs do libsqlite3-sys, copiado com mtime original — e o
+# cargo não reroda o build script, quebrando todo build seguinte.
+# PULSE_WIN_BUILD_DIR permite sobrescrever, ex.: 'D:\pulse-build'.
+WIN_BUILD_WIN="${PULSE_WIN_BUILD_DIR:-$("$CMD_EXE" /c 'echo %LOCALAPPDATA%\pulse-build' < /dev/null 2>/dev/null | tr -d '\r')}"
+if [ -z "$WIN_BUILD_WIN" ] || [[ "$WIN_BUILD_WIN" == *%* ]]; then
+  echo "não foi possível descobrir %LOCALAPPDATA% do Windows; defina PULSE_WIN_BUILD_DIR" >&2
+  exit 1
+fi
+STAGING_WIN="$WIN_BUILD_WIN\src"
+TARGET_DIR_WIN="$WIN_BUILD_WIN\target"
 STAGING="$(wslpath -u "$STAGING_WIN")"
 TARGET_DIR="$(wslpath -u "$TARGET_DIR_WIN")"
 export REPO_DIR="$PWD" STAGING
@@ -106,6 +118,17 @@ with io.open(dst, "w", encoding="utf-8") as fh:
     fh.write(json.dumps(conf, indent=2, ensure_ascii=False) + "\n")
 print("    tauri.conf.json: beforeBuildCommand anulado (frontend já gerado)")
 PYEOF
+
+# Autocorreção: se algo apagou o bindgen.rs gerado pelo libsqlite3-sys, o
+# cargo considera o build script em dia e falha sempre com "couldn't find file
+# .../out/bindgen.rs". Remover a pasta força o build script a rodar de novo.
+for out_dir in "$TARGET_DIR"/*/build/libsqlite3-sys-*/out; do
+  [ -d "$out_dir" ] || continue
+  if [ -f "$out_dir/libsqlite3.a" ] && [ ! -f "$out_dir/bindgen.rs" ]; then
+    echo "    cache do libsqlite3-sys incompleto (bindgen.rs ausente); limpando $(dirname "$out_dir")"
+    rm -rf "$(dirname "$out_dir")"
+  fi
+done
 
 echo "==> 3/5  build Rust + instalador NSIS (Windows, via wrapper .bat)"
 # Wrapper em NTFS: o quoting literal evita a corrupcao de aspas em caminhos

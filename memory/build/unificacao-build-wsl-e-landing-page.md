@@ -7,7 +7,7 @@ metadata:
   pin: true
 ---
 
-**Why:** O repositório vive no WSL (`~/projects/pulse`), enquanto o compilador Rust/MSVC e o bundler NSIS rodam no Windows em staging NTFS (`%LOCALAPPDATA%\Temp\pulse-src` e `pulse-target`). Invocar `npm.cmd install` via interop trava em stdin, e rodar `cargo.exe build --release` antes de `tauri.js build` compila o binário duas vezes (sem e com `custom-protocol`).
+**Why:** O repositório vive no WSL (`~/projects/pulse`), enquanto o compilador Rust/MSVC e o bundler NSIS rodam no Windows em staging NTFS (`%LOCALAPPDATA%\pulse-build\src` e `\target`). Invocar `npm.cmd install` via interop trava em stdin, e rodar `cargo.exe build --release` antes de `tauri.js build` compila o binário duas vezes (sem e com `custom-protocol`).
 
 **How to apply:**
 - Provisionar `@tauri-apps/cli-win32-x64-msvc` em NTFS via `npm pack` + `tar` no WSL e invocar `cmd.exe /c run-build.bat < /dev/null` direto de `cd "$STAGING"` chamando apenas `tauri.js build --bundles nsis -- --locked`.

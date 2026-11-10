@@ -10,4 +10,4 @@ metadata:
 
 **How to apply:**
 - Use `npm run build:native` (ou `npm run tauri:build`), que executa `scripts/build-native.sh`.
-- O script compila o frontend no WSL, copia os fontes para NTFS (`C:\Users\lucas\AppData\Local\Temp\pulse-src`), compila com `CARGO_TARGET_DIR=C:\Users\lucas\AppData\Local\Temp\pulse-target`, traz os binários de volta para `src-tauri/target/release/` e sincroniza a Landing Page via `scripts/sync-landing.mjs`.
+- O script compila o frontend no WSL, copia os fontes para NTFS (`%LOCALAPPDATA%\pulse-build\src`), compila com `CARGO_TARGET_DIR=%LOCALAPPDATA%\pulse-build\target`, traz os binários de volta para `src-tauri/target/release/` e sincroniza a Landing Page via `scripts/sync-landing.mjs`.
