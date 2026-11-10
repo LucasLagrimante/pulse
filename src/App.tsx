@@ -5,6 +5,8 @@ import { Component, type ErrorInfo, lazy, type ReactNode, Suspense, useCallback,
 import { Moon, Sun } from "lucide-react";
 import "./App.css";
 import "./identity.css";
+import "./DataTable.css";
+import { ActivityProcessTable } from "./ActivityProcessTable";
 import { PulseMark, ModuleIcon, PulseLoading, FileIcon } from "./Identity";
 import {
   DetailedResourceChart,
@@ -641,72 +643,9 @@ export function ProcessFallbackIcon() {
   );
 }
 
-export function ProcessList({
-  processes,
-  onTerminate,
-  terminatingId,
-  showUsage = false,
-  sortBy,
-  sortDirection = "desc",
-  onSortChange,
-}: {
-  processes: TopProcess[];
-  onTerminate?: (process: TopProcess) => void;
-  terminatingId?: number | null;
-  showUsage?: boolean;
-  sortBy?: ProcessSortColumn;
-  sortDirection?: ProcessSortDirection;
-  onSortChange?: (column: ProcessSortColumn) => void;
-}) {
-  const gpuAvailable = showUsage && processes.some(process => process.gpuPercent != null);
-  const sortColumns: { id: ProcessSortColumn; label: string }[] = [
-    { id: "memory", label: "RAM" },
-    { id: "cpu", label: "CPU" },
-    { id: "gpu", label: "GPU" },
-  ];
-
+export function ProcessList({ processes }: { processes: TopProcess[] }) {
   return (
-    <div className={`process-list-shell${showUsage ? " with-usage" : ""}`}>
-      {showUsage && (
-        <div className={`process-list-header${onTerminate ? " with-action" : ""}`}>
-          <span aria-hidden="true">#</span>
-          <span aria-hidden="true">APLICATIVO</span>
-          {sortColumns.map(({ id, label }) => {
-            const isActive = sortBy === id;
-            const unavailable = id === "gpu" && !gpuAvailable;
-            return (
-              <button
-                key={id}
-                type="button"
-                className={`process-sort-button${isActive ? " is-active" : ""}`}
-                aria-label={`Ordenar por ${processSortColumnLabel[id]}${
-                  isActive ? (sortDirection === "desc" ? ", decrescente" : ", crescente") : ""
-                }`}
-                aria-pressed={isActive}
-                disabled={unavailable}
-                title={
-                  unavailable
-                    ? "Indisponível: o driver não expôs contadores de engine gráfico (PDH)."
-                    : id === "gpu"
-                      ? "GPU agregada do grupo, somando as engines reportadas pelo Windows."
-                      : id === "cpu"
-                        ? "CPU agregada do grupo, normalizada pela máquina (100% = todos os processadores lógicos)."
-                        : "Memória residente somada do grupo."
-                }
-                onClick={() => onSortChange?.(id)}
-              >
-                {unavailable ? "GPU —" : label}
-                {isActive && (
-                  <span className="process-sort-arrow" aria-hidden="true">
-                    {sortDirection === "desc" ? "↓" : "↑"}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-          {onTerminate && <span aria-hidden="true" />}
-        </div>
-      )}
+    <div className="process-list-shell">
       <ol className="process-list">
         {processes.slice(0, TOP_PROCESS_LIMIT).map((p, i) => (
           <li key={`${p.id}-${p.name}`}>
@@ -728,34 +667,6 @@ export function ProcessList({
               </span>
             </div>
             <span className="process-memory">{metric(p.memoryMb, " MB")}</span>
-            {showUsage && (
-              <>
-                <span className="process-cpu" title="CPU agregada do grupo desde a coleta anterior">
-                  {metric(p.cpuPercent, "%")}
-                </span>
-                <span
-                  className="process-gpu"
-                  title={
-                    p.gpuPercent == null
-                      ? "GPU indisponível: o driver não expôs contadores de engine gráfico (PDH)."
-                      : "GPU agregada do grupo; 0% indica medição válida sem uso."
-                  }
-                >
-                  {metric(p.gpuPercent, "%")}
-                </span>
-              </>
-            )}
-            {onTerminate && (
-              <button
-                type="button"
-                className="process-close-button"
-                aria-label={`Fechar ${p.displayName || p.name}`}
-                disabled={terminatingId === p.id || p.name.toLocaleLowerCase("pt-BR").startsWith("pulse")}
-                onClick={() => onTerminate(p)}
-              >
-                {terminatingId === p.id ? "FECHANDO…" : "FECHAR"}
-              </button>
-            )}
           </li>
         ))}
       </ol>
@@ -3242,17 +3153,16 @@ function App() {
                     <div className="panel-title-copy">
                       <h3>Grupos de aplicativos em execução</h3>
                       <small>
-                        Até {TOP_PROCESS_LIMIT} grupos ordenados por {processSortColumnLabel[processSort]} · RAM,
-                        CPU e GPU somadas por grupo
+                        Até {TOP_PROCESS_LIMIT} grupos ordenados por {processSortColumnLabel[processSort]} · passe o
+                        mouse sobre uma linha para ver a ação dela
                       </small>
                     </div>
                     <span className="live-dot">AO VIVO</span>
                   </div>
-                  <ProcessList
+                  <ActivityProcessTable
                     processes={sortedProcesses}
                     onTerminate={setProcessToClose}
                     terminatingId={terminatingProcessId}
-                    showUsage
                     sortBy={processSort}
                     sortDirection={processSortDirection}
                     onSortChange={handleProcessSort}
@@ -3269,6 +3179,8 @@ function App() {
                     <strong>{metric(overview?.cpuPercent, "%")}</strong>
                     <DetailedResourceChart
                       title="USO DA CPU EM TEMPO REAL"
+                    limit={TOP_PROCESS_LIMIT}
+                    memoryTotalGb={overview?.memoryTotalGb}
                       history={cpuHistory}
                       currentValue={metric(overview?.cpuPercent, "%")}
                             color="var(--neu-accent)"
@@ -3708,7 +3620,7 @@ function App() {
 
                         return (
                           <div
-                            className={`startup-item ${!item.enabled ? "item-disabled" : ""} ${isHigh ? "item-high-impact" : ""}`}
+                            className={`startup-item row-hl ${!item.enabled ? "item-disabled" : ""} ${isHigh ? "item-high-impact" : ""}`}
                             key={`${item.origin}-${item.name}`}
                           >
                             <span className={`startup-icon ${item.icon ? "" : "startup-icon-empty"}`} aria-hidden="true">

@@ -1776,7 +1776,7 @@ describe("Pulse application shell", () => {
       expect(screen.getByText("31%")).toBeInTheDocument();
     });
 
-    const firstRow = () => document.querySelector(".process-list li")?.textContent ?? "";
+    const firstRow = () => document.querySelector(".dt-row")?.textContent ?? "";
     // A coleta entrega o ranking por memória: code (1024 MB) primeiro.
     expect(firstRow()).toContain("code.exe");
 

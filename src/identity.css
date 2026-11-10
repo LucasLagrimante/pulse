@@ -43,6 +43,10 @@
   /* Identidade Pulse (Âmbar Solar / Cobre com excelente contraste) */
   --neu-accent: #d97706;
   --neu-accent-hover: #b45309;
+  /* Texto sobre preenchimento âmbar/vermelho (contraste ≥ 4.5:1 nos dois temas) */
+  --neu-on-accent: #141619;
+  --neu-on-danger: #ffffff;
+  --neu-scrim: rgba(0, 0, 0, 0.55);
   --neu-accent-soft: rgba(217, 119, 6, 0.12);
   --neu-accent-glow: 0 0 16px rgba(217, 119, 6, 0.25);
   --neu-signal-secondary: #4b6b88;
@@ -115,6 +119,10 @@
   /* Acentos Pulse no Escuro */
   --neu-accent: #f59e0b;
   --neu-accent-hover: #fbbf24;
+  /* Texto sobre preenchimento âmbar/vermelho (contraste ≥ 4.5:1 nos dois temas) */
+  --neu-on-accent: #141619;
+  --neu-on-danger: #ffffff;
+  --neu-scrim: rgba(0, 0, 0, 0.55);
   --neu-accent-soft: rgba(245, 158, 11, 0.16);
   --neu-accent-glow: 0 0 18px rgba(245, 158, 11, 0.3);
   --neu-signal-secondary: #8da9bf;

@@ -1,0 +1,10 @@
+/* Atividade — só as colunas; o restante vem do padrão compartilhado (DataTable.css) */
+.dt--activity {
+  --dt-cols: 34px minmax(0, 1fr) 118px 96px 96px 108px;
+}
+
+@media (max-width: 760px) {
+  .dt--activity {
+    --dt-cols: 26px minmax(0, 1fr) 82px 64px 64px 44px;
+  }
+}

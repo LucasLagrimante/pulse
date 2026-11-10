@@ -674,7 +674,7 @@ export function ServicesHub() {
                   const reasons = service.suspicionReasons ?? [];
                   return (
                     <article
-                      className={`sh-item sh-item-${service.category}`}
+                      className={`sh-item row-hl sh-item-${service.category}`}
                       key={service.name}
                       role="listitem"
                     >
@@ -716,7 +716,8 @@ export function ServicesHub() {
                       </div>
                       <button
                         type="button"
-                        className="btn-primary disk-scan-btn sh-action"
+                        className={`btn-primary disk-scan-btn sh-action${running ? " row-hl-danger" : ""}`}
+                        aria-label={`${running ? "Parar" : "Iniciar"} ${serviceLabel(service)}`}
                         disabled={busyService === service.name}
                         onClick={() => void runServiceAction(service, running ? "stop" : "start")}
                       >
@@ -894,7 +895,7 @@ export function ServicesHub() {
                   const done = job?.state === "done";
                   return (
                     <article
-                      className={`sh-item sh-item-update ${running ? "is-running" : ""} ${done ? "is-done" : ""}`}
+                      className={`sh-item row-hl sh-item-update ${running ? "is-running" : ""} ${done ? "is-done" : ""}`}
                       key={`${update.source}:${update.id}`}
                       role="listitem"
                     >

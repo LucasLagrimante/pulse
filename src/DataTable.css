@@ -1,0 +1,514 @@
+/* ==========================================================================
+   Padrão compartilhado de listas com ação por linha
+   1) `.row-hl`: qualquer linha/cartão com ação ganha faixa lateral + fundo
+      tingido no hover/foco; mirar uma ação destrutiva (`.row-hl-danger`)
+      tinge a linha de vermelho. Usa pseudo-elemento atrás do conteúdo, então
+      funciona mesmo sobre skins legados com `background … !important`.
+   2) `.row-action`: botão de ação discreto que só "acende" na linha ativa.
+   3) `.dt-*`: tabela densa (toolbar com filtro/resumo, cabeçalho ordenável,
+      linhas em grid). Cada tabela define as colunas em `--dt-cols`.
+   ========================================================================== */
+
+/* --- 1. Destaque da linha ------------------------------------------------ */
+.row-hl {
+  position: relative;
+  isolation: isolate;
+}
+
+.row-hl::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: inset 3px 0 0 transparent;
+  pointer-events: none;
+  transition: background-color .12s ease, box-shadow .12s ease;
+}
+
+.row-hl:hover::before,
+.row-hl:focus-within::before {
+  background: color-mix(in srgb, var(--neu-accent) 9%, transparent);
+  box-shadow: inset 3px 0 0 var(--neu-accent);
+}
+
+.row-hl:has(.row-hl-danger:hover:not(:disabled))::before,
+.row-hl:has(.row-hl-danger:focus-visible)::before {
+  background: color-mix(in srgb, var(--neu-danger) 11%, transparent);
+  box-shadow: inset 3px 0 0 var(--neu-danger);
+}
+
+/* --- 2. Botão de ação por linha ------------------------------------------ */
+.row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 92px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--neu-divider);
+  border-radius: 9px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--neu-text-muted);
+  font-size: .72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color .12s ease, color .12s ease, border-color .12s ease;
+}
+
+.row-hl:hover .row-action:not(:disabled),
+.row-hl:focus-within .row-action:not(:disabled) {
+  border-color: color-mix(in srgb, var(--neu-accent) 55%, var(--neu-divider));
+  background: color-mix(in srgb, var(--neu-accent) 10%, transparent);
+  color: var(--neu-accent);
+}
+
+.row-hl .row-action:hover:not(:disabled),
+.row-hl .row-action:focus-visible {
+  border-color: var(--neu-accent);
+  background: var(--neu-accent);
+  color: var(--neu-on-accent);
+}
+
+.row-hl:hover .row-action.row-hl-danger:not(:disabled),
+.row-hl:focus-within .row-action.row-hl-danger:not(:disabled) {
+  border-color: color-mix(in srgb, var(--neu-danger) 55%, var(--neu-divider));
+  background: color-mix(in srgb, var(--neu-danger) 10%, transparent);
+  color: var(--neu-danger);
+}
+
+.row-hl .row-action.row-hl-danger:hover:not(:disabled),
+.row-hl .row-action.row-hl-danger:focus-visible {
+  border-color: var(--neu-danger);
+  background: var(--neu-danger);
+  color: var(--neu-on-danger);
+}
+
+.row-action:focus-visible {
+  outline: 2px solid var(--neu-accent);
+  outline-offset: 2px;
+}
+
+.row-action.row-hl-danger:focus-visible {
+  outline-color: var(--neu-danger);
+}
+
+.row-action:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+/* --- 3. Tabela densa ----------------------------------------------------- */
+.dt {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  gap: 12px;
+}
+
+.dt-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  flex-shrink: 0;
+}
+
+.dt-toolbar-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.dt-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 260px;
+  max-width: 420px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-inset-xs);
+  border: var(--neu-border-subtle);
+  color: var(--neu-text-muted);
+}
+
+.dt-search:focus-within {
+  color: var(--neu-accent);
+  box-shadow: var(--neu-shadow-inset-xs), 0 0 0 2px var(--neu-accent-soft);
+}
+
+.dt-search input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--neu-text-primary);
+  font-size: .8rem;
+  outline: none;
+}
+
+.dt-search input::placeholder {
+  color: var(--neu-text-muted);
+}
+
+.dt-search input:focus-visible {
+  outline: none;
+}
+
+.dt-summary {
+  display: flex;
+  gap: 22px;
+  margin: 0;
+}
+
+.dt-summary div {
+  display: grid;
+  gap: 1px;
+  text-align: right;
+}
+
+.dt-summary dt {
+  color: var(--neu-text-muted);
+  font-size: .6rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.dt-summary dd {
+  margin: 0;
+  color: var(--neu-text-title);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .9rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.dt-note {
+  margin: 0;
+  color: var(--neu-text-muted);
+  font-size: .7rem;
+}
+
+.dt-table {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  border-radius: 16px;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-inset-xs);
+  border: var(--neu-border-subtle);
+  overflow: hidden;
+}
+
+.dt-head,
+.dt-row {
+  display: grid;
+  grid-template-columns: var(--dt-cols);
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px 0 12px;
+}
+
+.dt-head {
+  min-height: 38px;
+  border-bottom: 1px solid var(--neu-divider);
+  color: var(--neu-text-muted);
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.dt-center {
+  text-align: center;
+}
+
+.dt-sort {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 100%;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.dt-sort.is-start {
+  justify-content: flex-start;
+}
+
+.dt-sort:hover:not(:disabled) {
+  color: var(--neu-text-primary);
+}
+
+.dt-sort.is-active,
+.dt-sort.is-active:hover:not(:disabled) {
+  color: var(--neu-accent);
+}
+
+.dt-sort-arrow {
+  font-size: .72rem;
+}
+
+.dt-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.dt-row {
+  flex: 0 0 auto;
+  min-height: 52px;
+  margin: 0 6px;
+  border-radius: 10px;
+  color: var(--neu-text-primary);
+}
+
+.dt-row + .dt-row {
+  margin-top: 2px;
+}
+
+.dt-row:nth-child(even) {
+  background: color-mix(in srgb, var(--neu-surface) 55%, transparent);
+}
+
+.dt-row.is-busy {
+  opacity: .55;
+}
+
+.dt-rank {
+  color: var(--neu-text-muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .68rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.dt-row:hover .dt-rank,
+.dt-row:focus-within .dt-rank {
+  color: var(--neu-accent);
+}
+
+.dt-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dt-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-raised-xs);
+  border: var(--neu-border-subtle);
+  color: var(--neu-text-muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .66rem;
+  font-weight: 700;
+  overflow: hidden;
+}
+
+.dt-icon img {
+  display: block;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.dt-name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dt-name strong,
+.dt-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dt-name strong {
+  color: var(--neu-text-title);
+  font-size: .84rem;
+  font-weight: 600;
+}
+
+.dt-name small {
+  color: var(--neu-text-muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .64rem;
+}
+
+.dt-badge {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--neu-accent-soft);
+  color: var(--neu-accent);
+  font-size: .6rem;
+  font-weight: 700;
+}
+
+.dt-cell {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--neu-text-secondary);
+  font-size: .72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dt-cell.is-numeric {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.dt-cell.is-missing {
+  color: var(--neu-text-muted);
+}
+
+/* Célula de uso: valor + barra fina proporcional */
+.dt-usage {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+  min-width: 0;
+}
+
+.dt-usage-value {
+  color: var(--neu-text-primary);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .76rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.dt-usage.is-missing .dt-usage-value {
+  color: var(--neu-text-muted);
+  font-weight: 500;
+}
+
+.dt-usage-track {
+  display: block;
+  width: 100%;
+  max-width: 84px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--neu-track-bg);
+  overflow: hidden;
+}
+
+.dt-usage-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--neu-signal-secondary);
+}
+
+.dt-usage--cpu .dt-usage-fill {
+  background: var(--neu-accent);
+}
+
+.dt-usage--gpu .dt-usage-fill {
+  background: var(--neu-info);
+}
+
+.dt-usage.is-hot .dt-usage-value {
+  color: var(--neu-warning);
+}
+
+.dt-action {
+  display: flex;
+  justify-content: center;
+}
+
+.dt-empty {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  padding: 32px 16px;
+  color: var(--neu-text-muted);
+  font-size: .82rem;
+  text-align: center;
+}
+
+.dt-empty p {
+  margin: 0;
+}
+
+.dt-empty-reset {
+  padding: 6px 14px;
+  border: 1px solid var(--neu-divider);
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-raised-xs);
+  color: var(--neu-text-primary);
+  font-size: .74rem;
+  cursor: pointer;
+}
+
+.dt-empty-reset:hover {
+  color: var(--neu-accent);
+}
+
+@media (max-width: 760px) {
+  .dt-summary {
+    gap: 14px;
+  }
+
+  .dt-row .row-action {
+    min-width: 36px;
+    padding: 0;
+  }
+
+  .dt-row .row-action span {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-hl::before,
+  .row-action {
+    transition: none;
+  }
+}

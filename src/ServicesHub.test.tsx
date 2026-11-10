@@ -407,7 +407,7 @@ const motivos = screen.getByLabelText("Sinais que exigem revisão");
     await abrirAbaServicos();
     await waitFor(() => expect(screen.getByText("Audio do Windows")).toBeTruthy());
     const row = screen.getByText("Audio do Windows").closest("article") as HTMLElement;
-    fireEvent.click(within(row).getByRole("button", { name: /PARAR/ }));
+    fireEvent.click(within(row).getByRole("button", { name: /^Parar / }));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("set_windows_service_state", { name: "AudioSrv", action: "stop" }),
     );
@@ -418,7 +418,7 @@ const motivos = screen.getByLabelText("Sinais que exigem revisão");
     await abrirAbaServicos();
     await waitFor(() => expect(screen.getByText("Fila de Impressao")).toBeTruthy());
     const row = screen.getByText("Fila de Impressao").closest("article") as HTMLElement;
-    fireEvent.click(within(row).getByRole("button", { name: /INICIAR/ }));
+    fireEvent.click(within(row).getByRole("button", { name: /^Iniciar / }));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("set_windows_service_state", { name: "Spooler", action: "start" }),
     );
@@ -434,7 +434,7 @@ const motivos = screen.getByLabelText("Sinais que exigem revisão");
     await abrirAbaServicos();
     await waitFor(() => expect(screen.getByText("Audio do Windows")).toBeTruthy());
     const row = screen.getByText("Audio do Windows").closest("article") as HTMLElement;
-    fireEvent.click(within(row).getByRole("button", { name: /PARAR/ }));
+    fireEvent.click(within(row).getByRole("button", { name: /^Parar / }));
     await waitFor(() =>
       expect(screen.getAllByRole("alert").some(node => node.textContent?.includes("Acesso negado"))).toBe(true),
     );

@@ -540,63 +540,6 @@ h1 {
   overflow: hidden;
 }
 
-.process-list-header {
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) auto 64px 64px;
-  align-items: center;
-  gap: 12px;
-  padding: 0 6px 6px 0;
-  border-bottom: 1px solid #343a42;
-  color: #7e867e;
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: .58rem;
-  font-weight: 700;
-  letter-spacing: .08em;
-}
-
-.process-list-header.with-action {
-  grid-template-columns: 36px minmax(0, 1fr) auto 64px 64px 76px;
-}
-
-.process-list-header span:nth-child(n + 3) {
-  text-align: right;
-}
-
-.process-sort-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  width: 100%;
-  padding: 2px 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: .58rem;
-  font-weight: 700;
-  letter-spacing: .08em;
-  cursor: pointer;
-}
-
-.process-sort-button:hover:not(:disabled) {
-  color: #dce0d9;
-}
-
-.process-sort-button.is-active,
-.process-sort-button.is-active:hover:not(:disabled) {
-  color: #f0ede6;
-}
-
-.process-sort-button:disabled {
-  opacity: .45;
-  cursor: not-allowed;
-}
-
-.process-sort-arrow {
-  font-size: .62rem;
-}
-
 .process-list {
   display: flex;
   flex-direction: column;
@@ -604,14 +547,6 @@ h1 {
   min-height: 0;
   height: 100%;
   overflow-y: auto;
-}
-
-.process-list-shell.with-usage .process-list li {
-  grid-template-columns: 36px minmax(0, 1fr) auto 64px 64px;
-}
-
-.process-list-shell.with-usage .process-list li:has(.process-close-button) {
-  grid-template-columns: 36px minmax(0, 1fr) auto 64px 64px 76px;
 }
 
 .process-list li {
@@ -625,10 +560,6 @@ h1 {
   color: #dce0d9;
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .75rem;
-}
-
-.process-list li:has(.process-close-button) {
-  grid-template-columns: 36px minmax(0, 1fr) auto 76px;
 }
 
 .process-list li:last-child {
@@ -693,45 +624,6 @@ h1 {
   color: #8da9bf;
   font-weight: 500;
   text-align: right;
-}
-
-.process-cpu,
-.process-gpu {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.process-cpu {
-  color: var(--neu-accent);
-}
-
-.process-gpu {
-  color: var(--neu-info);
-}
-
-.process-close-button {
-  min-width: 72px;
-  padding: 7px 9px;
-  border: 1px solid #4b3a35;
-  color: #cf927e;
-  background: transparent;
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: .56rem;
-  font-weight: 700;
-  letter-spacing: .05em;
-  cursor: pointer;
-}
-
-.process-close-button:hover:not(:disabled) {
-  border-color: #b7614b;
-  color: #ff9274;
-  background: #2b1d19;
-}
-
-.process-close-button:disabled {
-  opacity: .38;
-  cursor: not-allowed;
 }
 
 /* Recent Files Panel - Enhanced with Visible Dates */
