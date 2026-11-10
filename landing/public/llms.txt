@@ -4,7 +4,7 @@
 
 - Versão atual: 1.0.1
 - Instalador Windows 11 x64: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe (instalador NSIS de 3,5 MB)
-- SHA-256: `72846dcc114d4986c3ba297fb402a6f68e9f960c87b6427a672d9d80929d9bde`
+- SHA-256: `2b5823ae9e5b12ddb611216db048bd3bc1c8ff4f26e8005ca793ef8eda8d33ff`
 - Assinatura de código: o instalador ainda não é assinado, então o SmartScreen pode avisar ("Mais informações" → "Executar assim mesmo"); confira o SHA-256 publicado. Política: https://github.com/LucasLagrimante/pulse#política-de-assinatura-de-código
 
 ## O que é
