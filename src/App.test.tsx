@@ -729,8 +729,10 @@ describe("Formatters and Components", () => {
       expect(container.querySelector(".flyout-brand-mark .pulse-mark-loading")).toBeInTheDocument();
 
       // Skeletons de telemetria e processos mantêm o layout estável
-      expect(container.querySelectorAll(".flyout-skeleton-value").length).toBeGreaterThanOrEqual(3);
+      expect(container.querySelectorAll(".flyout-skeleton-value").length).toBeGreaterThanOrEqual(4);
       expect(container.querySelectorAll(".flyout-process-skeleton").length).toBe(4);
+      // Skeleton já nasce em 2×2: a segunda linha tem Disco + GPU, não um card único
+      expect(container.querySelectorAll(".flyout-metrics-row--split > .flyout-metric-card").length).toBe(2);
       expect(screen.queryByText("Processos indisponíveis nesta coleta.")).not.toBeInTheDocument();
 
       // Resolve a telemetria e confere a transição fluida

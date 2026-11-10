@@ -1529,7 +1529,10 @@ export function TrayFlyout({
     overview && typeof overview.gpuPercent === "number" && Number.isFinite(overview.gpuPercent)
       ? Math.max(0, Math.min(100, overview.gpuPercent))
       : undefined;
-  const showFlyoutGpuCard = flyoutGpuSensor !== undefined || flyoutGpuUsage !== undefined;
+  // Durante o loading o card de GPU entra como skeleton: o layout nasce em 2×2
+  // e só colapsa o Disco para a linha inteira se a coleta confirmar que não há GPU.
+  const flyoutLoading = overview == null;
+  const showFlyoutGpuCard = flyoutLoading || flyoutGpuSensor !== undefined || flyoutGpuUsage !== undefined;
   const visibleQuotaProviders = useMemo(
     () => subscriptionProviders.filter(provider => provider.disabled !== true && hasMeasuredQuota(provider)),
     [subscriptionProviders],
@@ -1703,6 +1706,7 @@ export function TrayFlyout({
               totalGb={overview?.diskTotalGb}
               percent={diskPercent}
               color={diskCapacityColor(diskHealth)}
+              loading={flyoutLoading}
               ariaLabel="Gráfico de alocação de disco no tray"
             />
           </div>
@@ -1713,20 +1717,28 @@ export function TrayFlyout({
                 <span>GPU</span>
                 <strong
                   title={
-                    flyoutGpuSensor
-                      ? `${flyoutGpuSensor.label} · ${flyoutGpuSensor.source}`
-                      : "Nenhum sensor de temperatura da GPU respondeu"
+                    flyoutLoading
+                      ? undefined
+                      : flyoutGpuSensor
+                        ? `${flyoutGpuSensor.label} · ${flyoutGpuSensor.source}`
+                        : "Nenhum sensor de temperatura da GPU respondeu"
                   }
                 >
-                  {flyoutGpuSensor ? `${metric(flyoutGpuSensor.celsius)} °C` : "—"}
+                  {flyoutLoading ? (
+                    <span className="flyout-skeleton-value" aria-hidden="true" />
+                  ) : flyoutGpuSensor ? (
+                    `${metric(flyoutGpuSensor.celsius)} °C`
+                  ) : (
+                    "—"
+                  )}
                 </strong>
               </div>
               <MiniUsageBar
                 percent={flyoutGpuUsage}
                 color="var(--neu-info)"
                 ariaLabel="Uso da GPU no tray"
-                leftLabel={`USO ${metric(flyoutGpuUsage, "%")}`}
-                rightLabel={flyoutGpuSensor ? flyoutGpuSensor.source : "SEM SENSOR"}
+                leftLabel={flyoutLoading ? undefined : `USO ${metric(flyoutGpuUsage, "%")}`}
+                rightLabel={flyoutLoading ? undefined : flyoutGpuSensor ? flyoutGpuSensor.source : "SEM SENSOR"}
               />
             </div>
           )}
