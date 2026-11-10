@@ -1358,6 +1358,21 @@ button:disabled {
   box-shadow: var(--neu-shadow-inset-xs);
 }
 
+/* O checkbox real fica oculto sobre a marca visual. Sem o label posicionado,
+   o input absoluto ancorava fora da área rolável e o foco do clique rolava o
+   shell (overflow: hidden), deslocando a janela inteira. */
+.cleanup-category-choice {
+  position: relative;
+}
+
+.cleanup-category-choice input {
+  top: 0;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
 .cleanup-category-choice input:checked + .cleanup-checkmark {
   border-color: var(--neu-accent);
   background: var(--neu-accent);
