@@ -2,9 +2,9 @@
 
 > Central nativa de observabilidade, diagnóstico e controle local para Windows 11. Reúne monitoramento de CPU, memória, disco e GPU, atividade por grupo de processos, análise de armazenamento TreeSize/Treemap, limpeza segura, desinstalação em 3 fases com resíduos, inventário de inicialização StartupApproved, serviços nativos (SCM) + atualizações winget, cotas de assinaturas de IA com histórico de 30 dias em SQLite e flyout na bandeja com mixer Core Audio por aplicativo. Todo o processamento é 100% local: sem conta, sem telemetria e sem nuvem.
 
-- Versão atual: 1.3.0
+- Versão atual: 1.4.0
 - Instalador Windows 11 x64: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe (instalador NSIS de 3,6 MB)
-- SHA-256: `c3e286584c137bbdc259c6cc8971017c8fb8569e4153e08b9254d9483dca1d24`
+- SHA-256: `cbdfc7c2a9954b68620ddc92639a7e455f0a994036b3f11b44fb83a654f03bc6`
 - Assinatura de código: o instalador ainda não é assinado, então o SmartScreen pode avisar ("Mais informações" → "Executar assim mesmo"); confira o SHA-256 publicado. Política: https://github.com/LucasLagrimante/pulse#política-de-assinatura-de-código
 
 ## O que é
