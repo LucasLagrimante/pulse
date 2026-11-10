@@ -31,7 +31,7 @@
 
 /* Tabela de programas: colunas + selo de origem do tamanho */
 .dt--uninstall {
-  --dt-cols: minmax(0, 1fr) 104px 150px 132px;
+  --dt-cols: minmax(0, 1fr) 104px 190px 132px;
 }
 
 .un-refresh {
@@ -41,16 +41,71 @@
   flex-shrink: 0;
 }
 
+/* Valor + selo (+ "medir completo") na 1ª linha; dados e barra abaixo */
 .dt-usage--size {
-  grid-template-columns: auto auto;
-  column-gap: 6px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  justify-content: end;
+  justify-content: flex-end;
+  gap: 3px 6px;
+  padding: 6px 0;
+}
+
+.dt-usage--size .dt-usage-track,
+.un-size-data {
+  flex-basis: 100%;
+}
+
+.un-measure-full {
+  order: 3;
+  margin-left: auto;
+}
+
+.un-size-data {
+  order: 2;
 }
 
 .dt-usage--size .dt-usage-track {
-  grid-column: 1 / -1;
-  justify-self: end;
+  order: 4;
+}
+
+.dt-usage--size .dt-usage-track {
+  margin-left: auto;
+}
+
+.un-size-data {
+  color: var(--neu-text-muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .62rem;
+  text-align: right;
+}
+
+.un-measure-full {
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--neu-warning) 45%, var(--neu-divider));
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--neu-warning);
+  font-size: .56rem;
+  font-weight: 700;
+  letter-spacing: .03em;
+  cursor: pointer;
+}
+
+.un-measure-full:hover:not(:disabled),
+.un-measure-full:focus-visible {
+  background: color-mix(in srgb, var(--neu-warning) 14%, transparent);
+}
+
+.un-measure-full:focus-visible {
+  outline: 2px solid var(--neu-warning);
+  outline-offset: 1px;
+}
+
+.un-measure-full:disabled {
+  opacity: .5;
+  cursor: progress;
 }
 
 .un-size-source {
@@ -72,6 +127,11 @@
   color: var(--neu-warning);
 }
 
+.un-size-source.is-deduced {
+  background: color-mix(in srgb, var(--neu-info) 14%, transparent);
+  color: var(--neu-info);
+}
+
 .un-size-source.is-registry {
   background: var(--neu-track-bg);
   color: var(--neu-text-muted);
@@ -79,7 +139,7 @@
 
 @media (max-width: 760px) {
   .dt--uninstall {
-    --dt-cols: minmax(0, 1fr) 84px 118px 44px;
+    --dt-cols: minmax(0, 1fr) 84px 150px 44px;
   }
 }
 

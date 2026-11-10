@@ -136,6 +136,14 @@ export type AppFootprint = {
   complete: boolean;
   fileCount: number;
   installLocation?: string | null;
+  /** `deduced` = pasta inferida pelo Pulse (o instalador não informou). */
+  locationSource?: "declared" | "deduced" | null;
+  /** Pastas de dados com o nome exato do app (AppData/ProgramData), à parte. */
+  dataBytes?: number | null;
+  dataComplete?: boolean;
+  dataFolders?: string[];
+  /** Veio da medição completa pedida pelo usuário. */
+  fullScan?: boolean;
   unavailableReason?: string | null;
 };
 
@@ -160,7 +168,7 @@ const SORT_COLUMNS: { id: AppSortColumn; label: string; name: string; hint: stri
     id: "size",
     label: "Tamanho",
     name: "tamanho",
-    hint: "Pasta de instalação medida pelo Pulse; sem pasta, usa a estimativa do instalador. Sem tamanho vai para o fim.",
+    hint: "Programa + dados (AppData/ProgramData) medidos pelo Pulse; sem pasta, usa a estimativa do instalador. Sem tamanho vai para o fim.",
   },
 ];
 
@@ -169,13 +177,50 @@ function sizeTitle(item: InstalledApp, size: EffectiveSize | null, footprint?: A
     typeof item.estimatedSizeKb === "number" && item.estimatedSizeKb > 0
       ? `O instalador declarou ${formatEstimatedSize(item.estimatedSizeKb)}.`
       : "O instalador não declarou tamanho.";
-  if (!size) return `${footprint?.unavailableReason ?? "Pasta de instalação não informada"}. ${registry}`;
+  const data = dataSize(footprint);
+  const dataText = data
+    ? ` Dados${data.partial ? " (mínimo)" : ""}: ${formatBytes(data.bytes)} em ${(footprint?.dataFolders ?? []).join("; ")}.`
+    : "";
+  if (!size) return `${footprint?.unavailableReason ?? "Pasta de instalação não informada"}. ${registry}${dataText}`;
   const where = footprint?.installLocation ? ` em ${footprint.installLocation}` : "";
   const files = footprint?.fileCount ? ` (${footprint.fileCount.toLocaleString("pt-BR")} arquivos)` : "";
-  if (size.source === "measured") return `Medido pelo Pulse${where}${files}. ${registry}`;
+  const deduced =
+    footprint?.locationSource === "deduced" ? " Pasta deduzida pelo Pulse: o instalador não a informou." : "";
+  if (size.source === "measured") return `Medido pelo Pulse${where}${files}.${deduced} ${registry}${dataText}`;
   if (size.source === "partial")
-    return `Pasta grande demais para medir por completo${where}: o valor é um mínimo. ${registry}`;
-  return `Estimativa do instalador (EstimatedSize), não medida no disco. ${footprint?.unavailableReason ?? ""}`.trim();
+    return `Pasta grande demais para a medição rápida${where}: o valor é um mínimo. Use "medir completo".${deduced} ${registry}${dataText}`;
+  return `Estimativa do instalador (EstimatedSize), não medida no disco. ${footprint?.unavailableReason ?? ""}${dataText}`.trim();
+}
+
+/** Selo exibido ao lado do tamanho. */
+export function sizeBadge(size: EffectiveSize, footprint?: AppFootprint): { label: string; tone: string } {
+  if (size.source === "partial") return { label: "parcial", tone: "partial" };
+  if (size.source === "registry") return { label: "estimado", tone: "registry" };
+  return footprint?.locationSource === "deduced"
+    ? { label: "deduzido", tone: "deduced" }
+    : { label: "medido", tone: "measured" };
+}
+
+/** Pastas de dados medidas à parte; `null` quando nenhuma foi encontrada. */
+export function dataSize(footprint?: AppFootprint): { bytes: number; partial: boolean } | null {
+  const bytes = footprint?.dataBytes;
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return null;
+  return { bytes, partial: footprint?.dataComplete === false };
+}
+
+/** Espaço total que o app ocupa: programa (medido ou estimado) + dados. */
+export function totalFootprint(app: InstalledApp, footprint?: AppFootprint): number | null {
+  const program = effectiveSize(app, footprint)?.bytes ?? null;
+  const data = dataSize(footprint)?.bytes ?? null;
+  if (program == null && data == null) return null;
+  return (program ?? 0) + (data ?? 0);
+}
+
+/** Algo ficou limitado pelo orçamento rápido e vale oferecer a medição completa. */
+export function canMeasureFully(footprint?: AppFootprint): boolean {
+  if (!footprint || footprint.fullScan) return false;
+  const programPartial = typeof footprint.measuredBytes === "number" && !footprint.complete;
+  return programPartial || dataSize(footprint)?.partial === true;
 }
 
 export function formatBytes(bytes: number | null | undefined): string {
@@ -265,7 +310,7 @@ export function sortApps(
   }
   const keyOf = (app: InstalledApp): number | null =>
     column === "size"
-      ? effectiveSize(app, footprints.get(app.id))?.bytes ?? null
+      ? totalFootprint(app, footprints.get(app.id))
       : parseInstallDate(app.installDate)?.getTime() ?? null;
   const sign = direction === "asc" ? 1 : -1;
   return [...apps].sort((left, right) => {
@@ -338,6 +383,7 @@ export function UninstallHub() {
   const [sortDirection, setSortDirection] = useState<AppSortDirection>("asc");
   const [footprints, setFootprints] = useState<Map<string, AppFootprint>>(new Map());
   const [measuring, setMeasuring] = useState(false);
+  const [fullMeasuringId, setFullMeasuringId] = useState<string | null>(null);
   const measureRun = useRef(0);
 
   const [capabilities, setCapabilities] = useState<UninstallCapabilities>();
@@ -378,7 +424,8 @@ export function UninstallHub() {
   // Mede a pasta de instalação em lotes pequenos e sequenciais (o backend
   // limita orçamento e prazo por lote); cada lote atualiza a tela na hora.
   useEffect(() => {
-    const ids = (snapshot?.apps ?? []).filter(item => item.installLocation?.trim()).map(item => item.id);
+    // Todos: sem `InstallLocation` o backend ainda tenta deduzir a pasta e achar os dados.
+    const ids = (snapshot?.apps ?? []).map(item => item.id);
     const run = ++measureRun.current;
     if (ids.length === 0) {
       setMeasuring(false);
@@ -430,10 +477,31 @@ export function UninstallHub() {
     for (const item of apps) map.set(item.id, effectiveSize(item, footprints.get(item.id)));
     return map;
   }, [apps, footprints]);
-  const largestSize = Math.max(0, ...[...sizes.values()].map(size => size?.bytes ?? 0));
-  const knownSizes = [...sizes.values()].filter((size): size is EffectiveSize => size != null);
-  const totalKnownBytes = knownSizes.reduce((sum, size) => sum + size.bytes, 0);
-  const measuredCount = knownSizes.filter(size => size.source !== "registry").length;
+  const totals = useMemo(() => {
+    const map = new Map<string, number | null>();
+    for (const item of apps) map.set(item.id, totalFootprint(item, footprints.get(item.id)));
+    return map;
+  }, [apps, footprints]);
+  const knownTotals = [...totals.values()].filter((value): value is number => value != null);
+  const largestSize = Math.max(0, ...knownTotals);
+  const totalKnownBytes = knownTotals.reduce((sum, value) => sum + value, 0);
+  const measuredCount = [...sizes.values()].filter(size => size != null && size.source !== "registry").length;
+
+  // Medição sem teto de um único app, pedida pelo usuário; uma por vez no backend.
+  const measureFully = async (target: InstalledApp) => {
+    setFullMeasuringId(target.id);
+    setError("");
+    try {
+      const result = await invoke<AppFootprint>("measure_installed_app_size_full", { appId: target.id });
+      if (result && typeof result === "object" && result.appId) {
+        setFootprints(current => new Map(current).set(result.appId, result));
+      }
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setFullMeasuringId(null);
+    }
+  };
 
   const handleSort = (column: AppSortColumn) => {
     if (column === sortBy) {
@@ -647,8 +715,8 @@ export function UninstallHub() {
             </div>
             <div>
               <dt>Espaço somado</dt>
-              <dd title={`Soma dos ${knownSizes.length} programas com tamanho conhecido`}>
-                {knownSizes.length ? formatBytes(totalKnownBytes) : "—"}
+              <dd title={`Programa + dados dos ${knownTotals.length} itens com tamanho conhecido`}>
+                {knownTotals.length ? formatBytes(totalKnownBytes) : "—"}
               </dd>
             </div>
             <div>
@@ -662,7 +730,7 @@ export function UninstallHub() {
         <p className="dt-note">
           {snapshot?.partialReason
             ? `Leitura parcial: ${snapshot.partialReason}`
-            : "Tamanho medido pelo Pulse na pasta de instalação; quando o instalador não informa a pasta, vale a estimativa dele (marcada como estimado)."}
+            : "Tamanho medido pelo Pulse no disco: pasta do programa (deduzida quando o instalador não a informa) e, à parte, os dados em AppData/ProgramData. Sem pasta, vale a estimativa do instalador."}
         </p>
 
         {error && <p className="un-alert" role="alert">{error}</p>}
@@ -715,7 +783,11 @@ export function UninstallHub() {
               {apps.map(item => {
                 const size = sizes.get(item.id) ?? null;
                 const footprint = footprints.get(item.id);
-                const percent = size && largestSize > 0 ? Math.max((size.bytes / largestSize) * 100, 1.5) : null;
+                const total = totals.get(item.id) ?? null;
+                const percent = total != null && largestSize > 0 ? Math.max((total / largestSize) * 100, 1.5) : null;
+                const data = dataSize(footprint);
+                const badge = size ? sizeBadge(size, footprint) : null;
+                const fullBusy = fullMeasuringId === item.id;
                 const details = [
                   item.publisher ?? `Fabricante ${UNAVAILABLE.toLowerCase()}`,
                   item.version ? `v${item.version}` : null,
@@ -748,9 +820,23 @@ export function UninstallHub() {
                       <span className="dt-usage-value">
                         {size ? `${size.source === "partial" ? "≥ " : ""}${formatBytes(size.bytes)}` : UNAVAILABLE}
                       </span>
-                      {size && (
-                        <span className={`un-size-source is-${size.source}`}>
-                          {size.source === "measured" ? "medido" : size.source === "partial" ? "parcial" : "estimado"}
+                      {badge && <span className={`un-size-source is-${badge.tone}`}>{badge.label}</span>}
+                      {canMeasureFully(footprint) && (
+                        <button
+                          type="button"
+                          className="un-measure-full"
+                          aria-label={`Medir ${item.displayName} por completo`}
+                          title="Medir por completo (sem o limite da medição rápida; pode levar alguns segundos)"
+                          disabled={fullMeasuringId != null}
+                          onClick={() => void measureFully(item)}
+                        >
+                          {fullBusy ? "medindo…" : "medir completo"}
+                        </button>
+                      )}
+                      {data && (
+                        <span className="un-size-data">
+                          + {data.partial ? "≥ " : ""}
+                          {formatBytes(data.bytes)} de dados
                         </span>
                       )}
                       {percent != null && (

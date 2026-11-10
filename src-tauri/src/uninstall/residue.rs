@@ -297,7 +297,9 @@ pub fn normalize(path: &Path) -> String {
             // `Prefix("C:")` e `RootDir("\\")` separados produziriam
             // `C:\\Program Files` com barra duplicada, quebrando a comparação
             // com as pastas conhecidas do shell e com o veto por ancestral.
-            Component::Prefix(prefix) => parts.push(prefix.as_os_str().to_string_lossy().to_string()),
+            Component::Prefix(prefix) => {
+                parts.push(prefix.as_os_str().to_string_lossy().to_string())
+            }
             Component::RootDir => {
                 if parts.is_empty() {
                     parts.push("\\".to_string());
@@ -325,8 +327,7 @@ pub fn candidate_names(app: &InstalledApp) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     let mut push = |value: String| {
         let trimmed = value.trim().to_string();
-        if trimmed.is_empty() || names.iter().any(|name| name.eq_ignore_ascii_case(&trimmed))
-        {
+        if trimmed.is_empty() || names.iter().any(|name| name.eq_ignore_ascii_case(&trimmed)) {
             return;
         }
         if is_forbidden_name(&trimmed) {
@@ -494,7 +495,10 @@ fn scan_registry(app: &InstalledApp, names: &[String]) -> Vec<RegistryKeyRef> {
 
     // 1. A própria chave de desinstalação, se o instalador não a removeu. É o
     // resíduo mais confiável que existe: o próprio produto a criou.
-    if let Some(parent) = app_subkey.rsplit_once('\\').map(|(head, _)| head.to_string()) {
+    if let Some(parent) = app_subkey
+        .rsplit_once('\\')
+        .map(|(head, _)| head.to_string())
+    {
         if parent.contains("CurrentVersion\\Uninstall") {
             found.push(registry_ref(
                 app_hive,
@@ -599,6 +603,66 @@ fn registry_ref(
     }
 }
 
+/// Pasta com o nome exato do app numa raiz conhecida. `is_program` separa a
+/// pasta do programa (Program Files, `LocalAppData\Programs`) das pastas de
+/// dados (AppData, ProgramData) — a medição de tamanho mostra as duas à parte.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NamedFolder {
+    pub path: PathBuf,
+    pub label: &'static str,
+    pub is_program: bool,
+}
+
+/// Fonte única de "pastas com o nome do app": usada tanto pela desinstalação
+/// (resíduos) quanto pela medição de tamanho, para as duas nunca divergirem.
+/// Só raízes conhecidas, nunca o perfil do usuário (onde "Documentos" mora);
+/// candidatos vetados ficam de fora. Não verifica existência.
+pub fn named_folder_candidates(
+    names: &[String],
+    shell_patterns: &[String],
+    other_dirs: &[String],
+) -> Vec<NamedFolder> {
+    let well_known: Vec<(PathBuf, &'static str)> = [
+        ("ProgramFiles", "Program Files"),
+        ("ProgramFiles(x86)", "Program Files (x86)"),
+        ("PROGRAMDATA", "ProgramData"),
+        ("LOCALAPPDATA", "AppData local"),
+        ("APPDATA", "AppData roaming"),
+    ]
+    .iter()
+    .filter_map(|(variable, label)| env_path(variable).map(|path| (path, *label)))
+    .collect();
+
+    let mut found = Vec::new();
+    for name in names {
+        if is_forbidden_name(name) {
+            continue;
+        }
+        for (root, label) in &well_known {
+            let direct = root.join(name);
+            let (candidate, is_program) = if *label == "AppData local" {
+                let programs = root.join("Programs").join(name);
+                if programs.exists() {
+                    (programs, true)
+                } else {
+                    (direct, false)
+                }
+            } else {
+                (direct, label.starts_with("Program Files"))
+            };
+            if folder_deletion_veto(&normalize(&candidate), shell_patterns, other_dirs).is_some() {
+                continue;
+            }
+            found.push(NamedFolder {
+                path: candidate,
+                label,
+                is_program,
+            });
+        }
+    }
+    found
+}
+
 fn scan_folders(
     app: &InstalledApp,
     names: &[String],
@@ -615,44 +679,11 @@ fn scan_folders(
         ));
     }
 
-    // Pastas irmãs de nome exato: só dentro de raízes conhecidas e nunca
-    // dentro do próprio diretório do usuário (onde "Documentos" mora).
-    let well_known: Vec<(PathBuf, &'static str)> = [
-        ("ProgramFiles", "Program Files"),
-        ("ProgramFiles(x86)", "Program Files (x86)"),
-        ("PROGRAMDATA", "ProgramData"),
-        ("LOCALAPPDATA", "AppData local"),
-        ("APPDATA", "AppData roaming"),
-    ]
-    .iter()
-    .filter_map(|(variable, label)| env_path(variable).map(|path| (path, *label)))
-    .collect();
-
-    for name in names {
-        if is_forbidden_name(name) {
-            continue;
-        }
-        for (root, label) in &well_known {
-            let direct = root.join(name);
-            let candidate = if *label == "AppData local" {
-                let programs = root.join("Programs").join(name);
-                if programs.exists() {
-                    programs
-                } else {
-                    direct.clone()
-                }
-            } else {
-                direct.clone()
-            };
-            let veto = folder_deletion_veto(&normalize(&candidate), shell_patterns, other_dirs);
-            if veto.is_some() {
-                continue;
-            }
-            roots.push((
-                candidate,
-                format!("Nome exato do aplicativo dentro de {}", label),
-            ));
-        }
+    for candidate in named_folder_candidates(names, shell_patterns, other_dirs) {
+        roots.push((
+            candidate.path,
+            format!("Nome exato do aplicativo dentro de {}", candidate.label),
+        ));
     }
 
     let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -665,16 +696,22 @@ fn scan_folders(
         if !path.is_dir() {
             continue;
         }
-        let blocked = folder_deletion_veto(&normalized, shell_patterns, other_dirs)
-            .or_else(|| {
-                if is_reparse_point(&path) {
-                    Some("Link simbólico ou ponto de junção".to_string())
-                } else {
-                    None
-                }
-            });
+        let blocked = folder_deletion_veto(&normalized, shell_patterns, other_dirs).or_else(|| {
+            if is_reparse_point(&path) {
+                Some("Link simbólico ou ponto de junção".to_string())
+            } else {
+                None
+            }
+        });
         let mut budget = TREE_MAX_ENTRIES;
-        nodes.push(build_folder_node(&path, &normalized, reason, blocked, 0, &mut budget));
+        nodes.push(build_folder_node(
+            &path,
+            &normalized,
+            reason,
+            blocked,
+            0,
+            &mut budget,
+        ));
     }
     nodes
 }
@@ -743,13 +780,7 @@ pub fn build_folder_node(
                 } else {
                     None
                 };
-                entries.push((
-                    child_path,
-                    child_normalized,
-                    is_dir,
-                    size,
-                    child_blocked,
-                ));
+                entries.push((child_path, child_normalized, is_dir, size, child_blocked));
             }
         }
         Err(error) => {
@@ -805,7 +836,11 @@ pub fn build_folder_node(
     let mut measure_budget = MEASURE_MAX_ENTRIES;
     let (total, _) = measure_tree(path, &mut measure_budget);
     // Orçamento estourado devolve `None`, não 0: "0 B" seria zero fictício.
-    let size_bytes = if measure_budget == 0 { None } else { Some(total) };
+    let size_bytes = if measure_budget == 0 {
+        None
+    } else {
+        Some(total)
+    };
 
     FolderNode {
         id: normalized.to_string(),
@@ -963,9 +998,9 @@ pub fn remove_registry_key(key: &RegistryKeyRef) -> Result<(), String> {
     };
     match RegHandle::delete_key_tree(hive, &subkey, view) {
         Ok(()) => Ok(()),
-        Err(super::registry::ERROR_ACCESS_DENIED_CODE) => Err(
-            "Permissão negada pelo Windows: HKLM exige o Pulse como administrador".to_string(),
-        ),
+        Err(super::registry::ERROR_ACCESS_DENIED_CODE) => {
+            Err("Permissão negada pelo Windows: HKLM exige o Pulse como administrador".to_string())
+        }
         Err(code) if code == ERROR_FILE_NOT_FOUND_CODE => Ok(()),
         Err(code) => Err(format!("Falha ao remover a chave (código {})", code)),
     }
@@ -1033,7 +1068,10 @@ pub fn remove_folder(
                 continue;
             }
             match fs::remove_file(&path) {
-                Ok(()) => freed = freed.saturating_add(entry.metadata().map(|meta| meta.len()).unwrap_or(0)),
+                Ok(()) => {
+                    freed =
+                        freed.saturating_add(entry.metadata().map(|meta| meta.len()).unwrap_or(0))
+                }
                 Err(error) => {
                     clear_readonly(&path);
                     match fs::remove_file(&path) {
@@ -1142,27 +1180,15 @@ mod tests {
     #[test]
     fn veto_em_pasta_conhecida_do_shell() {
         assert!(folder_deletion_veto(r"C:\Program Files", &shell(), &[]).is_some());
-        assert!(folder_deletion_veto(
-            r"C:\Users\LUCAS\AppData\Local",
-            &shell(),
-            &[]
-        )
-        .is_some());
+        assert!(folder_deletion_veto(r"C:\Users\LUCAS\AppData\Local", &shell(), &[]).is_some());
     }
 
     #[test]
     fn veto_em_pasta_de_outro_programa() {
         let other = vec![r"c:\program files\outro app".to_string()];
-        assert!(folder_deletion_veto(
-            r"C:\Program Files\Outro App",
-            &shell(),
-            &other
-        )
-        .is_some());
+        assert!(folder_deletion_veto(r"C:\Program Files\Outro App", &shell(), &other).is_some());
         assert!(folder_deletion_veto(r"C:\Program Files", &shell(), &other).is_some());
-        assert!(
-            folder_deletion_veto(r"C:\Program Files\Meu App", &shell(), &other).is_none()
-        );
+        assert!(folder_deletion_veto(r"C:\Program Files\Meu App", &shell(), &other).is_none());
     }
 
     #[test]
@@ -1175,10 +1201,16 @@ mod tests {
 
     #[test]
     fn nome_normalizado_de_display() {
-        assert_eq!(normalize_display_name("Foto Studio 3.1.2 (x64)"), "Foto Studio");
+        assert_eq!(
+            normalize_display_name("Foto Studio 3.1.2 (x64)"),
+            "Foto Studio"
+        );
         assert_eq!(normalize_display_name("7-Zip 23.01 (x64)"), "7-Zip");
         assert_eq!(normalize_display_name("Notepad++"), "Notepad++");
-        assert_eq!(normalize_display_name("Adobe Photoshop 2024"), "Adobe Photoshop 2024");
+        assert_eq!(
+            normalize_display_name("Adobe Photoshop 2024"),
+            "Adobe Photoshop 2024"
+        );
     }
 
     #[test]
@@ -1206,9 +1238,7 @@ mod tests {
             install_date: None,
             install_location: Some(r"C:\Program Files\Foto".to_string()),
             estimated_size_kb: None,
-            uninstall_string: Some(
-                r"C:\Program Files\Foto\unins000.exe".to_string(),
-            ),
+            uninstall_string: Some(r"C:\Program Files\Foto\unins000.exe".to_string()),
             is_msi: false,
             icon: None,
         };

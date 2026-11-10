@@ -161,6 +161,7 @@ pub fn run() {
             uninstall::installed::list_installed_apps,
             uninstall::get_uninstall_capabilities,
             uninstall::footprint::measure_installed_app_sizes,
+            uninstall::footprint::measure_installed_app_size_full,
             uninstall::create_system_restore_point,
             uninstall::session::start_uninstall_session,
             uninstall::session::run_app_uninstaller,

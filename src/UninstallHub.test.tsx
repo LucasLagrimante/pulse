@@ -10,7 +10,11 @@ import {
   existingRegistryKeys,
   filterApps,
   formatBytes,
+  canMeasureFully,
+  dataSize,
   effectiveSize,
+  sizeBadge,
+  totalFootprint,
   formatEstimatedSize,
   formatInstallDate,
   monogram,
@@ -252,6 +256,36 @@ describe("helpers puros", () => {
     expect(names(sortApps([big, unknown, small], "name", "desc"))).toEqual(["Pequeno", "Grande", "Abc"]);
   });
 
+  it("selo diferencia medido, deduzido, parcial e estimado", () => {
+    const item = app({ estimatedSizeKb: 1024 });
+    const base: AppFootprint = { appId: item.id, measuredBytes: 5_000, complete: true, fileCount: 1 };
+    expect(sizeBadge(effectiveSize(item, base)!, base).label).toBe("medido");
+    const deduced = { ...base, locationSource: "deduced" as const };
+    expect(sizeBadge(effectiveSize(item, deduced)!, deduced).label).toBe("deduzido");
+    const partial = { ...base, complete: false };
+    expect(sizeBadge(effectiveSize(item, partial)!, partial).label).toBe("parcial");
+    expect(sizeBadge(effectiveSize(item)!).label).toBe("estimado");
+  });
+
+  it("dados contam à parte e entram no total sem inventar zero", () => {
+    const item = app({ estimatedSizeKb: null });
+    const onlyData: AppFootprint = { appId: item.id, measuredBytes: null, complete: false, fileCount: 0, dataBytes: 700, dataComplete: true };
+    expect(dataSize(onlyData)).toEqual({ bytes: 700, partial: false });
+    expect(totalFootprint(item, onlyData)).toBe(700);
+    expect(totalFootprint(item)).toBeNull();
+    expect(dataSize({ ...onlyData, dataBytes: null })).toBeNull();
+    expect(totalFootprint(app({ estimatedSizeKb: 1 }), { ...onlyData, dataBytes: 76 })).toBe(1024 + 76);
+  });
+
+  it("oferece medição completa só quando algo ficou limitado", () => {
+    const base: AppFootprint = { appId: "x", measuredBytes: 10, complete: true, fileCount: 1 };
+    expect(canMeasureFully(base)).toBe(false);
+    expect(canMeasureFully({ ...base, complete: false })).toBe(true);
+    expect(canMeasureFully({ ...base, dataBytes: 5, dataComplete: false })).toBe(true);
+    expect(canMeasureFully({ ...base, complete: false, fullScan: true })).toBe(false);
+    expect(canMeasureFully(undefined)).toBe(false);
+  });
+
   it("descendentes incluem o próprio nó", () => {
     const tree = targets().folders[0];
     expect(descendantsOf(tree)).toEqual([
@@ -359,6 +393,32 @@ describe("lista de instalados", () => {
     const rows = Array.from(document.querySelectorAll(".dt-row")) as HTMLElement[];
     expect(rows[0]).toHaveTextContent("Foto Studio");
     expect(screen.getByRole("button", { name: "Ordenar por tamanho, decrescente" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("mostra dados à parte e mede por completo sob demanda", async () => {
+    const quick = { appId: "", measuredBytes: 2 * 1024 ** 3, complete: false, fileCount: 60_000, installLocation: "D:\\Jogos\\Foto", locationSource: "deduced", dataBytes: 512 * 1024 ** 2, dataComplete: true, dataFolders: ["C:\\Users\\u\\AppData\\Roaming\\Foto"] };
+    vi.mocked(invoke).mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "measure_installed_app_sizes") {
+        const ids = (args as { appIds: string[] }).appIds;
+        return Promise.resolve(ids.map(appId => ({ ...quick, appId })));
+      }
+      if (cmd === "measure_installed_app_size_full") {
+        const { appId } = args as { appId: string };
+        return Promise.resolve({ ...quick, appId, measuredBytes: 5 * 1024 ** 3, complete: true, fullScan: true });
+      }
+      return Promise.resolve(defaultInvoke(cmd));
+    });
+    render(<UninstallHub />);
+    const button = await screen.findByRole("button", { name: "Medir Foto Studio por completo" });
+    const fotoRow = button.closest(".dt-row") as HTMLElement;
+    expect(within(fotoRow).getByText("parcial")).toBeInTheDocument();
+    expect(within(fotoRow).getByText(/de dados/)).toHaveTextContent("+ 512,0 MB de dados");
+
+    fireEvent.click(button);
+    expect(await within(fotoRow).findByText("deduzido")).toBeInTheDocument();
+    expect(within(fotoRow).getByText("5,00 GB")).toBeInTheDocument();
+    expect(within(fotoRow).queryByRole("button", { name: /por completo/ })).not.toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("measure_installed_app_size_full", { appId: app().id });
   });
 
   it("cada botão Desinstalar pertence à própria linha", async () => {
