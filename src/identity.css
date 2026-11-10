@@ -1301,12 +1301,10 @@ button:disabled {
   background: var(--neu-accent-soft) !important;
 }
 
-.cleanup-welcome h3,
 .cleanup-dialog h3 {
   color: var(--neu-text-title);
 }
 
-.cleanup-welcome p,
 .cleanup-dialog p {
   color: var(--neu-text-muted);
 }

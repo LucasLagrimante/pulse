@@ -1019,7 +1019,6 @@ describe("Formatters and Components", () => {
       });
 
       render(<DiskCleanup />);
-      fireEvent.click(screen.getByRole("button", { name: "ANALISAR AGORA" }));
 
       expect(await screen.findByText("Arquivos temporários do usuário")).toBeInTheDocument();
       expect(screen.getByText("cache.bin")).toBeInTheDocument();
@@ -1072,7 +1071,6 @@ describe("Formatters and Components", () => {
       });
 
       render(<DiskCleanup />);
-      fireEvent.click(screen.getByRole("button", { name: "ANALISAR AGORA" }));
 
       const recycleCheckbox = await screen.findByRole("checkbox", { name: /Lixeira do Windows/ });
       expect(recycleCheckbox).toBeDisabled();

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AutoCleanupPanel } from "./AutoCleanupPanel";
 import { useIsStandardUser } from "./PrivilegeIndicator";
 
@@ -126,7 +126,8 @@ export function DiskCleanup() {
   const [analysis, setAnalysis] = useState<CleanupAnalysis>();
   const [insights, setInsights] = useState<GuidedInsight[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
+  // Começa analisando: a aba abre direto no cálculo do recuperável.
+  const [loading, setLoading] = useState(true);
   const [cleaning, setCleaning] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState("");
@@ -189,21 +190,12 @@ export function DiskCleanup() {
     }
   };
 
-  if (!analysis && !loading) {
-    return (
-      <div className="disk-cleanup-container">
-        <section className="cleanup-welcome panel">
-          <div>
-            <span className="eyebrow">LIMPEZA LOCAL E CONTROLADA</span>
-            <h3>Descubra espaço que pode ser recuperado.</h3>
-            <p>O Pulse verifica somente caches, temporários e relatórios conhecidos. Nada é removido durante a análise.</p>
-          </div>
-          <button type="button" className="btn-primary disk-scan-btn cleanup-analyze-btn" onClick={() => void analyze()}>ANALISAR AGORA</button>
-        </section>
-        <AutoCleanupPanel />
-      </div>
-    );
-  }
+  // Análise somente leitura disparada ao abrir a aba, sem tela intermediária.
+  useEffect(() => {
+    void analyze();
+    // Só no mount: `analyze` é recriada a cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const busy = loading || cleaning;
 
@@ -214,8 +206,8 @@ export function DiskCleanup() {
           <div className="cleanup-hero">
             <div className="cleanup-hero-stat">
               <span className="disk-toolbar-label">RECUPERÁVEL</span>
-              <strong>{loading ? "Calculando…" : formatCleanupSize(totalBytes)}</strong>
-              <small>{analysis ? `Analisado em ${formatCleanupDate(analysis.scannedAtUnixMs)}` : "Analisando categorias…"}</small>
+              <strong>{loading ? "Calculando…" : analysis ? formatCleanupSize(totalBytes) : "Indisponível"}</strong>
+              <small>{analysis ? `Analisado em ${formatCleanupDate(analysis.scannedAtUnixMs)}` : loading ? "Analisando categorias…" : "Análise indisponível"}</small>
             </div>
             <div className="cleanup-selection-summary">
               <span className="disk-toolbar-label">ESPAÇO SELECIONADO</span>

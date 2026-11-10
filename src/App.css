@@ -3546,24 +3546,12 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   overflow: hidden;
 }
 
-.cleanup-welcome {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 28px;
-  padding: clamp(22px, 4vw, 42px);
-  min-height: 0;
-}
-
-.cleanup-welcome h3,
 .cleanup-dialog h3 {
   margin: 6px 0 8px;
   color: #f0ede6;
   font-size: clamp(1.15rem, 2vw, 1.65rem);
 }
 
-.cleanup-welcome p,
 .cleanup-dialog p {
   max-width: 720px;
   margin: 0;
@@ -3571,7 +3559,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   line-height: 1.55;
 }
 
-.cleanup-analyze-btn { flex: 0 0 auto; }
 
 .cleanup-toolbar {
   flex: 0 0 auto;
@@ -3789,8 +3776,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 @container (max-width: 560px) {
   .cleanup-toolbar-row { align-items: stretch; flex-direction: column; }
   .cleanup-toolbar-actions { justify-content: stretch; }
-  .cleanup-toolbar-actions button,
-  .cleanup-analyze-btn { width: 100%; }
+  .cleanup-toolbar-actions button { width: 100%; }
   .cleanup-category { grid-template-columns: 1fr; }
   .cleanup-category-size { justify-items: start; text-align: left; padding-left: 28px; }
 }
@@ -3798,7 +3784,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 @media (max-width: 680px) {
   .storage-tabs-bar { overflow-x: auto; }
   .storage-tab-btn { flex: 0 0 auto; }
-  .cleanup-welcome { align-items: stretch; flex-direction: column; }
 }
 
 /* Container Geral do Analisador */

@@ -67,7 +67,6 @@ describe("DiskCleanup grouped layout", () => {
 
   it("groups categories, totals recoverable space and quick-selects", async () => {
     render(<DiskCleanup />);
-    fireEvent.click(screen.getByRole("button", { name: "ANALISAR AGORA" }));
 
     const gpu = await screen.findByRole("region", { name: "Jogos e GPU" });
     // Sem administrador, só a categoria de pasta do sistema ganha o aviso.
@@ -89,7 +88,6 @@ describe("DiskCleanup grouped layout", () => {
 
   it("shows guided recovery with honest unavailable sizes and never runs commands", async () => {
     render(<DiskCleanup />);
-    fireEvent.click(screen.getByRole("button", { name: "ANALISAR AGORA" }));
 
     const guided = await screen.findByRole("region", { name: "Recuperação guiada" });
     expect(within(guided).getByText("45,0 GB")).toBeInTheDocument();
