@@ -4,9 +4,9 @@ Central nativa de observabilidade, diagnóstico e controle local para Windows 11
 
 - **Gratuito**, código aberto (MIT) e sem cadastro
 - **Local por padrão**: sem conta, sem telemetria e sem servidor do Pulse
-- **Windows 11 x64**, instalador NSIS de 3,6 MB
-- Versão atual: 1.4.0
-- SHA-256: `cbdfc7c2a9954b68620ddc92639a7e455f0a994036b3f11b44fb83a654f03bc6`
+- **Windows 11 x64**, instalador NSIS de 3,7 MB
+- Versão atual: 1.5.0
+- SHA-256: `999552829a010056e2d061d2b9ec5fd408d500bac39f47569f1eae8a94fda15a`
 - Assinatura de código: o instalador ainda não é assinado, então o SmartScreen pode avisar ("Mais informações" → "Executar assim mesmo"); confira o SHA-256 publicado. Política: https://github.com/LucasLagrimante/pulse#política-de-assinatura-de-código
 - Site: https://pulse.lagrimante.com.br/
 - Download direto: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe
@@ -45,7 +45,7 @@ Flyout compacto na bandeja do sistema com telemetria instantânea, barras duplas
 
 ## Como funciona
 
-1. **Baixe o instalador** — um único executável NSIS compacto (instalador NSIS de 3,6 MB), configurado para instalação no usuário atual sem exigir elevação de administrador para todo o sistema. O Pulse roda sem administrador; o indicador PERMISSÃO no topo mostra o modo atual, lista o que depende de elevação (pastas do sistema na limpeza, ponto de restauração, serviços do Windows) e permite reiniciar como administrador pelo UAC quando você quiser.
+1. **Baixe o instalador** — um único executável NSIS compacto (instalador NSIS de 3,7 MB), configurado para instalação no usuário atual sem exigir elevação de administrador para todo o sistema. O Pulse roda sem administrador; o indicador PERMISSÃO no topo mostra o modo atual, lista o que depende de elevação (pastas do sistema na limpeza, ponto de restauração, serviços do Windows) e permite reiniciar como administrador pelo UAC quando você quiser.
 2. **Instale em segundos** — a instalação é local, fecha instâncias anteriores automaticamente em upgrades, utiliza o WebView2 nativo do Windows 11 e mantém o Pulse atualizado automaticamente ao iniciar com verificação de SHA-256 (com toggle para desativar no topo ou na bandeja).
 3. **Abra e leia o sistema** — o painel carrega a telemetria da máquina imediatamente e fica disponível na bandeja do sistema.
 
