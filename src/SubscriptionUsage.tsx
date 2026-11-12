@@ -759,14 +759,14 @@ export function SubscriptionUsage() {
 
               <div className="quota-key-form">
                 <label>
-                  <span>{keyModalTarget === "openrouter" ? "CHAVE OPENROUTER (SK-OR-…)" : "CHAVE OPENCODE GO (SK-…)"}</span>
+                  <span>{keyModalTarget === "openrouter" ? "CHAVE OPENROUTER (SK-OR-…)" : "CHAVE OPENCODE GO (OC… OU SK-…)"}</span>
                   <input
                     type="password"
                     autoComplete="off"
                     spellCheck={false}
                     value={keyModalTarget === "openrouter" ? openrouterKey : opencodeGoKey}
                     onChange={event => keyModalTarget === "openrouter" ? setOpenrouterKey(event.target.value) : setOpencodeGoKey(event.target.value)}
-                    placeholder={keyModalTarget === "openrouter" ? (settings?.openrouterMasked || "sk-or-…") : (settings?.opencodeGoMasked || "sk-…")}
+                    placeholder={keyModalTarget === "openrouter" ? (settings?.openrouterMasked || "sk-or-…") : (settings?.opencodeGoMasked || "oc_sk_…")}
                     aria-label={keyModalTarget === "openrouter" ? "Chave OpenRouter" : "Chave OpenCode Go"}
                   />
                 </label>

@@ -2362,10 +2362,19 @@ pub async fn set_opencode_go_api_key(api_key: String) -> Result<SubscriptionSett
         .map_err(|_| "Falha ao guardar a chave com segurança.".to_string())?
 }
 
+pub(crate) fn is_valid_opencode_go_key(key: &str) -> bool {
+    let trimmed = key.trim();
+    if trimmed.len() < 16 || trimmed.chars().any(char::is_whitespace) {
+        return false;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    lower.starts_with("oc") || lower.starts_with("sk-")
+}
+
 fn set_opencode_go_api_key_sync(api_key: &str) -> Result<SubscriptionSettings, String> {
     let key = api_key.trim();
-    if key.len() < 20 || !key.starts_with("sk-") || key.chars().any(char::is_whitespace) {
-        return Err("Informe uma chave OpenCode Go válida (sk-…).".into());
+    if !is_valid_opencode_go_key(key) {
+        return Err("Informe uma chave OpenCode Go válida (oc… ou sk-…).".into());
     }
     let entry = keyring::Entry::new(OPENCODE_GO_SERVICE, OPENCODE_GO_ACCOUNT)
         .map_err(|_| "O Credential Manager do Windows está indisponível.".to_string())?;
@@ -2690,5 +2699,18 @@ mod tests {
         // mas a janela e o percentual continuam corretos.
         assert_eq!(windows[1].remaining_percent, Some(70.0));
         assert_eq!(windows[1].window_minutes, Some(10080));
+    }
+
+    #[test]
+    fn validates_opencode_go_keys_with_oc_and_legacy_sk_prefixes() {
+        assert!(is_valid_opencode_go_key("oc_sk_1234567890abcdef"));
+        assert!(is_valid_opencode_go_key("oc-sk-1234567890abcdef"));
+        assert!(is_valid_opencode_go_key("oc-1234567890abcdef"));
+        assert!(is_valid_opencode_go_key("oc_1234567890abcdef"));
+        assert!(is_valid_opencode_go_key("OC_SK_ABCDEFGHIJ123456"));
+        assert!(is_valid_opencode_go_key("sk-1234567890abcdef"));
+        assert!(!is_valid_opencode_go_key("sk-short"));
+        assert!(!is_valid_opencode_go_key("oc_sk with space 123456"));
+        assert!(!is_valid_opencode_go_key("invalid-prefix-1234567890"));
     }
 }

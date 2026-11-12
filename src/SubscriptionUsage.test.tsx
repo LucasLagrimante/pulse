@@ -158,6 +158,8 @@ describe("SubscriptionUsage", () => {
     // Abrir via botão dedicado da toolbar
     fireEvent.click(screen.getByRole("button", { name: "CONFIGURAR OPENCODE GO" }));
     expect(screen.getByRole("heading", { name: "Configurar OpenCode Go" })).toBeInTheDocument();
+    expect(screen.getByText("CHAVE OPENCODE GO (OC… OU SK-…)")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("oc_sk_…")).toBeInTheDocument();
   });
 
   it("formats OpenRouter values explicitly as dollars", () => {
