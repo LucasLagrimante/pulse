@@ -2470,9 +2470,9 @@ fn strip_terminal(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        codex_from_rate_limits, mask_key, now_unix_ms, parse_antigravity_cli_usage,
-        parse_antigravity_credential, parse_claude_cli_usage, parse_claude_credential,
-        parse_cli_reset_at, quota_from_used, strip_terminal,
+        codex_from_rate_limits, is_valid_opencode_go_key, mask_key, now_unix_ms,
+        parse_antigravity_cli_usage, parse_antigravity_credential, parse_claude_cli_usage,
+        parse_claude_credential, parse_cli_reset_at, quota_from_used, strip_terminal,
     };
     use chrono::TimeZone;
     use serde_json::json;
