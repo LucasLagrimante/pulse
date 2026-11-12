@@ -1220,7 +1220,7 @@ describe("Pulse application shell", () => {
         case "get_self_update_status":
           return Promise.resolve({
             enabled: true,
-            currentVersion: "1.4.0",
+            currentVersion: "1.5.0",
             phase: "idle",
             availableVersion: null,
             releaseSizeFormatted: "3,6 MB",
@@ -1234,7 +1234,7 @@ describe("Pulse application shell", () => {
         case "set_auto_self_update":
           return Promise.resolve({
             enabled: false,
-            currentVersion: "1.4.0",
+            currentVersion: "1.5.0",
             phase: "idle",
             availableVersion: null,
             releaseSizeFormatted: "3,6 MB",
@@ -1248,7 +1248,7 @@ describe("Pulse application shell", () => {
         case "check_self_update":
           return Promise.resolve({
             enabled: true,
-            currentVersion: "1.4.0",
+            currentVersion: "1.5.0",
             phase: "up_to_date",
             availableVersion: null,
             releaseSizeFormatted: "3,6 MB",

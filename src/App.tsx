@@ -2131,6 +2131,7 @@ function App() {
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(true);
   const [selfUpdateStatus, setSelfUpdateStatus] = useState<SelfUpdateStatus | null>(null);
   const [selfUpdateBusy, setSelfUpdateBusy] = useState(false);
+  const selfUpdateMutatedRef = useRef(false);
   const [fileQuery, setFileQuery] = useState("");
   const [fileCategory, setFileCategory] = useState("");
   const [fileSort, setFileSort] = useState("recent");
@@ -2533,7 +2534,7 @@ function App() {
         .catch(() => undefined);
       void invoke<SelfUpdateStatus>("get_self_update_status")
         .then(status => {
-          if (status && typeof status === "object") {
+          if (!disposed && !selfUpdateMutatedRef.current && status && typeof status === "object") {
             setSelfUpdateStatus(status);
             if (typeof status.enabled === "boolean") {
               setAutoUpdateEnabled(status.enabled);
@@ -2634,6 +2635,7 @@ function App() {
     listen<SelfUpdateStatus>("pulse://self-update-status", event => {
       const payload = event.payload;
       if (!payload || typeof payload !== "object") return;
+      selfUpdateMutatedRef.current = true;
       setSelfUpdateStatus(payload);
       if (typeof payload.enabled === "boolean") {
         setAutoUpdateEnabled(payload.enabled);
@@ -2803,6 +2805,7 @@ function App() {
   };
 
   const toggleAutoUpdate = async (enabled: boolean) => {
+    selfUpdateMutatedRef.current = true;
     setAutoUpdateEnabled(enabled);
     try {
       const status = await invoke<SelfUpdateStatus>("set_auto_self_update", { enabled });
@@ -2818,6 +2821,7 @@ function App() {
 
   const handleCheckSelfUpdate = async () => {
     if (selfUpdateBusy) return;
+    selfUpdateMutatedRef.current = true;
     setSelfUpdateBusy(true);
     try {
       const status = await invoke<SelfUpdateStatus>("check_self_update", { installIfAvailable: true });
@@ -4026,7 +4030,7 @@ function App() {
                       <dt>Versão</dt>
                       <dd>
                         <span>
-                          {selfUpdateStatus?.currentVersion ?? debugAuditInfo?.applicationVersion ?? "1.4.0"}
+                          {selfUpdateStatus?.currentVersion ?? debugAuditInfo?.applicationVersion ?? "1.5.0"}
                           {selfUpdateStatus?.message ? ` · ${selfUpdateStatus.message}` : ""}
                           {selfUpdateStatus?.error ? ` · ${selfUpdateStatus.error}` : ""}
                         </span>{" "}
