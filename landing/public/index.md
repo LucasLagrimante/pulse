@@ -46,7 +46,7 @@ Flyout compacto na bandeja do sistema com telemetria instantânea, barras duplas
 ## Como funciona
 
 1. **Baixe o instalador** — um único executável NSIS compacto (instalador NSIS de 3,6 MB), configurado para instalação no usuário atual sem exigir elevação de administrador para todo o sistema. O Pulse roda sem administrador; o indicador PERMISSÃO no topo mostra o modo atual, lista o que depende de elevação (pastas do sistema na limpeza, ponto de restauração, serviços do Windows) e permite reiniciar como administrador pelo UAC quando você quiser.
-2. **Instale em segundos** — a instalação é local, fecha instâncias anteriores automaticamente em upgrades e utiliza o WebView2 nativo do Windows 11.
+2. **Instale em segundos** — a instalação é local, fecha instâncias anteriores automaticamente em upgrades, utiliza o WebView2 nativo do Windows 11 e mantém o Pulse atualizado automaticamente ao iniciar com verificação de SHA-256 (com toggle para desativar no topo ou na bandeja).
 3. **Abra e leia o sistema** — o painel carrega a telemetria da máquina imediatamente e fica disponível na bandeja do sistema.
 
 ## Requisitos
@@ -63,7 +63,7 @@ A privacidade do Pulse não é uma promessa de política: é uma consequência d
 - Sem telemetria: nenhuma leitura do sistema é transmitida para fora.
 - Sem dados fictícios: sensor sem suporte aparece como Indisponível.
 - Sem ações destrutivas: nada é apagado ou alterado sem confirmação explícita; a limpeza automática só roda se você a ativar.
-- Rede só quando você pede: Cotas de IA consultam direto os endpoints oficiais de cada provedor; o assistente de armazenamento envia ao CLI de IA escolhido um resumo com nomes e caminhos do scan e mostra o comando antes de executar.
+- Rede transparente e sob seu controle: ao iniciar, o Pulse confere novas versões no manifesto oficial e atualiza silenciosamente após validar o SHA-256 (desativável a qualquer momento); Cotas de IA consultam direto os endpoints oficiais de cada provedor; o assistente de armazenamento envia ao CLI de IA escolhido um resumo com nomes e caminhos do scan e mostra o comando antes de executar.
 - Código aberto sob licença MIT.
 
 ## Links

@@ -343,6 +343,19 @@ export type DebugAuditInfo = {
   dataResidency: string;
 };
 export type StartupRegistration = { enabled: boolean };
+export type SelfUpdateStatus = {
+  enabled: boolean;
+  currentVersion: string;
+  phase: string;
+  availableVersion: string | null;
+  releaseSizeFormatted: string | null;
+  lastCheckedAtUnixMs: number | null;
+  lastUpdatedToVersion: string | null;
+  lastUpdatedFromVersion: string | null;
+  lastUpdatedAtUnixMs: number | null;
+  message: string | null;
+  error: string | null;
+};
 
 const copy: Record<string, { eyebrow: string; title: string; intro: string }> = {
   "Visão geral": {
@@ -478,6 +491,12 @@ const debugOperationLabel = (operation: string) => ({
   subscription_usage_codex: "Cota do Codex",
   subscription_usage_antigravity: "Cota do Antigravity",
   subscription_usage_openrouter: "Saldo do OpenRouter",
+  self_update_check: "Verificação de atualização do Pulse",
+  self_update_download: "Download de atualização do Pulse",
+  self_update_verify: "Validação SHA-256 da atualização",
+  self_update_install: "Instalação silenciosa de atualização",
+  self_update_applied: "Atualização automática concluída",
+  self_update_preference: "Preferência de atualização ao iniciar",
   subscription_usage_opencode_go: "Cota do OpenCode Go",
 }[operation] ?? operation.replace(/_/g, " "));
 
@@ -2109,6 +2128,9 @@ function App() {
   const [startupItemsLoaded, setStartupItemsLoaded] = useState(false);
   const [startupLoadError, setStartupLoadError] = useState("");
   const [startupEnabled, setStartupEnabled] = useState(false);
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(true);
+  const [selfUpdateStatus, setSelfUpdateStatus] = useState<SelfUpdateStatus | null>(null);
+  const [selfUpdateBusy, setSelfUpdateBusy] = useState(false);
   const [fileQuery, setFileQuery] = useState("");
   const [fileCategory, setFileCategory] = useState("");
   const [fileSort, setFileSort] = useState("recent");
@@ -2509,6 +2531,16 @@ function App() {
       void invoke<StartupRegistration>("get_startup_registration")
         .then(x => setStartupEnabled(x?.enabled === true))
         .catch(() => undefined);
+      void invoke<SelfUpdateStatus>("get_self_update_status")
+        .then(status => {
+          if (status && typeof status === "object") {
+            setSelfUpdateStatus(status);
+            if (typeof status.enabled === "boolean") {
+              setAutoUpdateEnabled(status.enabled);
+            }
+          }
+        })
+        .catch(() => undefined);
       void loadStartupItems();
     }, 150);
 
@@ -2583,6 +2615,33 @@ function App() {
     listen<string>("pulse://navigate-area", event => {
       if (typeof event.payload === "string" && (ALL_NAVIGATION_ITEMS as readonly string[]).includes(event.payload)) {
         setActiveArea(event.payload);
+      }
+    })
+      .then(cleanup => {
+        if (disposed) cleanup();
+        else unlisten = cleanup;
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    listen<SelfUpdateStatus>("pulse://self-update-status", event => {
+      const payload = event.payload;
+      if (!payload || typeof payload !== "object") return;
+      setSelfUpdateStatus(payload);
+      if (typeof payload.enabled === "boolean") {
+        setAutoUpdateEnabled(payload.enabled);
+      }
+      if (payload.phase === "downloading" && payload.availableVersion) {
+        showToast("loading", `Baixando atualização do Pulse (${payload.availableVersion})…`);
+      } else if (payload.phase === "installing" && payload.availableVersion) {
+        showToast("loading", `Instalando Pulse ${payload.availableVersion} e reiniciando…`);
       }
     })
       .then(cleanup => {
@@ -2740,6 +2799,44 @@ function App() {
     } catch {
       setStartupEnabled(!enabled);
       setError("O Windows não permitiu alterar a inicialização do Pulse.");
+    }
+  };
+
+  const toggleAutoUpdate = async (enabled: boolean) => {
+    setAutoUpdateEnabled(enabled);
+    try {
+      const status = await invoke<SelfUpdateStatus>("set_auto_self_update", { enabled });
+      if (status && typeof status === "object") {
+        setSelfUpdateStatus(status);
+        setAutoUpdateEnabled(status.enabled === true);
+      }
+    } catch {
+      setAutoUpdateEnabled(!enabled);
+      setError("Não foi possível alterar a preferência de atualização automática.");
+    }
+  };
+
+  const handleCheckSelfUpdate = async () => {
+    if (selfUpdateBusy) return;
+    setSelfUpdateBusy(true);
+    try {
+      const status = await invoke<SelfUpdateStatus>("check_self_update", { installIfAvailable: true });
+      if (status && typeof status === "object") {
+        setSelfUpdateStatus(status);
+        if (status.phase === "up_to_date") {
+          showToast("success", `O Pulse ${status.currentVersion} já está na versão mais recente`, 2500);
+        } else if (status.phase === "available" && status.availableVersion) {
+          showToast("info", `Nova versão ${status.availableVersion} disponível`, 3000);
+        }
+      }
+    } catch (err) {
+      showToast(
+        "error",
+        typeof err === "string" ? err : "Não foi possível verificar atualizações do Pulse.",
+        3500,
+      );
+    } finally {
+      setSelfUpdateBusy(false);
     }
   };
 
@@ -3018,6 +3115,18 @@ function App() {
                 type="checkbox"
                 checked={startupEnabled}
                 onChange={e => void togglePulse(e.target.checked)}
+              />
+            </label>
+            <label
+              className="header-toggle"
+              title="Verificar e instalar novas versões do Pulse automaticamente ao iniciar"
+            >
+              <span>ATUALIZAR AO INICIAR</span>
+              <input
+                aria-label="Atualizar ao iniciar"
+                type="checkbox"
+                checked={autoUpdateEnabled}
+                onChange={e => void toggleAutoUpdate(e.target.checked)}
               />
             </label>
             <label className="header-toggle">
@@ -3913,6 +4022,36 @@ function App() {
                     sem enviar telemetria para a nuvem.
                   </p>
                   <dl className="info-details">
+                    <div>
+                      <dt>Versão</dt>
+                      <dd>
+                        <span>
+                          {selfUpdateStatus?.currentVersion ?? debugAuditInfo?.applicationVersion ?? "1.4.0"}
+                          {selfUpdateStatus?.message ? ` · ${selfUpdateStatus.message}` : ""}
+                          {selfUpdateStatus?.error ? ` · ${selfUpdateStatus.error}` : ""}
+                        </span>{" "}
+                        <button
+                          type="button"
+                          onClick={() => void handleCheckSelfUpdate()}
+                          disabled={
+                            selfUpdateBusy ||
+                            selfUpdateStatus?.phase === "checking" ||
+                            selfUpdateStatus?.phase === "downloading" ||
+                            selfUpdateStatus?.phase === "verifying" ||
+                            selfUpdateStatus?.phase === "installing"
+                          }
+                        >
+                          {selfUpdateBusy || selfUpdateStatus?.phase === "checking"
+                            ? "Verificando…"
+                            : selfUpdateStatus?.phase === "downloading" ||
+                                selfUpdateStatus?.phase === "verifying" ||
+                                selfUpdateStatus?.phase === "installing"
+                              ? "Atualizando…"
+                              : "Verificar atualização"}
+                          <span aria-hidden="true">↻</span>
+                        </button>
+                      </dd>
+                    </div>
                     <div>
                       <dt>Autor</dt>
                       <dd>Lucas Lagrimante</dd>

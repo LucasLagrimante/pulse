@@ -1217,6 +1217,48 @@ describe("Pulse application shell", () => {
           return Promise.resolve({ enabled: false }) as never;
         case "set_startup_registration":
           return Promise.resolve({ enabled: true }) as never;
+        case "get_self_update_status":
+          return Promise.resolve({
+            enabled: true,
+            currentVersion: "1.4.0",
+            phase: "idle",
+            availableVersion: null,
+            releaseSizeFormatted: "3,6 MB",
+            lastCheckedAtUnixMs: null,
+            lastUpdatedToVersion: null,
+            lastUpdatedFromVersion: null,
+            lastUpdatedAtUnixMs: null,
+            message: null,
+            error: null,
+          }) as never;
+        case "set_auto_self_update":
+          return Promise.resolve({
+            enabled: false,
+            currentVersion: "1.4.0",
+            phase: "idle",
+            availableVersion: null,
+            releaseSizeFormatted: "3,6 MB",
+            lastCheckedAtUnixMs: null,
+            lastUpdatedToVersion: null,
+            lastUpdatedFromVersion: null,
+            lastUpdatedAtUnixMs: null,
+            message: null,
+            error: null,
+          }) as never;
+        case "check_self_update":
+          return Promise.resolve({
+            enabled: true,
+            currentVersion: "1.4.0",
+            phase: "up_to_date",
+            availableVersion: null,
+            releaseSizeFormatted: "3,6 MB",
+            lastCheckedAtUnixMs: 1725000000000,
+            lastUpdatedToVersion: null,
+            lastUpdatedFromVersion: null,
+            lastUpdatedAtUnixMs: null,
+            message: "O Pulse está atualizado.",
+            error: null,
+          }) as never;
         case "get_debug_mode":
           return Promise.resolve(false) as never;
         case "set_debug_mode":
@@ -1420,6 +1462,49 @@ describe("Pulse application shell", () => {
 
     expect(openUrl).toHaveBeenCalledWith("https://lucaslagrimante.github.io/");
     expect(openUrl).toHaveBeenCalledWith("mailto:llagrimante@gmail.com");
+
+    // Verifica atualização manual na tela Sobre o Pulse
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Verificar atualização/ }));
+    });
+    expect(invoke).toHaveBeenCalledWith("check_self_update", { installIfAvailable: true });
+    expect(await screen.findByText(/O Pulse está atualizado\./)).toBeInTheDocument();
+  });
+
+  it("defaults auto-update on startup to enabled and persists toggle changes", async () => {
+    render(<App />);
+
+    const autoUpdateCheckbox = await screen.findByRole("checkbox", { name: "Atualizar ao iniciar" });
+    expect(autoUpdateCheckbox).toBeChecked();
+
+    await act(async () => {
+      fireEvent.click(autoUpdateCheckbox);
+    });
+
+    expect(invoke).toHaveBeenCalledWith("set_auto_self_update", { enabled: false });
+    expect(autoUpdateCheckbox).not.toBeChecked();
+
+    // Emite evento de progresso do backend para validar reatividade da UI
+    act(() => {
+      registeredEventListeners["pulse://self-update-status"]?.({
+        payload: {
+          enabled: true,
+          currentVersion: "1.4.0",
+          phase: "downloading",
+          availableVersion: "1.5.0",
+          releaseSizeFormatted: "3,6 MB",
+          lastCheckedAtUnixMs: Date.now(),
+          lastUpdatedToVersion: null,
+          lastUpdatedFromVersion: null,
+          lastUpdatedAtUnixMs: null,
+          message: "Baixando Pulse 1.5.0…",
+          error: null,
+        },
+      });
+    });
+
+    expect(autoUpdateCheckbox).toBeChecked();
+    expect(screen.getByText("Baixando atualização do Pulse (1.5.0)…")).toBeInTheDocument();
   });
 
   it("opens the corresponding module from a telemetry card", async () => {

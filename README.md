@@ -119,8 +119,9 @@ A implementação Python original foi removida da árvore atual e permanece no h
 
 ## Privacidade e rede
 
-O monitoramento (processos, desempenho, armazenamento, inicialização, serviços, áudio e debug) roda inteiramente na máquina, sem conta e sem telemetria. Duas funções opcionais acessam a internet, e só quando o usuário as usa:
+O monitoramento (processos, desempenho, armazenamento, inicialização, serviços, áudio e debug) roda inteiramente na máquina, sem conta e sem telemetria. Três funções acessam a internet (e todas podem ser desativadas ou só rodam sob demanda):
 
+- **Atualização automática ao iniciar**: por padrão, ao abrir o Pulse ele consulta `https://pulse.lagrimante.com.br/release.json` e, quando há versão mais nova, baixa o instalador da GitHub Release oficial, confere o `SHA-256` e atualiza silenciosamente. Pode ser desativada a qualquer momento no topo do app (`ATUALIZAR AO INICIAR`) ou no menu da bandeja.
 - **Cotas de IA**: consulta o uso das suas assinaturas diretamente nos endpoints oficiais de cada provedor (Anthropic, OpenAI, Google, OpenRouter, OpenCode) com as credenciais que já existem na máquina ou chaves salvas no Credential Manager do Windows. Nada passa por servidores do Pulse.
 - **Assistente de armazenamento com IA**: abre o CLI escolhido (Claude Code, Codex ou Antigravity) com um resumo do scan de disco. Esse resumo inclui nomes e caminhos de pastas e arquivos e é enviado ao provedor do CLI. O comando completo é exibido antes da execução.
 

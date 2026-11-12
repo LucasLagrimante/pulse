@@ -15,6 +15,7 @@ pub mod process_identity;
 pub mod process_usage;
 pub mod quota_history;
 pub mod recent_files;
+pub mod self_update;
 pub mod services;
 pub mod single_instance;
 pub mod startup;
@@ -55,6 +56,7 @@ pub fn run() {
             subscription_usage::init(app.handle().clone());
             disk_analyzer::init(app.handle().clone());
             disk_cleanup::init(app.handle().clone());
+            self_update::init(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -97,6 +99,9 @@ pub fn run() {
             audio::set_audio_mixer_master,
             startup::get_startup_registration,
             startup::set_startup_registration,
+            self_update::get_self_update_status,
+            self_update::set_auto_self_update,
+            self_update::check_self_update,
             system_overview::get_system_overview,
             system_overview::terminate_process,
             performance::get_performance_details,

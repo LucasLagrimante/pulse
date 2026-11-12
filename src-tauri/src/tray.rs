@@ -269,6 +269,13 @@ pub fn build_tray_menu<R: tauri::Runtime>(manager: &AppHandle<R>) -> Result<Menu
     .checked(minimize)
     .build(manager)?;
 
+    let auto_update_item = CheckMenuItemBuilder::with_id(
+        "toggle_auto_self_update",
+        "Atualizar ao iniciar",
+    )
+    .checked(crate::self_update::is_auto_update_enabled())
+    .build(manager)?;
+
     let exit_item = MenuItemBuilder::with_id("exit", "Sair do Pulse").build(manager)?;
 
     MenuBuilder::new(manager)
@@ -279,6 +286,7 @@ pub fn build_tray_menu<R: tauri::Runtime>(manager: &AppHandle<R>) -> Result<Menu
         .item(&in_submenu)
         .separator()
         .item(&minimize_item)
+        .item(&auto_update_item)
         .separator()
         .item(&exit_item)
         .build()
@@ -314,6 +322,10 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
                     prefs.minimize_on_close = !prefs.minimize_on_close;
                     let _ = save_preferences(&prefs);
                     update_tray_menu(app);
+                }
+                "toggle_auto_self_update" => {
+                    let next = !crate::self_update::is_auto_update_enabled();
+                    let _ = crate::self_update::set_auto_self_update_sync(next, Some(app));
                 }
                 "exit" => {
                     app.exit(0);

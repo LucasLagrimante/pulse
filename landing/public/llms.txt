@@ -49,7 +49,7 @@ Quando NÃO usar:
 ## Como funciona
 
 1. Baixe o instalador NSIS (3,5 MB) em https://pulse.lagrimante.com.br/#download.
-2. Instale — o processo é local no escopo do usuário atual e não exige privilégios de administrador. O Pulse roda sem administrador; o indicador PERMISSÃO no topo mostra o modo atual, lista o que depende de elevação (pastas do sistema na limpeza, ponto de restauração, serviços do Windows) e permite reiniciar como administrador pelo UAC quando você quiser.
+2. Instale — o processo é local no escopo do usuário atual e não exige privilégios de administrador. O Pulse roda sem administrador; o indicador PERMISSÃO no topo mostra o modo atual, lista o que depende de elevação (pastas do sistema na limpeza, ponto de restauração, serviços do Windows) e permite reiniciar como administrador pelo UAC quando você quiser. Ao iniciar, o Pulse também verifica automaticamente se há nova versão oficial, valida o SHA-256 do instalador e atualiza em segundo plano (opção ativada por padrão e desativável no topo ou no menu da bandeja).
 3. Abra o Pulse. A telemetria da máquina carrega imediatamente na janela principal e no ícone da bandeja.
 
 ## Requisitos
