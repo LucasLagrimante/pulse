@@ -269,7 +269,15 @@ fn aggregate_usage(
 }
 
 pub fn parse_overview(payload: &str, sampled_at_unix_ms: u64) -> Result<SystemOverview, String> {
-    let raw: RawSystemOverview = serde_json::from_str(payload)
+    // O ConvertTo-Json do Windows PowerShell 5.1 não escapa todos os
+    // caracteres de controle: metadados de executável (ex.: FileDescription do
+    // Battle.net com BEL 0x07) saem crus e o serde rejeita o JSON inteiro,
+    // derrubando a telemetria. Espaço é válido dentro e fora de strings JSON.
+    let sanitized: String = payload
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let raw: RawSystemOverview = serde_json::from_str(&sanitized)
         .map_err(|e| format!("Não foi possível interpretar o resumo do Windows: {e}"))?;
     Ok(SystemOverview {
         cpu_percent: raw.cpu_percent,
@@ -722,6 +730,15 @@ mod tests {
             parse_overview(&payload, 123).unwrap().top_processes.len(),
             25
         );
+    }
+
+    #[test]
+    fn overview_tolerates_raw_control_characters_in_metadata() {
+        // Reproduz a saída real do PowerShell 5.1 com BEL cru no FileDescription.
+        let payload = "{\"cpuPercent\":1,\"startupItemCount\":0,\"topProcesses\":[{\"name\":\"Battle.net\",\"id\":8784,\"memoryMb\":149.4,\"displayName\":\"Battle\u{7}net\",\"publisher\":\"Blizzard\tEntertainment\"}]}";
+        let process = &parse_overview(payload, 123).unwrap().top_processes[0];
+        assert_eq!(process.display_name.as_deref(), Some("Battle net"));
+        assert_eq!(process.publisher.as_deref(), Some("Blizzard Entertainment"));
     }
 
     #[test]
