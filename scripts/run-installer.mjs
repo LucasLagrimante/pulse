@@ -1,10 +1,10 @@
 // Executa o instalador NSIS gerado pelo `tauri build`.
-// Uso: `npm run tauri:build:install`. Localiza o `*-setup.exe` mais recente em
-// `src-tauri\target\release\bundle\nsis\` e o abre via `cmd /c start`
+// Uso: `npm run tauri:build:install`. Abre `Pulse_<versão>_x64-setup.exe` da versão
+// atual do `tauri.conf.json` em `src-tauri\target\release\bundle\nsis\` via `cmd /c start`
 // (ShellExecute: processo desanexado e UAC acionado se o instalador exigir
 // elevação — spawn direto usa CreateProcess e falha nesse caso).
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,22 +27,17 @@ const bundleDir = join(
   "nsis",
 );
 
-let setups;
-try {
-  setups = readdirSync(bundleDir)
-    .filter((file) => file.toLowerCase().endsWith("-setup.exe"))
-    .map((file) => ({ file, mtime: statSync(join(bundleDir, file)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime);
-} catch {
-  console.error(`[run-installer] Pasta não encontrada: ${bundleDir}`);
+// Escolhe pela versão, nunca pela data: o cp de volta do WSL iguala as datas
+// e instaladores de versões antigas podem ter sobrado na pasta.
+const rootDir = join(dirname(fileURLToPath(import.meta.url)), "..");
+const version = JSON.parse(readFileSync(join(rootDir, "src-tauri", "tauri.conf.json"), "utf8")).version;
+const setupName = `Pulse_${version}_x64-setup.exe`;
+if (!existsSync(join(bundleDir, setupName))) {
+  console.error(`[run-installer] ${setupName} não encontrado em ${bundleDir}.`);
   console.error("[run-installer] Rode `npm run build:native` primeiro.");
   process.exit(1);
 }
-
-if (setups.length === 0) {
-  console.error(`[run-installer] Nenhum *-setup.exe em ${bundleDir}.`);
-  process.exit(1);
-}
+const setups = [{ file: setupName }];
 
 const installer = join(bundleDir, setups[0].file);
 let winInstallerPath = installer;

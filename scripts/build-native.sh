@@ -149,12 +149,24 @@ node "$STAGING_WIN\node_modules\@tauri-apps\cli\tauri.js" build --bundles nsis -
 exit /b %errorlevel%
 BATEOF
 
+# O tauri build não limpa bundle/nsis: instaladores de versões antigas ficavam
+# lado a lado com o novo e o run-installer chegou a abrir o 1.4/1.5 depois da
+# renumeração para 1.2.0. Cada build deixa só o instalador da versão atual.
+VERSION="$(node -p 'require("./src-tauri/tauri.conf.json").version')"
+SETUP="Pulse_${VERSION}_x64-setup.exe"
+rm -f "$TARGET_DIR"/release/bundle/nsis/*-setup.exe
+
 (cd "$STAGING" && "$CMD_EXE" /c run-build.bat < /dev/null)
 
 echo "==> 4/5  copiando artefatos de volta para o WSL"
-mkdir -p src-tauri/target/release
+mkdir -p src-tauri/target/release/bundle/nsis
 cp -f "$TARGET_DIR/release/pulse-windows.exe" src-tauri/target/release/ 2>/dev/null || true
-cp -rf "$TARGET_DIR/release/bundle" src-tauri/target/release/ 2>/dev/null || true
+rm -f src-tauri/target/release/bundle/nsis/*-setup.exe
+if [ ! -f "$TARGET_DIR/release/bundle/nsis/$SETUP" ]; then
+  echo "instalador esperado não foi gerado: $SETUP" >&2
+  exit 1
+fi
+cp -f "$TARGET_DIR/release/bundle/nsis/$SETUP" src-tauri/target/release/bundle/nsis/
 
 if [ "$SYNC_LANDING" -eq 1 ]; then
   echo "==> 5/5  sincronizando instalador e metadados com a Landing Page"
