@@ -51,16 +51,46 @@ export function isReleaseHousekeeping(commit) {
   return commit.type === "chore" && (commit.scope === "release" || commit.scope === "landing");
 }
 
+/** A partir de quantas áreas (escopos) com `feat` o conjunto conta como mudança grande. */
+export const MINOR_FEAT_SCOPES = 3;
+
 /**
- * major: quebra declarada (`!` ou `BREAKING CHANGE`).
- * minor: pelo menos um `feat`.
- * patch: o resto (fix, perf, refactor, build...).
+ * Classifica o release pelo que mudou de fato (política de 2026-11-13: a
+ * versão sobe devagar e reflete o tamanho real da mudança).
+ *
+ * - major: quebra declarada (`!` ou `BREAKING CHANGE`).
+ * - minor (mudança grande): módulo novo no backend — arquivo `.rs` adicionado
+ *   que expõe `#[tauri::command]` — ou novidades em MINOR_FEAT_SCOPES+ áreas.
+ * - patch (mudança pequena): o resto, inclusive `feat` pontual numa área existente.
+ *
+ * `addedFiles`: [{ path, content }] adicionados desde a tag base.
+ * Devolve { type, reasons } — as razões vão para o relatório ao usuário.
  */
-export function suggestReleaseType(commits) {
+export function classifyRelease(commits, addedFiles = []) {
   const relevant = commits.map(parseCommit).filter(c => !isReleaseHousekeeping(c));
-  if (relevant.some(c => c.breaking)) return "major";
-  if (relevant.some(c => c.type === "feat")) return "minor";
-  return "patch";
+  const breaking = relevant.filter(c => c.breaking);
+  if (breaking.length) {
+    return { type: "major", reasons: breaking.map(c => `quebra declarada: ${c.scope ? `${c.scope}: ` : ""}${c.description}`) };
+  }
+  const reasons = [];
+  const newModules = addedFiles.filter(
+    file => /^src-tauri\/src\/.+\.rs$/.test(file.path) && /#\[tauri::command\]/.test(file.content ?? ""),
+  );
+  for (const file of newModules) reasons.push(`módulo novo com comandos Tauri: ${file.path}`);
+  const featScopes = [...new Set(relevant.filter(c => c.type === "feat").map(c => c.scope ?? "geral"))];
+  if (featScopes.length >= MINOR_FEAT_SCOPES) {
+    reasons.push(`novidades em ${featScopes.length} áreas: ${featScopes.join(", ")}`);
+  }
+  if (reasons.length) return { type: "minor", reasons };
+  const counts = ["feat", "fix", "perf"].map(t => `${relevant.filter(c => c.type === t).length} ${t}`).join(", ");
+  return {
+    type: "patch",
+    reasons: [`mudança pequena: ${counts}; nenhum módulo novo e novidades em menos de ${MINOR_FEAT_SCOPES} áreas`],
+  };
+}
+
+export function suggestReleaseType(commits, addedFiles = []) {
+  return classifyRelease(commits, addedFiles).type;
 }
 
 const SECTIONS = [

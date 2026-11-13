@@ -63,7 +63,7 @@ node -e '
 run_cargo() {
   # cd no diretório NTFS antes do cmd.exe: com cwd no WSL ele cai em C:\Windows.
   (cd "$STAGING/src-tauri" && "$CMD_EXE" /c \
-    "set CARGO_TARGET_DIR=$TARGET_WIN&& set PATH=%USERPROFILE%\\.cargo\\bin;%PATH%&& $*" < /dev/null)
+    "set CARGO_TARGET_DIR=$TARGET_WIN&& set PATH=%USERPROFILE%\\.cargo\\bin;%PATH%&& $*" < "${RUN_STDIN:-/dev/null}")
 }
 
 for step in "${STEPS[@]}"; do
@@ -77,9 +77,19 @@ for step in "${STEPS[@]}"; do
         echo "==> fmt: nenhum .rs alterado"
         continue
       fi
-      WIN_FILES="$(echo "$FILES" | tr ',' '\n' | sed 's#/#\\#g; s#^#src\\#' | paste -sd' ' -)"
       echo "==> rustfmt --check: $FILES"
-      run_cargo "rustfmt --check --edition 2021 $WIN_FILES"
+      # Pela entrada padrão: com caminho, o rustfmt segue os `mod` (ex.: lib.rs)
+      # e checaria o crate inteiro, que tem divergência antiga de formatação.
+      FMT_FAIL=0
+      for f in $(echo "$FILES" | tr ',' ' '); do
+        # Com stdin o rustfmt --check sai 0 mesmo com diferença: decide pela saída.
+        OUT="$(RUN_STDIN="$PWD/src-tauri/src/$f" run_cargo "rustfmt --check --edition 2021" 2>&1 || echo "Diff in (rustfmt falhou)")"
+        if [ ! -f "src-tauri/src/$f" ] || grep -q "Diff in" <<< "$OUT"; then
+          echo "    fora do rustfmt: src-tauri/src/$f"
+          FMT_FAIL=1
+        fi
+      done
+      [ "$FMT_FAIL" -eq 0 ] || { echo "rode: cargo fmt nos arquivos acima (no espelho NTFS) e traga de volta" >&2; exit 1; }
       ;;
     clippy)
       echo "==> cargo clippy --lib --tests -D warnings"

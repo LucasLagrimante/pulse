@@ -1,6 +1,6 @@
 ---
 name: lancar-versao
-description: Lança uma versão do Pulse (patch, minor ou major) de ponta a ponta e sempre do mesmo jeito — decide o tipo por SemVer, troca a versão nos 6 arquivos, gera as notas, cria a tag anotada, acompanha o CI, sincroniza a landing com o SHA-256 publicado, publica o pulse-lp e confere que o auto-update vai enxergar a versão nova. Acionar em "lançar versão", "release", "nova versão", "publicar o Pulse", "subir uma minor/patch/major", "versão nova" ou /lancar-versao.
+description: Lança uma versão do Pulse de ponta a ponta e sempre do mesmo jeito — decide sozinha se é mudança pequena (patch), grande (minor) ou quebra (major) analisando commits e módulos novos, troca a versão nos 6 arquivos, gera as notas, cria a tag anotada, acompanha o CI, sincroniza a landing com o SHA-256 publicado, publica o pulse-lp e confere que o auto-update vai enxergar a versão nova. Acionar em "lançar versão", "release", "nova versão", "publicar o Pulse", "subir uma minor/patch/major", "versão nova" ou /lancar-versao.
 ---
 
 # Lançar versão do Pulse
@@ -19,26 +19,38 @@ A parte mecânica fica em `scripts/release.mjs` (testado em `scripts/lib/release
 | `landing/public/release.json` | SHA-256 do asset **do CI**; o auto-update do app instalado (`self_update.rs`) lê esse arquivo em `https://pulse.lagrimante.com.br/release.json` e **recusa** instalador com hash diferente |
 | `../pulse-lp` | único repo que faz deploy da landing (Cloudflare). Push nele só **depois** da Release existir |
 
-## 0. Decidir o tipo (SemVer)
+## 0. A skill decide o tipo — pequena ou grande mudança
 
-| Tipo | Quando | Exemplo |
+Não pergunte ao usuário "patch ou minor?" e não escolha no olho. O classificador
+(`classifyRelease` em `scripts/lib/release-version.mjs`) lê **os commits e os arquivos adicionados desde
+a última tag** e decide, com as razões:
+
+| Decisão | Critério (automático) | Exemplo real |
 |---|---|---|
-| **patch** `X.Y.Z+1` | só correções, desempenho, refactor, build — nada novo visível | fix da telemetria |
-| **minor** `X.Y+1.0` | pelo menos um `feat` ou mudança de comportamento visível (configuração nova, módulo novo, dado gravado em disco novo) | logs do Debug em arquivo |
-| **major** `X+1.0.0` | quebra: formato de `%LOCALAPPDATA%\Pulse\*` sem migração, mudança de URL/formato do `release.json` (versões antigas deixam de se atualizar), remoção de módulo, fim de suporte a uma versão do Windows | — |
+| **patch** `X.Y.Z+1` — mudança pequena | **padrão**: correções e `feat` pontual em módulos existentes | correção da telemetria + diagnóstico melhor no Debug |
+| **minor** `X.Y+1.0` — mudança grande | módulo novo no backend (`.rs` adicionado com `#[tauri::command]`) **ou** novidades (`feat`) em 3+ áreas distintas | inspetor de portas e projetos dev (`dev_ports.rs`) |
+| **major** `X+1.0.0` — quebra | `!` ou `BREAKING CHANGE` no commit. Use em: formato de `%LOCALAPPDATA%\Pulse\*` sem migração, URL/formato do `release.json`, remoção de módulo, fim de suporte a uma versão do Windows | — |
 
-- `node scripts/release.mjs check <tipo>` mostra o **tipo sugerido** pelos commits convencionais
-  (`!`/`BREAKING CHANGE` → major, `feat` → minor, resto → patch). O `bump` **recusa** tipo menor
-  que o sugerido; `--force-type` só com justificativa explícita do usuário.
-- **Major exige confirmação explícita do usuário** antes do bump, mesmo que ele tenha pedido "lança uma versão".
-- O usuário falar "uma menor" = **minor**.
+```bash
+node scripts/release.mjs check     # mostra "Decisão: PATCH|MINOR|MAJOR → X.Y.Z" e as razões
+```
+
+- `bump` **sem tipo** aplica a decisão. Esse é o caminho normal.
+- Major decidido: confirme com o usuário (AskUserQuestion, mostrando as razões) e rode `bump --confirmado`.
+- Tipo diferente do decidido só se o usuário pedir explicitamente, com `bump <tipo> --confirmado`.
+- O commit precisa dizer a verdade: quebra sem `!`/`BREAKING CHANGE` engana o classificador. Revise os
+  commits do intervalo antes do `check`.
+- "Uma versão menor" / "uma menor" = versão **pequena** (deixe o classificador decidir), não "minor".
+- **Nunca diminua a versão.** O auto-update (`is_newer_version`) só instala versão maior que a instalada.
+  A renumeração de 2026-11-13 (1.5.0 → 1.2.0, base `--from v1.1.1`) foi exceção pedida pelo usuário:
+  a numeração tinha subido de 1.1 a 1.5 em dois dias, e quem tinha a 1.5.0 reinstalou à mão.
 
 ## 1. Pré-condições
 
 1. Sessão única commitando: se houver outras sessões no repo (`ListAgents`), siga
    `memory/feedback/release-unico-committer-multissessao.md` antes de continuar.
 2. Todo o trabalho do release já commitado pela skill **`commit`** (commits por assunto; nunca misturar o bump com código).
-3. `node scripts/release.mjs check <tipo>` → precisa terminar com `Pré-condições OK.`
+3. `node scripts/release.mjs check` → precisa terminar com `Pré-condições OK.`
    (main, sincronizada com origin, `gh` autenticado, versões coerentes).
 
 ## 2. Gate local (tudo verde, sem exceção não documentada)
@@ -46,7 +58,7 @@ A parte mecânica fica em `scripts/release.mjs` (testado em `scripts/lib/release
 ```bash
 npm run verify                    # typecheck + lint + vitest (inclui scripts/lib) + build
 npm run lp:build && npm run lp:check
-bash scripts/rust-check.sh        # rustfmt (só .rs alterados) + clippy -D warnings + cargo test, no Windows
+bash scripts/rust-check.sh        # rustfmt (por arquivo alterado) + clippy -D warnings + cargo test, no Windows
 ```
 
 - O `rust-check.sh` roda os testes em série (em paralelo a suíte cai com ACCESS_VIOLATION, pendência
@@ -58,7 +70,7 @@ bash scripts/rust-check.sh        # rustfmt (só .rs alterados) + clippy -D warn
 ## 3. Bump, commit e tag
 
 ```bash
-node scripts/release.mjs bump <tipo>
+node scripts/release.mjs bump          # aplica a decisão do classificador
 ```
 
 Grava a versão nos 6 arquivos e as notas em `src-tauri/target/release-notes/vX.Y.Z.md` (fora do Git).

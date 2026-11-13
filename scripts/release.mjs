@@ -3,9 +3,11 @@
 // `.agents/skills/lancar-versao/SKILL.md`; este script faz as partes mecânicas
 // e checáveis, sem commitar nem dar push (isso é da skill `commit`).
 //
-//   node scripts/release.mjs check [patch|minor|major]   pré-condições + tipo sugerido + prévia das notas
-//   node scripts/release.mjs bump <patch|minor|major> [--force-type]
-//                                                        troca a versão nos 6 arquivos e grava as notas
+//   node scripts/release.mjs check [--from <tag>]     pré-condições + tipo DECIDIDO (com razões) + prévia das notas
+//   node scripts/release.mjs bump [tipo] [--confirmado] [--from <tag>]
+//        sem tipo: usa o tipo decidido pelo classificador (padrão).
+//        tipo diferente do decidido, ou major: exige --confirmado do usuário.
+//        --from <tag>: base explícita (renumeração); a versão nova = base + tipo.
 //   node scripts/release.mjs notes                       imprime as notas desde a última tag
 //   node scripts/release.mjs verify [versão]             confere Release, asset, landing e release.json no ar
 import { execFileSync } from "node:child_process";
@@ -21,13 +23,12 @@ import {
   bumpVersion,
   readVersions,
   renderReleaseNotes,
-  suggestReleaseType,
+  classifyRelease,
 } from "./lib/release-version.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = "LucasLagrimante/pulse";
 const LIVE_RELEASE_JSON = "https://pulse.lagrimante.com.br/release.json";
-const ORDER = { patch: 0, minor: 1, major: 2 };
 
 const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 const fail = message => {
@@ -90,18 +91,47 @@ function preconditions({ requireClean }) {
   return problems;
 }
 
-function report(type) {
-  const version = currentVersion();
-  const tag = lastTag();
+function argValue(name) {
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
+/** Arquivos adicionados desde a base, com o conteúdo atual (para achar módulos novos). */
+function addedFilesSince(tag) {
+  const range = tag ? `${tag}..HEAD` : "HEAD";
+  const names = git("diff", "--name-only", "--diff-filter=A", range, "--", "src-tauri/src", "src")
+    .split("\n")
+    .filter(Boolean);
+  return names.map(path => {
+    try {
+      return { path, content: git("show", `HEAD:${path}`) };
+    } catch {
+      return { path, content: "" };
+    }
+  });
+}
+
+function versionOfTag(tag) {
+  return tag.replace(/^v/, "");
+}
+
+/** Base do release: `--from <tag>` (renumeração) ou a última tag alcançável. */
+function analyze(type) {
+  const fileVersion = currentVersion();
+  const fromTag = argValue("--from");
+  if (fromTag && !git("tag", "--list", fromTag)) fail(`tag base ${fromTag} não existe`);
+  const tag = fromTag ?? lastTag();
+  const baseVersion = tag ? versionOfTag(tag) : fileVersion;
   const commits = commitsSince(tag);
-  const suggested = suggestReleaseType(commits);
-  console.log(`Versão atual: ${version} · última tag: ${tag ?? "nenhuma"} · ${commits.length} commit(s) desde então`);
-  if (tag && tag !== `v${version}`) {
-    console.log(`ATENÇÃO: última tag ${tag} difere da versão dos arquivos (${version})`);
+  const decision = classifyRelease(commits, addedFilesSince(tag));
+  console.log(`Versão dos arquivos: ${fileVersion} · base: ${tag ?? "nenhuma"}${fromTag ? " (renumeração)" : ""} · ${commits.length} commit(s) desde a base`);
+  if (!fromTag && tag && tag !== `v${fileVersion}`) {
+    console.log(`ATENÇÃO: última tag ${tag} difere da versão dos arquivos (${fileVersion})`);
   }
-  console.log(`Tipo sugerido pelos commits: ${suggested} → ${bumpVersion(version, suggested)}`);
-  if (type) console.log(`Tipo pedido: ${type} → ${bumpVersion(version, type)}`);
-  return { version, tag, commits, suggested };
+  console.log(`Decisão: ${decision.type.toUpperCase()} → ${bumpVersion(baseVersion, decision.type)}`);
+  for (const reason of decision.reasons) console.log(`  - ${reason}`);
+  if (type && type !== decision.type) console.log(`Tipo pedido: ${type} → ${bumpVersion(baseVersion, type)} (diferente do decidido)`);
+  return { fileVersion, baseVersion, tag, commits, decision };
 }
 
 function writeNotes(version, commits) {
@@ -116,9 +146,9 @@ const [command, arg] = process.argv.slice(2);
 
 switch (command) {
   case "check": {
-    if (arg && !RELEASE_TYPES.includes(arg)) fail(`tipo inválido: ${arg}`);
+    if (arg && RELEASE_TYPES.includes(arg)) console.log("(check ignora o tipo: a decisão vem do classificador)");
     const problems = preconditions({ requireClean: false });
-    const { commits } = report(arg);
+    const { commits } = analyze();
     console.log(`\n--- prévia das notas ---\n${renderReleaseNotes("X.Y.Z", commits)}`);
     if (git("status", "--porcelain")) {
       console.log("Aviso: há alterações não commitadas; commite-as (skill commit) antes do bump.");
@@ -129,23 +159,28 @@ switch (command) {
   }
 
   case "bump": {
-    if (!RELEASE_TYPES.includes(arg)) fail(`informe o tipo: ${RELEASE_TYPES.join(" | ")}`);
+    const requested = RELEASE_TYPES.includes(arg) ? arg : undefined;
+    if (arg && !arg.startsWith("--") && !requested) fail(`tipo inválido: ${arg} (use ${RELEASE_TYPES.join(" | ")} ou omita)`);
     const problems = preconditions({ requireClean: true });
     if (problems.length) fail(problems.join("\n"));
-    const { version, commits, suggested } = report(arg);
-    if (!commits.length) fail("nenhum commit desde a última tag; não há o que lançar");
-    if (ORDER[arg] < ORDER[suggested] && !process.argv.includes("--force-type")) {
-      fail(`tipo ${arg} é menor que o sugerido (${suggested}) pelos commits. Revise os commits ou use --force-type com justificativa.`);
+    const { fileVersion, baseVersion, commits, decision } = analyze(requested);
+    if (!commits.length) fail("nenhum commit desde a base; não há o que lançar");
+    const type = requested ?? decision.type;
+    const confirmed = process.argv.includes("--confirmado");
+    if (type !== decision.type && !confirmed) {
+      fail(`tipo ${type} difere do decidido (${decision.type}). Mostre as razões ao usuário e só repita com --confirmado se ele aprovar.`);
     }
-    const next = bumpVersion(version, arg);
+    if (type === "major" && !confirmed) fail("major exige --confirmado do usuário, mesmo quando decidido pelo classificador.");
+    if (argValue("--from") && !confirmed) fail("renumeração (--from) exige --confirmado do usuário.");
+    const next = bumpVersion(baseVersion, type);
     if (git("tag", "--list", `v${next}`)) fail(`a tag v${next} já existe`);
-    const bumped = bumpAll(readContents(), version, next);
+    const bumped = bumpAll(readContents(), fileVersion, next);
     for (const [file, text] of Object.entries(bumped)) writeFileSync(join(root, file), text);
     const notesPath = writeNotes(next, commits);
-    console.log(`\nVersão ${version} → ${next} gravada em: ${VERSION_FILES.join(", ")}`);
+    console.log(`\nVersão ${fileVersion} → ${next} (${type}) gravada em: ${VERSION_FILES.join(", ")}`);
     console.log(`Notas: ${notesPath}`);
     console.log(`\nPróximo: commit "chore(release): versão ${next}" (skill commit), depois`);
-    console.log(`  git tag -a v${next} -F ${notesPath} && git push origin main v${next}`);
+    console.log(`  git tag -a v${next} -F ${notesPath} && git push origin main && git push origin v${next}`);
     break;
   }
 
@@ -199,6 +234,6 @@ switch (command) {
   }
 
   default:
-    console.error("uso: node scripts/release.mjs <check [tipo] | bump <tipo> [--force-type] | notes | verify [versão]>");
+    console.error("uso: node scripts/release.mjs <check [--from <tag>] | bump [tipo] [--confirmado] [--from <tag>] | notes | verify [versão]>");
     process.exit(2);
 }

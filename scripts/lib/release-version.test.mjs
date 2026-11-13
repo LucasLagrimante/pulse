@@ -8,6 +8,7 @@ import {
   parseCommit,
   readVersions,
   renderReleaseNotes,
+  classifyRelease,
   suggestReleaseType,
 } from "./release-version.mjs";
 
@@ -22,9 +23,19 @@ describe("release-version", () => {
     expect(() => bumpVersion("1.5.0", "menor")).toThrow(/tipo de release inválido/);
   });
 
-  it("sugere o tipo pelos commits convencionais, ignorando o próprio processo de release", () => {
+  it("classifica pelo tamanho real: patch por padrão, minor só com módulo novo ou várias áreas", () => {
     expect(suggestReleaseType(commits(["fix(cotas): x", "chore(release): versão 1.5.0", "chore(landing): y"]))).toBe("patch");
-    expect(suggestReleaseType(commits(["fix(cotas): x", "feat(debug): y"]))).toBe("minor");
+    expect(suggestReleaseType(commits(["fix(cotas): x", "feat(debug): y"]))).toBe("patch");
+    expect(suggestReleaseType(commits(["feat(a): x", "feat(b): y", "feat(a): z"]))).toBe("patch");
+    const tresAreas = classifyRelease(commits(["feat(a): x", "feat(b): y", "feat(c): z"]));
+    expect(tresAreas.type).toBe("minor");
+    expect(tresAreas.reasons[0]).toMatch(/3 áreas: a, b, c/);
+    const moduloNovo = classifyRelease(commits(["feat(bandeja): portas"]), [
+      { path: "src-tauri/src/dev_ports.rs", content: "#[tauri::command]\npub fn list_dev_ports() {}" },
+      { path: "src-tauri/src/helper.rs", content: "pub fn so_helper() {}" },
+    ]);
+    expect(moduloNovo).toEqual({ type: "minor", reasons: ["módulo novo com comandos Tauri: src-tauri/src/dev_ports.rs"] });
+    expect(classifyRelease(commits(["fix(x): y"])).reasons[0]).toMatch(/mudança pequena: 0 feat, 1 fix/);
     expect(suggestReleaseType(commits(["feat(debug)!: troca formato"]))).toBe("major");
     expect(suggestReleaseType([{ subject: "refactor(x): y", body: "BREAKING CHANGE: config antiga" }])).toBe("major");
   });
