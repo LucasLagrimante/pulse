@@ -117,7 +117,13 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           $file = "${{ steps.final.outputs.path }}"
-          $notes = "Instalador NSIS para Windows 11 x64, ${{ steps.final.outputs.label }}.`n`nSHA-256 (``${{ steps.meta.outputs.asset }}``): ``${{ steps.final.outputs.sha256 }}``"
+          # As notas vêm da mensagem da tag anotada, gerada por
+          # `node scripts/release.mjs bump`. O checkout raso pode trazer a tag
+          # como leve, então buscamos o objeto da tag explicitamente.
+          git fetch --force --depth=1 origin "+refs/tags/${tag}:refs/tags/${tag}" 2>$null
+          $changes = (git tag -l --format='%(contents)' $tag | Out-String).Trim()
+          $installer = "Instalador NSIS para Windows 11 x64, ${{ steps.final.outputs.label }}.`n`nSHA-256 (``${{ steps.meta.outputs.asset }}``): ``${{ steps.final.outputs.sha256 }}``"
+          $notes = if ($changes) { "$changes`n`n---`n`n$installer" } else { $installer }
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $file --clobber
