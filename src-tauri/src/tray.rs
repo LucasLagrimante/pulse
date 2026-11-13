@@ -333,12 +333,10 @@ pub fn build_tray_menu<R: tauri::Runtime>(manager: &AppHandle<R>) -> Result<Menu
     .checked(minimize)
     .build(manager)?;
 
-    let auto_update_item = CheckMenuItemBuilder::with_id(
-        "toggle_auto_self_update",
-        "Atualizar ao iniciar",
-    )
-    .checked(crate::self_update::is_auto_update_enabled())
-    .build(manager)?;
+    let auto_update_item =
+        CheckMenuItemBuilder::with_id("toggle_auto_self_update", "Atualizar ao iniciar")
+            .checked(crate::self_update::is_auto_update_enabled())
+            .build(manager)?;
 
     let exit_item = MenuItemBuilder::with_id("exit", "Sair do Pulse").build(manager)?;
 
@@ -535,9 +533,8 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
 /// identificado, cai para os dois sensores mais quentes.
 /// Sem sensores, mantém o texto estático — nunca um valor inventado.
 fn thermal_readings(sensors: &[crate::performance::ThermalSensor]) -> Option<String> {
-    let is_cpu = |sensor: &crate::performance::ThermalSensor| {
-        sensor.label.to_lowercase().contains("cpu")
-    };
+    let is_cpu =
+        |sensor: &crate::performance::ThermalSensor| sensor.label.to_lowercase().contains("cpu");
     let is_gpu = |sensor: &crate::performance::ThermalSensor| {
         sensor.id.starts_with("gpu-")
             || (sensor.label.to_lowercase().contains("gpu")
@@ -658,9 +655,16 @@ pub(crate) fn quota_tooltip_lines(
         .filter_map(|provider| {
             let windows = select_tooltip_windows(&provider.windows);
             if windows.is_empty() {
-                let credits = provider.credits_remaining.filter(|value| value.is_finite())?;
-                return (provider.id == "openrouter")
-                    .then(|| format!("{} $ {}", provider.provider, format!("{credits:.2}").replace('.', ",")));
+                let credits = provider
+                    .credits_remaining
+                    .filter(|value| value.is_finite())?;
+                return (provider.id == "openrouter").then(|| {
+                    format!(
+                        "{} $ {}",
+                        provider.provider,
+                        format!("{credits:.2}").replace('.', ",")
+                    )
+                });
             }
             let parts = windows
                 .iter()
@@ -677,7 +681,12 @@ pub(crate) fn quota_tooltip_lines(
                         Some(reset) => format!(" ↻{}", format_countdown(reset - now_unix_seconds)),
                         None => String::new(),
                     };
-                    format!("{} {:.0}%{}", short_window_label(window), remaining, countdown)
+                    format!(
+                        "{} {:.0}%{}",
+                        short_window_label(window),
+                        remaining,
+                        countdown
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join(" · ");
@@ -926,7 +935,10 @@ mod tests {
                     window("argon-7d", 10080, 40.0, Some(now + 7 * 86400)),
                 ],
             ),
-            ProviderUsage { disabled: true, ..provider("codex", "Codex", vec![window("s", 300, 10.0, None)]) },
+            ProviderUsage {
+                disabled: true,
+                ..provider("codex", "Codex", vec![window("s", 300, 10.0, None)])
+            },
         ];
         assert_eq!(
             quota_tooltip_lines(&providers, now),
@@ -951,9 +963,19 @@ mod tests {
         let dark = tray_icon_for_theme("dark");
 
         assert_eq!((light.width(), light.height()), (32, 32));
-        assert!(light.rgba().as_chunks::<4>().0.iter().any(|pixel| pixel[3] > 0));
+        assert!(light
+            .rgba()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|pixel| pixel[3] > 0));
         assert_ne!(light.rgba(), dark.rgba());
-        assert!(light.rgba().as_chunks::<4>().0.iter().any(|pixel| pixel[3] == 0));
+        assert!(light
+            .rgba()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|pixel| pixel[3] == 0));
     }
 
     #[test]
@@ -986,9 +1008,24 @@ mod tests {
     #[test]
     fn tooltip_prefers_cpu_and_gpu_pair() {
         let sensors = vec![
-            ThermalSensor { id: "acpi-tz00".into(), label: "Zona térmica TZ00".into(), celsius: 45.0, source: "ACPI".into() },
-            ThermalSensor { id: "gpu-0".into(), label: "RTX 4070 SUPER".into(), celsius: 67.25, source: "nvidia-smi".into() },
-            ThermalSensor { id: "lhm-cpu".into(), label: "CPU Package".into(), celsius: 54.0, source: "LibreHardwareMonitor".into() },
+            ThermalSensor {
+                id: "acpi-tz00".into(),
+                label: "Zona térmica TZ00".into(),
+                celsius: 45.0,
+                source: "ACPI".into(),
+            },
+            ThermalSensor {
+                id: "gpu-0".into(),
+                label: "RTX 4070 SUPER".into(),
+                celsius: 67.25,
+                source: "nvidia-smi".into(),
+            },
+            ThermalSensor {
+                id: "lhm-cpu".into(),
+                label: "CPU Package".into(),
+                celsius: 54.0,
+                source: "LibreHardwareMonitor".into(),
+            },
         ];
         assert_eq!(
             tray_tooltip_for_sensors(&sensors),
@@ -1003,8 +1040,18 @@ mod tests {
     #[test]
     fn tooltip_falls_back_to_two_hottest_sensors() {
         let sensors = vec![
-            ThermalSensor { id: "acpi-tz00".into(), label: "Zona térmica TZ00".into(), celsius: 45.0, source: "ACPI".into() },
-            ThermalSensor { id: "probe-0".into(), label: "Sonda térmica".into(), celsius: 41.0, source: "WMI".into() },
+            ThermalSensor {
+                id: "acpi-tz00".into(),
+                label: "Zona térmica TZ00".into(),
+                celsius: 45.0,
+                source: "ACPI".into(),
+            },
+            ThermalSensor {
+                id: "probe-0".into(),
+                label: "Sonda térmica".into(),
+                celsius: 41.0,
+                source: "WMI".into(),
+            },
         ];
         assert_eq!(
             tray_tooltip_for_sensors(&sensors),
