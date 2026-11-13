@@ -2279,6 +2279,58 @@ describe("Pulse application shell", () => {
     expect(names()).toEqual(["Slow", "Quick", "Off"]);
   });
 
+  it("shows the structured diagnostic of a failed event and the log folder", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_debug_mode") return Promise.resolve(true) as never;
+      if (command === "get_debug_log") {
+        return Promise.resolve([
+          {
+            sequence: 7,
+            timestampUnixMs: 1725000000,
+            operation: "system_overview",
+            category: "telemetry",
+            source: "rust-backend",
+            durationMs: 5800,
+            outcome: "error",
+            severity: "error",
+            message: "Falha na coleta · Não foi possível interpretar o resumo do Windows · 3ª seguida",
+            stage: "parse",
+            detail: "control character (\\u0000-\\u001F) found while parsing a string at line 1 column 5284",
+            context: '"displayName":"Battle\\u{0007}net"',
+          },
+        ]) as never;
+      }
+      if (command === "get_debug_audit_info") {
+        return Promise.resolve({
+          enabled: true,
+          sessionStartedUnixMs: 1725000000,
+          entryCount: 1,
+          retentionLimit: 500,
+          applicationVersion: "1.6.0",
+          platform: "windows",
+          persistence: "Memória desta execução + arquivo local diário, mantido por 7 dias",
+          dataResidency: "Processado e mantido localmente",
+          logDirectory: "%USERPROFILE%\\AppData\\Local\\Pulse\\logs",
+        }) as never;
+      }
+      return Promise.resolve([]) as never;
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Debug/ })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Debug/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("parse")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/line 1 column 5284/)).toBeInTheDocument();
+    expect(screen.getByText('"displayName":"Battle\\u{0007}net"')).toBeInTheDocument();
+    expect(screen.getByText("%USERPROFILE%\\AppData\\Local\\Pulse\\logs")).toBeInTheDocument();
+  });
+
   it("enables and displays the Debug diagnostic module", async () => {
     vi.mocked(invoke).mockImplementation((command: string) => {
       if (command === "get_debug_mode") return Promise.resolve(true) as never;

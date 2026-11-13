@@ -119,7 +119,7 @@ A implementação Python original foi removida da árvore atual e permanece no h
 
 ## Privacidade e rede
 
-O monitoramento (processos, desempenho, armazenamento, inicialização, serviços, áudio e debug) roda inteiramente na máquina, sem conta e sem telemetria. Três funções acessam a internet (e todas podem ser desativadas ou só rodam sob demanda):
+O monitoramento (processos, desempenho, armazenamento, inicialização, serviços, áudio e debug) roda inteiramente na máquina, sem conta e sem telemetria. Com o modo Debug ligado, a trilha de auditoria também é gravada em `%LOCALAPPDATA%\Pulse\logs` (um `.jsonl` por dia, mantido por 7 dias); com ele desligado, nada é gravado. Três funções acessam a internet (e todas podem ser desativadas ou só rodam sob demanda):
 
 - **Atualização automática ao iniciar**: por padrão, ao abrir o Pulse ele consulta `https://pulse.lagrimante.com.br/release.json` e, quando há versão mais nova, baixa o instalador da GitHub Release oficial, confere o `SHA-256` e atualiza silenciosamente. Pode ser desativada a qualquer momento no topo do app (`ATUALIZAR AO INICIAR`) ou no menu da bandeja.
 - **Cotas de IA**: consulta o uso das suas assinaturas diretamente nos endpoints oficiais de cada provedor (Anthropic, OpenAI, Google, OpenRouter, OpenCode) com as credenciais que já existem na máquina ou chaves salvas no Credential Manager do Windows. Nada passa por servidores do Pulse.

@@ -331,6 +331,12 @@ export type DebugEntry = {
   outcome: string;
   severity?: string;
   message: string;
+  /** Etapa interna que falhou (ex.: `spawn`, `exit_status`, `parse`). */
+  stage?: string | null;
+  /** Erro técnico original, já sanitizado pelo backend. */
+  detail?: string | null;
+  /** Trecho dos dados ao redor do ponto de falha. */
+  context?: string | null;
 };
 export type DebugAuditInfo = {
   enabled: boolean;
@@ -341,6 +347,7 @@ export type DebugAuditInfo = {
   platform: string;
   persistence: string;
   dataResidency: string;
+  logDirectory?: string;
 };
 export type StartupRegistration = { enabled: boolean };
 export type SelfUpdateStatus = {
@@ -2281,7 +2288,7 @@ function App() {
       .filter(entry => debugCategory === "all" || (entry.category ?? "application") === debugCategory)
       .filter(entry => {
         if (!query) return true;
-        return [entry.operation, entry.message, entry.source, entry.category]
+        return [entry.operation, entry.message, entry.source, entry.category, entry.stage, entry.detail, entry.context]
           .filter(Boolean)
           .some(value => value!.toLocaleLowerCase("pt-BR").includes(query));
       });
@@ -3913,6 +3920,9 @@ function App() {
                       <div><span>VERSÃO / PLATAFORMA</span><strong>{debugAuditInfo ? `${debugAuditInfo.applicationVersion} · ${debugAuditInfo.platform}` : "Consultando…"}</strong></div>
                       <div><span>RETENÇÃO</span><strong>{debugAuditInfo ? `${debugAuditInfo.entryCount} de ${debugAuditInfo.retentionLimit} eventos` : "Consultando…"}</strong></div>
                       <div><span>PERSISTÊNCIA REAL</span><strong>{debugAuditInfo?.persistence ?? "Somente a execução atual"}</strong></div>
+                      {debugAuditInfo?.enabled && debugAuditInfo.logDirectory && (
+                        <div><span>PASTA DOS LOGS</span><strong className="debug-log-directory">{debugAuditInfo.logDirectory}</strong></div>
+                      )}
                       <div><span>RESIDÊNCIA DOS DADOS</span><strong>{debugAuditInfo?.dataResidency ?? "Local neste computador"}</strong></div>
                     </section>
                   </div>
@@ -3971,6 +3981,13 @@ function App() {
                               {grouped && <span className="debug-group-count">{group.entries.length} ocorrências</span>}
                             </div>
                             <p>{entry.message}</p>
+                            {(entry.stage || entry.detail || entry.context) && (
+                              <dl className="debug-event-diagnostic">
+                                {entry.stage && <><dt>ETAPA</dt><dd><code>{entry.stage}</code></dd></>}
+                                {entry.detail && <><dt>DETALHE</dt><dd>{entry.detail}</dd></>}
+                                {entry.context && <><dt>CONTEXTO</dt><dd><code>{entry.context}</code></dd></>}
+                              </dl>
+                            )}
                             <div className="debug-event-meta">
                               {grouped ? (
                                 <>

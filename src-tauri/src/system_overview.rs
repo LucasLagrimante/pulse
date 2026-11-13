@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -153,6 +154,7 @@ struct OverviewCache {
 }
 
 static CACHE: Mutex<Option<OverviewCache>> = Mutex::new(None);
+static CONSECUTIVE_FAILURES: AtomicU32 = AtomicU32::new(0);
 const CACHE_TTL: Duration = Duration::from_millis(3500);
 
 fn now_unix_ms() -> Result<u64, String> {
@@ -269,6 +271,21 @@ fn aggregate_usage(
 }
 
 pub fn parse_overview(payload: &str, sampled_at_unix_ms: u64) -> Result<SystemOverview, String> {
+    parse_overview_detailed(payload, sampled_at_unix_ms).map_err(|failure| {
+        format!(
+            "{}: {}",
+            failure.message,
+            failure.detail.unwrap_or_default()
+        )
+    })
+}
+
+/// Igual a `parse_overview`, mas a falha carrega o erro do serde e o trecho do
+/// JSON onde ele ocorreu, para o log de auditoria apontar o dado culpado.
+fn parse_overview_detailed(
+    payload: &str,
+    sampled_at_unix_ms: u64,
+) -> Result<SystemOverview, crate::debug::Failure> {
     // O ConvertTo-Json do Windows PowerShell 5.1 não escapa todos os
     // caracteres de controle: metadados de executável (ex.: FileDescription do
     // Battle.net com BEL 0x07) saem crus e o serde rejeita o JSON inteiro,
@@ -277,8 +294,13 @@ pub fn parse_overview(payload: &str, sampled_at_unix_ms: u64) -> Result<SystemOv
         .chars()
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect();
-    let raw: RawSystemOverview = serde_json::from_str(&sanitized)
-        .map_err(|e| format!("Não foi possível interpretar o resumo do Windows: {e}"))?;
+    let raw: RawSystemOverview = serde_json::from_str(&sanitized).map_err(|e| {
+        let offset = byte_offset_of(&sanitized, e.line(), e.column());
+        crate::debug::Failure::new("Não foi possível interpretar o resumo do Windows")
+            .stage("parse")
+            .detail(format!("{e} (payload com {} bytes)", payload.len()))
+            .context(crate::debug::context_window(&sanitized, offset, 80))
+    })?;
     Ok(SystemOverview {
         cpu_percent: raw.cpu_percent,
         gpu_percent: None,
@@ -291,6 +313,17 @@ pub fn parse_overview(payload: &str, sampled_at_unix_ms: u64) -> Result<SystemOv
         sampled_at_unix_ms,
         source: "Windows CIM + Process API".to_owned(),
     })
+}
+
+/// Converte a posição (linha, coluna) do serde_json — ambas a partir de 1 —
+/// em deslocamento de bytes no texto.
+fn byte_offset_of(text: &str, line: usize, column: usize) -> usize {
+    let line_start: usize = text
+        .split_inclusive('\n')
+        .take(line.saturating_sub(1))
+        .map(str::len)
+        .sum();
+    (line_start + column.saturating_sub(1)).min(text.len())
 }
 
 #[cfg(windows)]
@@ -478,24 +511,38 @@ pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
     }
 
     let started = Instant::now();
-    let result = (|| {
+    let result = (|| -> Result<SystemOverview, crate::debug::Failure> {
         #[cfg(windows)]
         {
+            use crate::debug::Failure;
             let output = crate::process::hidden_command("powershell.exe")
                 .args(["-NoProfile", "-NonInteractive", "-Command", OVERVIEW_SCRIPT])
                 .output()
-                .map_err(|e| format!("Não foi possível iniciar a coleta do Windows: {e}"))?;
+                .map_err(|e| {
+                    Failure::new("Não foi possível iniciar a coleta do Windows")
+                        .stage("spawn")
+                        .detail(e.to_string())
+                })?;
 
             if !output.status.success() {
-                return Err("A coleta do Windows falhou".to_owned());
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(Failure::new("A coleta do Windows falhou")
+                    .stage("exit_status")
+                    .detail(format!("PowerShell saiu com {}", output.status))
+                    .context(stderr.trim().to_owned()));
             }
 
-            let mut overview = parse_overview(
-                std::str::from_utf8(&output.stdout)
-                    .map_err(|e| format!("A coleta retornou texto inválido: {e}"))?
-                    .trim(),
-                now_unix_ms()?,
-            )?;
+            let stdout = std::str::from_utf8(&output.stdout).map_err(|e| {
+                Failure::new("A coleta retornou texto inválido")
+                    .stage("utf8")
+                    .detail(e.to_string())
+            })?;
+            let sampled_at = now_unix_ms().map_err(|e| {
+                Failure::new("Relógio do sistema inválido")
+                    .stage("clock")
+                    .detail(e)
+            })?;
+            let mut overview = parse_overview_detailed(stdout.trim(), sampled_at)?;
 
             // Aplica leituras Win32 de precisão instantânea para CPU, RAM e Disco se disponíveis
             if let Some(cpu) = win32::read_cpu_percent() {
@@ -523,26 +570,37 @@ pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
         }
         #[cfg(not(windows))]
         {
-            Err("A coleta de telemetria é compatível somente com Windows.".to_owned())
+            Err(crate::debug::Failure::new(
+                "A coleta de telemetria é compatível somente com Windows.",
+            )
+            .stage("platform"))
         }
     })();
 
-    if let Ok(ref overview) = result {
-        if let Ok(mut guard) = CACHE.lock() {
-            *guard = Some(OverviewCache {
-                data: overview.clone(),
-                last_fetched: Instant::now(),
-            });
+    let elapsed = started.elapsed().as_millis();
+    match result {
+        Ok(overview) => {
+            CONSECUTIVE_FAILURES.store(0, Ordering::Relaxed);
+            if let Ok(mut guard) = CACHE.lock() {
+                *guard = Some(OverviewCache {
+                    data: overview.clone(),
+                    last_fetched: Instant::now(),
+                });
+            }
+            crate::debug::record("system_overview", elapsed, Ok(()));
+            Ok(overview)
+        }
+        Err(mut failure) => {
+            // Sem coleta bem-sucedida não há cache: a tela fica em
+            // "Telemetria indisponível" até a causa sumir. O contador mostra
+            // se a falha é pontual ou permanente.
+            let streak = CONSECUTIVE_FAILURES.fetch_add(1, Ordering::Relaxed) + 1;
+            let user_message = failure.message.clone();
+            failure.message = format!("Falha na coleta · {user_message} · {streak}ª seguida");
+            crate::debug::record_failure("system_overview", elapsed, failure);
+            Err(user_message)
         }
     }
-
-    crate::debug::record(
-        "system_overview",
-        started.elapsed().as_millis(),
-        result.as_ref().map(|_| ()).map_err(|_| "Falha na coleta"),
-    );
-
-    result
 }
 
 #[tauri::command]
@@ -558,13 +616,11 @@ pub async fn terminate_process(id: u32) -> Result<(), String> {
     let result = tauri::async_runtime::spawn_blocking(move || terminate_process_sync(id))
         .await
         .map_err(|e| e.to_string())?;
-    crate::debug::record(
+    crate::debug::record_result(
         "terminate_process",
         started.elapsed().as_millis(),
-        result
-            .as_ref()
-            .map(|_| ())
-            .map_err(|_| "Ação recusada ou falhou"),
+        &result,
+        "Ação recusada ou falhou",
     );
     result
 }
@@ -730,6 +786,15 @@ mod tests {
             parse_overview(&payload, 123).unwrap().top_processes.len(),
             25
         );
+    }
+
+    #[test]
+    fn parse_failure_points_to_the_offending_payload() {
+        let payload = r#"{"cpuPercent":1,"startupItemCount":0,"topProcesses":[{"name":"x","id":"nao-numero","memoryMb":1}]}"#;
+        let failure = super::parse_overview_detailed(payload, 1).unwrap_err();
+        assert_eq!(failure.stage.as_deref(), Some("parse"));
+        assert!(failure.detail.unwrap().contains("column"));
+        assert!(failure.context.unwrap().contains("nao-numero"));
     }
 
     #[test]

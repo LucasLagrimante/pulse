@@ -329,10 +329,11 @@ pub async fn list_recent_files(query: Option<RecentFilesQuery>) -> Result<Vec<Re
         tauri::async_runtime::spawn_blocking(move || collect(query.unwrap_or_default(), false))
             .await
             .map_err(|e| e.to_string());
-    crate::debug::record(
+    crate::debug::record_result(
         "recent_files",
         started.elapsed().as_millis(),
-        result.as_ref().map(|_| ()).map_err(|_| "Falha na consulta"),
+        &result,
+        "Falha na consulta",
     );
     result
 }
@@ -351,13 +352,11 @@ pub async fn refresh_recent_files() -> Result<Vec<RecentFile>, String> {
     })
     .await
     .map_err(|e| e.to_string());
-    crate::debug::record(
+    crate::debug::record_result(
         "refresh_recent_files",
         started.elapsed().as_millis(),
-        result
-            .as_ref()
-            .map(|_| ())
-            .map_err(|_| "Falha na atualização"),
+        &result,
+        "Falha na atualização",
     );
     result
 }

@@ -44,7 +44,7 @@ Quando NÃO usar:
 7. **Inicialização e segurança** — controle reversível via `StartupApproved` (0x02/0x03), impacto de boot em ms (Event ID 101/102) e evidências verificáveis.
 8. **Serviços e atualizações** — leitura nativa do SCM/WMI (Sistema, Usuário, Revisão), revisão de segurança dos serviços ativos via terminal de IA (Claude, Antigravity ou Codex CLI, com parecer gravado que abre no Pulse) e atualizações de pacotes via `winget`.
 9. **Cotas de IA** — monitoramento local de Claude Code, OpenAI Codex, Google Antigravity, OpenRouter e OpenCode Go com chaves no Windows Keyring e histórico de 30 dias em SQLite.
-10. **Áudio, Bandeja e Auditoria** — flyout rápido no tray com mixer Core Audio por aplicativo, cards de cota que abrem a aba de Cotas de IA com um clique e trilha de auditoria local exportável.
+10. **Áudio, Bandeja e Auditoria** — flyout rápido no tray com mixer Core Audio por aplicativo, cards de cota que abrem a aba de Cotas de IA com um clique e trilha de auditoria local exportável, com etapa e erro técnico de cada falha e arquivo local de 7 dias no modo Debug.
 
 ## Como funciona
 

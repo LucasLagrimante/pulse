@@ -4066,3 +4066,36 @@ body:has(.tray-flyout-container),
 
 [data-theme] .quota-matrix-cell .quota-track i.is-warning { background: var(--neu-warning) !important; }
 [data-theme] .quota-matrix-cell .quota-track i.is-critical { background: var(--neu-danger) !important; }
+
+/* Diagnóstico estruturado do evento (etapa, erro técnico e trecho dos dados). */
+.debug-event-diagnostic {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-inset-sm);
+  font-size: .6rem;
+}
+
+.debug-event-diagnostic dt {
+  color: var(--neu-text-muted);
+  font: 600 .55rem "Cascadia Mono", Consolas, monospace;
+  letter-spacing: .04em;
+}
+
+.debug-event-diagnostic dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--neu-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.debug-event-diagnostic code,
+.debug-log-directory {
+  color: var(--neu-text-primary);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  overflow-wrap: anywhere;
+}
