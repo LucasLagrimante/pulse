@@ -4,6 +4,7 @@ pub mod app_icons;
 pub mod app_updates;
 pub mod audio;
 pub mod debug;
+pub mod dev_ports;
 pub mod disk_analyzer;
 pub mod disk_cleanup;
 pub mod domain;
@@ -91,6 +92,8 @@ pub fn run() {
             debug::get_debug_audit_info,
             debug::clear_debug_log,
             debug::record_client_error,
+            dev_ports::get_dev_ports,
+            dev_ports::kill_dev_port,
             audio::get_audio_devices,
             audio::set_default_audio_device,
             audio::get_audio_mixer,

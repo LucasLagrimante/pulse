@@ -261,6 +261,26 @@ export type AudioMixerInventory = {
   apps: AudioMixerApp[];
   unavailableReason?: string | null;
 };
+export type DevPortEntry = {
+  id: string;
+  port: number;
+  bindAddress: string;
+  url: string;
+  pid: number;
+  processName: string;
+  runtime: string;
+  projectName: string;
+  projectPath?: string | null;
+  commandLine?: string | null;
+  environment: "windows" | "wsl" | string;
+  wslDistro?: string | null;
+  icon?: string | null;
+};
+export type DevPortsInventory = {
+  ports: DevPortEntry[];
+  sampledAtUnixMs: number;
+  unavailableReason?: string | null;
+};
 export type RecentFile = {
   path: string;
   name: string;
@@ -1166,6 +1186,14 @@ export function TrayFlyout({
   const [mixerBusy, setMixerBusy] = useState<string | null>(null);
   const mixerTimers = useRef(new Map<string, number>());
   const mixerAdjusting = useRef(false);
+  // Portas & Projetos Dev: recolhido por padrão; abre sob demanda e alterna com
+  // o Volume Mixer para manter o flyout sempre compacto dentro dos 740 px.
+  const [devPortsOpen, setDevPortsOpen] = useState(false);
+  const [devPorts, setDevPorts] = useState<DevPortsInventory | null>(null);
+  const [devPortsLoading, setDevPortsLoading] = useState(false);
+  const [devPortsError, setDevPortsError] = useState("");
+  const [killingPortId, setKillingPortId] = useState<string | null>(null);
+  const [copiedPortId, setCopiedPortId] = useState<string | null>(null);
   const [thermalSensors, setThermalSensors] = useState<ThermalSensor[]>([]);
 
   const updateSubscriptionProviders = (newProviders?: ProviderUsage[], scanStatus?: string) => {
@@ -1347,8 +1375,117 @@ export function TrayFlyout({
   const toggleMixer = () => {
     const next = !mixerOpen;
     setMixerOpen(next);
-    if (next) void loadMixer(mixerOutputId);
+    if (next) {
+      setDevPortsOpen(false);
+      void loadMixer(mixerOutputId);
+    }
   };
+
+  const loadDevPorts = useCallback(async (forceRefresh = false, silent = false) => {
+    if (!silent) {
+      setDevPortsLoading(true);
+      setDevPortsError("");
+    }
+    try {
+      const result = await invoke<DevPortsInventory>("get_dev_ports", { forceRefresh });
+      if (result && Array.isArray(result.ports)) {
+        setDevPorts(result);
+        if (!silent) setDevPortsError("");
+      } else if (!silent) {
+        setDevPortsError("Não foi possível consultar as portas em escuta.");
+      }
+    } catch (error) {
+      if (!silent) {
+        setDevPortsError(typeof error === "string" ? error : "Falha ao consultar portas locais.");
+      }
+    } finally {
+      if (!silent) setDevPortsLoading(false);
+    }
+  }, []);
+
+  const toggleDevPorts = () => {
+    const next = !devPortsOpen;
+    setDevPortsOpen(next);
+    if (next) {
+      setMixerOpen(false);
+      void loadDevPorts(true);
+    }
+  };
+
+  const handleCopyPortUrl = async (entry: DevPortEntry) => {
+    try {
+      await navigator.clipboard.writeText(entry.url);
+      setCopiedPortId(entry.id);
+      window.setTimeout(() => {
+        setCopiedPortId(current => (current === entry.id ? null : current));
+      }, 1600);
+    } catch {
+      // Clipboard pode não estar disponível em ambientes restritos
+    }
+  };
+
+  const handleOpenPortUrl = (entry: DevPortEntry) => {
+    void Promise.resolve(openUrl(entry.url)).catch(() => undefined);
+  };
+
+  const handleKillDevPort = async (entry: DevPortEntry) => {
+    if (killingPortId) return;
+    setKillingPortId(entry.id);
+    setDevPortsError("");
+    try {
+      const updated = await invoke<DevPortsInventory>("kill_dev_port", {
+        port: entry.port,
+        pid: entry.pid,
+        environment: entry.environment,
+        wslDistro: entry.wslDistro ?? null,
+      });
+      if (updated && Array.isArray(updated.ports)) {
+        setDevPorts(updated);
+      } else {
+        setDevPorts(previous =>
+          previous
+            ? { ...previous, ports: previous.ports.filter(item => item.id !== entry.id) }
+            : previous,
+        );
+      }
+    } catch (error) {
+      setDevPortsError(
+        typeof error === "string"
+          ? error
+          : `Não foi possível encerrar ${entry.projectName} (PID ${entry.pid}).`,
+      );
+    } finally {
+      setKillingPortId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (isForeground !== true) return;
+    void loadDevPorts(false, true);
+  }, [isForeground, loadDevPorts]);
+
+  useEffect(() => {
+    if (!devPortsOpen || isForeground !== true) return;
+    const timer = window.setInterval(() => {
+      if (killingPortId) return;
+      void loadDevPorts(true, true);
+    }, MIXER_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [devPortsOpen, isForeground, killingPortId, loadDevPorts]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen("pulse://dev-ports-changed", () => {
+      void loadDevPorts(false, true);
+    })
+      .then(cleanup => {
+        unlisten = cleanup;
+      })
+      .catch(() => undefined);
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [loadDevPorts]);
 
   // Acompanha a saída padrão atual: trocou a saída com o mixer aberto,
   // o mixer passa a controlar a nova saída.
@@ -1472,6 +1609,7 @@ export function TrayFlyout({
 
   const masterLevel = sanitizeMixerLevel(mixer?.masterVolume);
   const mixerAppCount = mixer && Array.isArray(mixer.apps) ? mixer.apps.length : 0;
+  const devPortCount = devPorts && Array.isArray(devPorts.ports) ? devPorts.ports.length : 0;
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -1933,6 +2071,112 @@ export function TrayFlyout({
                   </button>
                 </>
               )}
+            </div>
+          )}
+        </div>
+        <div className="flyout-dev-ports">
+          <button
+            type="button"
+            className="flyout-mixer-toggle flyout-dev-ports-toggle"
+            aria-expanded={devPortsOpen}
+            aria-controls="flyout-dev-ports-list"
+            onClick={toggleDevPorts}
+          >
+            <span className="flyout-mixer-chevron" aria-hidden="true">{devPortsOpen ? "▾" : "▸"}</span>
+            PORTAS &amp; PROJETOS DEV
+            <small className={devPortCount > 0 ? "is-active" : undefined}>
+              {devPortCount > 0 ? `${devPortCount} ${devPortCount === 1 ? "ATIVO" : "ATIVOS"}` : "0 ATIVOS"}
+            </small>
+          </button>
+          {devPortsOpen && (
+            <div className="flyout-dev-ports-body" id="flyout-dev-ports-list">
+              {devPortsLoading && !devPorts ? (
+                <p className="flyout-audio-status" role="status">Verificando portas locais e WSL…</p>
+              ) : devPortsError ? (
+                <p className="flyout-audio-error" role="alert">{devPortsError}</p>
+              ) : devPorts?.unavailableReason ? (
+                <p className="flyout-audio-unavailable" role="status">{devPorts.unavailableReason}</p>
+              ) : devPorts && devPortCount > 0 ? (
+                <ul className="flyout-dev-ports-list">
+                  {devPorts.ports.map(entry => {
+                    const envLabel = entry.environment === "wsl"
+                      ? `WSL${entry.wslDistro ? ` (${entry.wslDistro})` : ""}`
+                      : "Win";
+                    const detailsTitle = [
+                      entry.projectName,
+                      entry.url,
+                      entry.projectPath,
+                      entry.commandLine,
+                    ]
+                      .filter(Boolean)
+                      .join("\n");
+                    const isKilling = killingPortId === entry.id;
+                    const isCopied = copiedPortId === entry.id;
+
+                    return (
+                      <li key={entry.id} className="flyout-port-row">
+                        <button
+                          type="button"
+                          className="flyout-port-badge"
+                          title={`Abrir ${entry.url} no navegador`}
+                          aria-label={`Abrir porta ${entry.port} de ${entry.projectName} (${entry.url})`}
+                          onClick={() => handleOpenPortUrl(entry)}
+                        >
+                          :{entry.port}
+                        </button>
+                        <div className="flyout-port-identity" title={detailsTitle}>
+                          <strong>{entry.projectName}</strong>
+                          <small>
+                            {entry.runtime} · {envLabel} · PID {entry.pid}
+                          </small>
+                        </div>
+                        <div className="flyout-port-actions">
+                          <button
+                            type="button"
+                            className={`flyout-port-action-btn${isCopied ? " is-copied" : ""}`}
+                            title={isCopied ? "URL copiada!" : `Copiar ${entry.url}`}
+                            aria-label={`Copiar URL de ${entry.projectName} (${entry.url})`}
+                            onClick={() => void handleCopyPortUrl(entry)}
+                          >
+                            {isCopied ? "✓" : "⧉"}
+                          </button>
+                          <button
+                            type="button"
+                            className="flyout-port-action-btn"
+                            title={`Abrir ${entry.url}`}
+                            aria-label={`Abrir ${entry.url} no navegador`}
+                            onClick={() => handleOpenPortUrl(entry)}
+                          >
+                            ↗
+                          </button>
+                          <button
+                            type="button"
+                            className="flyout-process-close"
+                            title={`Encerrar ${entry.processName} (PID ${entry.pid}) na porta ${entry.port}`}
+                            aria-label={`Encerrar ${entry.projectName} na porta ${entry.port}`}
+                            disabled={killingPortId != null}
+                            onClick={() => void handleKillDevPort(entry)}
+                          >
+                            {isKilling ? "…" : "✕"}
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="flyout-audio-unavailable" role="status">
+                  Nenhuma porta de desenvolvimento em escuta.
+                </p>
+              )}
+              <button
+                type="button"
+                className="flyout-mixer-refresh"
+                disabled={devPortsLoading}
+                onClick={() => void loadDevPorts(true)}
+              >
+                ⟳ ATUALIZAR
+              </button>
             </div>
           )}
         </div>

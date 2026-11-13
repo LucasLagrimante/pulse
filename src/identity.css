@@ -3067,6 +3067,139 @@ body:has(.tray-flyout-container),
   color: var(--neu-text-muted) !important;
 }
 
+/* Portas & Projetos Dev no Painel Rápido do Tray */
+.flyout-dev-ports {
+  display: grid;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.flyout-dev-ports-toggle small.is-active {
+  color: var(--neu-accent) !important;
+  font-weight: 700;
+  opacity: 1;
+}
+
+.flyout-dev-ports-body {
+  display: grid;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.flyout-dev-ports-list {
+  list-style: none;
+  margin: 0;
+  padding: 2px;
+  display: grid;
+  gap: 5px;
+  max-height: 148px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.flyout-mixer-list {
+  max-height: 148px;
+}
+
+.flyout-port-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 10px;
+  background: var(--neu-surface);
+  border: var(--neu-border);
+  box-shadow: var(--neu-shadow-raised-xs);
+  min-width: 0;
+}
+
+.flyout-port-badge {
+  padding: 3px 7px;
+  border-radius: 7px;
+  border: var(--neu-border-subtle);
+  background: var(--neu-accent-soft);
+  color: var(--neu-accent);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.flyout-port-badge:hover {
+  background: var(--neu-accent);
+  color: var(--neu-on-accent);
+  transform: translateY(-1px);
+}
+
+.flyout-port-identity {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.flyout-port-identity strong,
+.flyout-port-identity small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flyout-port-identity strong {
+  font-size: 0.64rem;
+  font-weight: 600;
+  color: var(--neu-text-title);
+}
+
+.flyout-port-identity small {
+  font-size: 0.54rem;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  color: var(--neu-text-muted);
+}
+
+.flyout-port-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.flyout-port-action-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: var(--neu-border);
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-raised-xs);
+  color: var(--neu-text-secondary);
+  font-size: 0.66rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.flyout-port-action-btn:hover {
+  color: var(--neu-accent);
+  box-shadow: var(--neu-shadow-raised-sm);
+  transform: scale(1.06);
+}
+
+.flyout-port-action-btn:active {
+  box-shadow: var(--neu-shadow-inset-xs);
+  transform: scale(0.95);
+}
+
+.flyout-port-action-btn.is-copied {
+  color: var(--neu-success);
+}
+
 /* Armazenamento: todos os subpainéis precisam acompanhar o tema do painel
    externo. Os blocos do treemap continuam usando as cores de profundidade
    definidas inline, pois elas carregam informação da visualização. */

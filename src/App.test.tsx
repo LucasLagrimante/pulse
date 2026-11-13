@@ -755,6 +755,110 @@ describe("Formatters and Components", () => {
       expect(container.querySelectorAll(".flyout-process-skeleton").length).toBe(0);
       expect(screen.getAllByText("pulse.exe")[0]).toBeInTheDocument();
     });
+
+    it("lists active Windows and WSL dev ports, opens browser URL and kills a port process", async () => {
+      vi.clearAllMocks();
+      const portsInventory = {
+        sampledAtUnixMs: 1_700_000_000_000,
+        unavailableReason: null,
+        ports: [
+          {
+            id: "wsl:Ubuntu:1420:5173",
+            port: 5173,
+            bindAddress: "127.0.0.1",
+            url: "http://localhost:5173",
+            pid: 1420,
+            processName: "node",
+            runtime: "Vite",
+            projectName: "pulse-landing",
+            projectPath: "/home/lucas/projects/pulse/landing",
+            commandLine: "node vite --port 5173",
+            environment: "wsl",
+            wslDistro: "Ubuntu",
+            icon: null,
+          },
+          {
+            id: "windows:8840:8787",
+            port: 8787,
+            bindAddress: "127.0.0.1",
+            url: "http://localhost:8787",
+            pid: 8840,
+            processName: "workerd.exe",
+            runtime: "Wrangler",
+            projectName: "api-worker",
+            projectPath: "C:\\dev\\api-worker",
+            commandLine: "workerd serve --port 8787",
+            environment: "windows",
+            wslDistro: null,
+            icon: null,
+          },
+        ],
+      };
+
+      vi.mocked(invoke).mockImplementation((command: string, args?: unknown) => {
+        if (command === "get_dev_ports") {
+          return Promise.resolve(portsInventory) as never;
+        }
+        if (command === "kill_dev_port") {
+          expect(args).toEqual({
+            port: 5173,
+            pid: 1420,
+            environment: "wsl",
+            wslDistro: "Ubuntu",
+          });
+          return Promise.resolve({
+            ...portsInventory,
+            ports: portsInventory.ports.filter(item => item.port !== 5173),
+          }) as never;
+        }
+        if (command === "get_system_overview") {
+          return Promise.resolve({
+            cpuPercent: 10,
+            memoryUsedGb: 4,
+            memoryTotalGb: 16,
+            diskUsedGb: 100,
+            diskTotalGb: 500,
+            topProcesses: [],
+          }) as never;
+        }
+        return Promise.resolve() as never;
+      });
+
+      render(<TrayFlyout onOpenMain={vi.fn()} />);
+
+      const toggle = await screen.findByRole("button", { name: /PORTAS & PROJETOS DEV/ });
+      await waitFor(() => {
+        expect(toggle).toHaveTextContent("2 ATIVOS");
+      });
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+      fireEvent.click(toggle);
+      expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+      expect(await screen.findByText("pulse-landing")).toBeInTheDocument();
+      expect(screen.getByText("Vite · WSL (Ubuntu) · PID 1420")).toBeInTheDocument();
+      expect(screen.getByText("api-worker")).toBeInTheDocument();
+      expect(screen.getByText("Wrangler · Win · PID 8840")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Abrir http://localhost:5173 no navegador" }));
+      expect(openUrl).toHaveBeenCalledWith("http://localhost:5173");
+
+      fireEvent.click(screen.getByRole("button", { name: "Encerrar pulse-landing na porta 5173" }));
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith("kill_dev_port", {
+          port: 5173,
+          pid: 1420,
+          environment: "wsl",
+          wslDistro: "Ubuntu",
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByText("pulse-landing")).not.toBeInTheDocument();
+      });
+      expect(screen.getByText("api-worker")).toBeInTheDocument();
+      expect(toggle).toHaveTextContent("1 ATIVO");
+    });
   });
 
   describe("DiskAnalyzer scan reconciliation", () => {

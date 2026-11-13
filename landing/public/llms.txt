@@ -24,6 +24,7 @@ Use o Pulse quando você precisa:
 - Saber quais itens iniciam junto com o Windows via `StartupApproved` (sem `reg delete` destrutivo) e qual o impacto real medido em milissegundos no Event Log.
 - Inspecionar serviços do Windows (classificados em Sistema, Usuário e Revisão), pedir a um CLI de IA local uma revisão de segurança dos serviços em execução (keylogger, spyware, acesso indevido; só investigação, sem alterar o sistema) e atualizar programas instalados via `winget`.
 - Controlar o volume individual de cada aplicativo e trocar dispositivos de áudio direto pelo flyout da bandeja do sistema (Core Audio COM).
+- Ver quais projetos e servidores de desenvolvimento estão rodando agora (Windows nativo e WSL2), em quais portas e endereços, com atalho no flyout e no menu do botão direito do tray para abrir no navegador, copiar a URL ou liberar a porta.
 - Acompanhar localmente limites, janelas de reset (5h/semanal, com contagem regressiva no hover do ícone da bandeja), créditos, cotas separadas por modelo e histórico de 30 dias das suas assinaturas de IA (**Claude Code**, **OpenAI Codex**, **Google Antigravity**, **OpenRouter** e **OpenCode Go**).
 
 Quando NÃO usar:
@@ -44,7 +45,7 @@ Quando NÃO usar:
 7. **Inicialização e segurança** — controle reversível via `StartupApproved` (0x02/0x03), impacto de boot em ms (Event ID 101/102) e evidências verificáveis.
 8. **Serviços e atualizações** — leitura nativa do SCM/WMI (Sistema, Usuário, Revisão), revisão de segurança dos serviços ativos via terminal de IA (Claude, Antigravity ou Codex CLI, com parecer gravado que abre no Pulse) e atualizações de pacotes via `winget`.
 9. **Cotas de IA** — monitoramento local de Claude Code, OpenAI Codex, Google Antigravity, OpenRouter e OpenCode Go com chaves no Windows Keyring e histórico de 30 dias em SQLite.
-10. **Áudio, Bandeja e Auditoria** — flyout rápido no tray com mixer Core Audio por aplicativo, cards de cota que abrem a aba de Cotas de IA com um clique e trilha de auditoria local exportável, com etapa e erro técnico de cada falha e arquivo local de 7 dias no modo Debug.
+10. **Áudio, Bandeja e Auditoria** — flyout rápido no tray com mixer Core Audio por aplicativo, inspetor de portas e projetos dev ativos (Windows + WSL2, com abrir URL/copiar/encerrar também no botão direito do tray), cards de cota que abrem a aba de Cotas de IA com um clique e trilha de auditoria local exportável, com etapa e erro técnico de cada falha e arquivo local de 7 dias no modo Debug.
 
 ## Como funciona
 

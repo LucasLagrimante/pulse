@@ -216,6 +216,70 @@ pub fn build_tray_menu<R: tauri::Runtime>(manager: &AppHandle<R>) -> Result<Menu
     let open_flyout_item =
         MenuItemBuilder::with_id("open_flyout", "Painel rápido").build(manager)?;
 
+    // Submenu de Portas e Projetos Dev (Windows + WSL)
+    let dev_ports_snapshot = crate::dev_ports::cached_dev_ports_snapshot();
+    let dev_ports_title = if dev_ports_snapshot.ports.is_empty() {
+        "Portas e projetos".to_owned()
+    } else {
+        format!("Portas e projetos ({})", dev_ports_snapshot.ports.len())
+    };
+    let mut dev_ports_submenu_builder = SubmenuBuilder::new(manager, dev_ports_title);
+    if dev_ports_snapshot.ports.is_empty() {
+        dev_ports_submenu_builder = dev_ports_submenu_builder.item(
+            &MenuItemBuilder::with_id("dev_ports_none", "Nenhuma porta dev ativa")
+                .enabled(false)
+                .build(manager)?,
+        );
+    } else {
+        for entry in dev_ports_snapshot.ports.iter().take(12) {
+            let env_suffix = if entry.environment == "wsl" {
+                " · WSL"
+            } else {
+                ""
+            };
+            let entry_label = format!(
+                ":{} · {} ({}{})",
+                entry.port, entry.project_name, entry.runtime, env_suffix
+            );
+            let mut port_submenu = SubmenuBuilder::new(manager, entry_label);
+            let open_item = MenuItemBuilder::with_id(
+                format!("dev_port_open:{}", entry.port),
+                format!("Abrir {}", entry.url),
+            )
+            .build(manager)?;
+            let kill_item = MenuItemBuilder::with_id(
+                format!(
+                    "dev_port_kill:{}:{}:{}:{}",
+                    entry.environment,
+                    entry.wsl_distro.as_deref().unwrap_or(""),
+                    entry.pid,
+                    entry.port
+                ),
+                format!("Encerrar processo (PID {})", entry.pid),
+            )
+            .build(manager)?;
+
+            port_submenu = port_submenu.item(&open_item).item(&kill_item);
+            if let Some(path) = entry.project_path.as_deref() {
+                let path_item = MenuItemBuilder::with_id(
+                    format!("dev_port_path:{}:{}", entry.pid, entry.port),
+                    shorten_menu_path(path, 48),
+                )
+                .enabled(false)
+                .build(manager)?;
+                port_submenu = port_submenu.separator().item(&path_item);
+            }
+            let built_entry = port_submenu.build()?;
+            dev_ports_submenu_builder = dev_ports_submenu_builder.item(&built_entry);
+        }
+        dev_ports_submenu_builder = dev_ports_submenu_builder.separator();
+    }
+    let dev_ports_refresh_item =
+        MenuItemBuilder::with_id("dev_ports_refresh", "Atualizar portas ativas").build(manager)?;
+    let dev_ports_submenu = dev_ports_submenu_builder
+        .item(&dev_ports_refresh_item)
+        .build()?;
+
     // Submenu de Saída de Áudio
     let mut out_submenu_builder = SubmenuBuilder::new(manager, "Saída de áudio");
     if audio_inventory.output.is_empty() {
@@ -282,6 +346,8 @@ pub fn build_tray_menu<R: tauri::Runtime>(manager: &AppHandle<R>) -> Result<Menu
         .item(&open_main_item)
         .item(&open_flyout_item)
         .separator()
+        .item(&dev_ports_submenu)
+        .separator()
         .item(&out_submenu)
         .item(&in_submenu)
         .separator()
@@ -290,6 +356,18 @@ pub fn build_tray_menu<R: tauri::Runtime>(manager: &AppHandle<R>) -> Result<Menu
         .separator()
         .item(&exit_item)
         .build()
+}
+
+fn shorten_menu_path(path: &str, max_chars: usize) -> String {
+    let count = path.chars().count();
+    if count <= max_chars {
+        return path.to_owned();
+    }
+    let tail: String = path
+        .chars()
+        .skip(count.saturating_sub(max_chars.saturating_sub(1)))
+        .collect();
+    format!("…{tail}")
 }
 
 pub fn update_tray_menu<R: tauri::Runtime>(app: &AppHandle<R>) {
@@ -330,8 +408,55 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
                 "exit" => {
                     app.exit(0);
                 }
+                "dev_ports_refresh" => {
+                    crate::dev_ports::refresh_and_update_tray(app.clone());
+                }
                 _ => {
-                    if let Some(device_id) = id.strip_prefix("audio_out:") {
+                    if let Some(port_str) = id.strip_prefix("dev_port_open:") {
+                        if let Ok(port) = port_str.parse::<u16>() {
+                            let url = format!("http://localhost:{port}");
+                            let _ = tauri_plugin_opener::open_url(url, None::<&str>);
+                        }
+                    } else if let Some(payload) = id.strip_prefix("dev_port_kill:") {
+                        if let Some((environment, rest)) = payload.split_once(':') {
+                            if let Some((rest2, port_str)) = rest.rsplit_once(':') {
+                                if let Some((distro, pid_str)) = rest2.rsplit_once(':') {
+                                    if let (Ok(pid), Ok(port)) =
+                                        (pid_str.parse::<u32>(), port_str.parse::<u16>())
+                                    {
+                                        let app_handle = app.clone();
+                                        let env_owned = environment.to_owned();
+                                        let distro_owned =
+                                            (!distro.is_empty()).then(|| distro.to_owned());
+                                        std::thread::spawn(move || {
+                                            let started = std::time::Instant::now();
+                                            let res = crate::dev_ports::kill_dev_port_sync(
+                                                port,
+                                                pid,
+                                                &env_owned,
+                                                distro_owned.as_deref(),
+                                            );
+                                            crate::debug::record_result(
+                                                "kill_dev_port",
+                                                started.elapsed().as_millis(),
+                                                &res,
+                                                "Não foi possível encerrar o processo na porta",
+                                            );
+                                            if res.is_ok() {
+                                                update_tray_menu(&app_handle);
+                                                if let Some(flyout) =
+                                                    app_handle.get_webview_window("tray-flyout")
+                                                {
+                                                    let _ = flyout
+                                                        .emit("pulse://dev-ports-changed", ());
+                                                }
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    } else if let Some(device_id) = id.strip_prefix("audio_out:") {
                         let _ = crate::audio::set_default_audio_device_sync("output", device_id);
                         update_tray_menu(app);
                         if let Some(flyout) = app.get_webview_window("tray-flyout") {
@@ -373,6 +498,7 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
     builder = builder.icon(tray_icon_for_theme("light"));
 
     builder.build(app)?;
+    crate::dev_ports::refresh_and_update_tray(handle.clone());
 
     // Tooltip com as temperaturas: é a única superfície de texto do ícone
     // no Windows (o desenho do ícone é estático). Thread dedicada a cada
