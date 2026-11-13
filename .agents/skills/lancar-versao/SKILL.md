@@ -84,7 +84,7 @@ Commit pela skill `commit`, com **exatamente**:
 Depois:
 
 ```bash
-git tag -a vX.Y.Z -F src-tauri/target/release-notes/vX.Y.Z.md
+git tag -a --cleanup=verbatim vX.Y.Z -F src-tauri/target/release-notes/vX.Y.Z.md   # sem verbatim o git apaga os títulos "##" como comentário
 git push origin main
 git push origin vX.Y.Z
 ```

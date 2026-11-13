@@ -180,7 +180,7 @@ switch (command) {
     console.log(`\nVersão ${fileVersion} → ${next} (${type}) gravada em: ${VERSION_FILES.join(", ")}`);
     console.log(`Notas: ${notesPath}`);
     console.log(`\nPróximo: commit "chore(release): versão ${next}" (skill commit), depois`);
-    console.log(`  git tag -a v${next} -F ${notesPath} && git push origin main && git push origin v${next}`);
+    console.log(`  git tag -a --cleanup=verbatim v${next} -F ${notesPath} && git push origin main && git push origin v${next}`);
     break;
   }
 
