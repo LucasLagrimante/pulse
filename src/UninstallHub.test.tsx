@@ -34,6 +34,7 @@ import {
   type UninstallTargets,
   type UninstallerOutcome,
 } from "./UninstallHub";
+import { resetUninstallScan } from "./uninstallScan";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -191,6 +192,9 @@ function defaultInvoke(cmd: string): unknown {
 }
 
 beforeEach(() => {
+  // O store sobrevive ao unmount de propósito; cada teste começa sem varredura nem cache.
+  localStorage.clear();
+  resetUninstallScan();
   vi.mocked(invoke).mockReset();
   vi.mocked(invoke).mockImplementation((cmd: string) => Promise.resolve(defaultInvoke(cmd)));
 });
@@ -438,6 +442,74 @@ describe("lista de instalados", () => {
     fireEvent.change(screen.getByLabelText("Filtrar programas"), { target: { value: "zip" } });
     expect(screen.queryByText("Foto Studio")).not.toBeInTheDocument();
     expect(screen.getByText("7-Zip")).toBeInTheDocument();
+  });
+});
+
+describe("varredura em segundo plano", () => {
+  const measured = (appId: string) => ({ appId, measuredBytes: 3 * 1024 ** 3, complete: true, fileCount: 40, installLocation: "C:\\Program Files\\Foto" });
+
+  it("segue medindo depois de trocar de módulo e não reinicia ao voltar", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
+      if (cmd === "measure_installed_app_sizes") {
+        await gate;
+        return (args as { appIds: string[] }).appIds.map(measured);
+      }
+      return defaultInvoke(cmd);
+    });
+    const first = render(<UninstallHub />);
+    await screen.findByText("Foto Studio");
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("measure_installed_app_sizes", expect.anything()));
+    first.unmount();
+    release();
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("pulse.uninstall.scan.v1") ?? "{}").footprints).toHaveLength(2));
+
+    render(<UninstallHub />);
+    expect(await screen.findAllByText("medido")).toHaveLength(2);
+    const measureCalls = vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "measure_installed_app_sizes");
+    expect(measureCalls).toHaveLength(1);
+    expect(vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "list_installed_apps")).toHaveLength(1);
+  });
+
+  it("reabre do cache na hora e revalida em segundo plano", async () => {
+    const cached = snapshot();
+    localStorage.setItem(
+      "pulse.uninstall.scan.v1",
+      JSON.stringify({ v: 1, savedAt: Date.now() - 60_000, snapshot: cached, footprints: cached.apps.map(item => measured(item.id)) }),
+    );
+    resetUninstallScan({ hydrate: true });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "list_installed_apps") await gate;
+      return defaultInvoke(cmd);
+    });
+    render(<UninstallHub />);
+    // Antes do backend responder, a lista do cache já aparece com aviso honesto.
+    expect(screen.getByText("Foto Studio")).toBeInTheDocument();
+    expect(screen.getAllByText("medido")).toHaveLength(2);
+    expect(screen.getByText(/Exibindo a última varredura/)).toBeInTheDocument();
+    release();
+    await waitFor(() => expect(screen.queryByText(/Exibindo a última varredura/)).not.toBeInTheDocument());
+  });
+
+  it("descarta cache vencido", async () => {
+    localStorage.setItem(
+      "pulse.uninstall.scan.v1",
+      JSON.stringify({ v: 1, savedAt: Date.now() - 8 * 24 * 3600_000, snapshot: snapshot(), footprints: [] }),
+    );
+    resetUninstallScan({ hydrate: true });
+    render(<UninstallHub />);
+    expect(screen.queryByText("Foto Studio")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Exibindo a última varredura/)).not.toBeInTheDocument();
+    // A lista volta só pela leitura nova do registro.
+    expect(await screen.findByText("Foto Studio")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/de 2$/)).toBeInTheDocument());
   });
 });
 

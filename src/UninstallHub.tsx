@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { ensureUninstallScan, loadInstalledApps, measureAppFully, useUninstallScan } from "./uninstallScan";
 import {
   ChevronDown,
   ChevronRight,
@@ -159,7 +161,6 @@ export type EffectiveSize = {
 type Stage = "restore" | "running" | "registry" | "folders" | "done";
 
 const UNAVAILABLE = "Indisponível";
-const MEASURE_BATCH = 12;
 
 const SORT_COLUMNS: { id: AppSortColumn; label: string; name: string; hint: string; start?: boolean }[] = [
   { id: "name", label: "Programa", name: "nome", hint: "Ordem alfabética do nome exibido pelo Windows.", start: true },
@@ -375,16 +376,14 @@ export function canCleanRegistry(keys: RegistryKeyRef[], selected: Set<string>):
 }
 
 export function UninstallHub() {
-  const [snapshot, setSnapshot] = useState<InstalledAppsSnapshot>();
-  const [loadState, setLoadState] = useState<"idle" | "loading" | "ready">("idle");
-  const [error, setError] = useState("");
+  // Inventário e medição vivem fora do componente: seguem ao trocar de módulo e vêm do cache na reabertura.
+  const { snapshot, loadState, error, footprints, measuring, fullMeasuringId, cachedAt, settledCount } =
+    useUninstallScan();
+  // Erro local (abrir sessão) é separado do erro da varredura, que pertence ao store.
+  const [actionError, setActionError] = useState("");
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<AppSortColumn>("size");
   const [sortDirection, setSortDirection] = useState<AppSortDirection>("desc");
-  const [footprints, setFootprints] = useState<Map<string, AppFootprint>>(new Map());
-  const [measuring, setMeasuring] = useState(false);
-  const [fullMeasuringId, setFullMeasuringId] = useState<string | null>(null);
-  const measureRun = useRef(0);
 
   const [capabilities, setCapabilities] = useState<UninstallCapabilities>();
   const [app, setApp] = useState<InstalledApp>();
@@ -400,72 +399,14 @@ export function UninstallHub() {
   const [report, setReport] = useState<CleanupReport>();
   const [stageError, setStageError] = useState("");
 
-  const loadApps = useCallback(async (forceRefresh: boolean) => {
-    setLoadState(current => (current === "ready" ? current : "loading"));
-    setError("");
-    try {
-      const next = await invoke<InstalledAppsSnapshot>("list_installed_apps", { forceRefresh });
-      setSnapshot(next);
-      setLoadState("ready");
-    } catch (cause) {
-      setError(String(cause));
-      setLoadState("ready");
-    }
-  }, []);
+  const loadApps = loadInstalledApps;
 
   useEffect(() => {
-    if (loadState !== "idle") return;
-    void loadApps(false);
+    ensureUninstallScan();
     invoke<UninstallCapabilities>("get_uninstall_capabilities")
       .then(setCapabilities)
       .catch(() => setCapabilities(undefined));
-  }, [loadApps, loadState]);
-
-  // Mede a pasta de instalação em lotes pequenos e sequenciais (o backend
-  // limita orçamento e prazo por lote); cada lote atualiza a tela na hora.
-  useEffect(() => {
-    // Todos: sem `InstallLocation` o backend ainda tenta deduzir a pasta e achar os dados.
-    const ids = (snapshot?.apps ?? []).map(item => item.id);
-    const run = ++measureRun.current;
-    if (ids.length === 0) {
-      setMeasuring(false);
-      return;
-    }
-    setMeasuring(true);
-    void (async () => {
-      let queue = ids;
-      for (let attempt = 0; attempt < 4 && queue.length > 0; attempt += 1) {
-        const deferred: string[] = [];
-        for (let index = 0; index < queue.length; index += MEASURE_BATCH) {
-          if (measureRun.current !== run) return;
-          let batch: AppFootprint[];
-          try {
-            const result = await invoke<AppFootprint[]>("measure_installed_app_sizes", {
-              appIds: queue.slice(index, index + MEASURE_BATCH),
-            });
-            batch = Array.isArray(result) ? result : [];
-          } catch {
-            batch = [];
-          }
-          if (measureRun.current !== run) return;
-          deferred.push(...batch.filter(item => item.unavailableReason === "Medição adiada").map(item => item.appId));
-          const settled = batch.filter(item => item.unavailableReason !== "Medição adiada");
-          if (settled.length) {
-            setFootprints(current => {
-              const next = new Map(current);
-              for (const item of settled) next.set(item.appId, item);
-              return next;
-            });
-          }
-        }
-        queue = deferred;
-      }
-      if (measureRun.current === run) setMeasuring(false);
-    })();
-    return () => {
-      measureRun.current += 1;
-    };
-  }, [snapshot]);
+  }, []);
 
   const apps = useMemo(
     () => sortApps(filterApps(snapshot?.apps ?? [], query), sortBy, sortDirection, footprints),
@@ -488,20 +429,7 @@ export function UninstallHub() {
   const measuredCount = [...sizes.values()].filter(size => size != null && size.source !== "registry").length;
 
   // Medição sem teto de um único app, pedida pelo usuário; uma por vez no backend.
-  const measureFully = async (target: InstalledApp) => {
-    setFullMeasuringId(target.id);
-    setError("");
-    try {
-      const result = await invoke<AppFootprint>("measure_installed_app_size_full", { appId: target.id });
-      if (result && typeof result === "object" && result.appId) {
-        setFootprints(current => new Map(current).set(result.appId, result));
-      }
-    } catch (cause) {
-      setError(String(cause));
-    } finally {
-      setFullMeasuringId(null);
-    }
-  };
+  const measureFully = (target: InstalledApp) => void measureAppFully(target.id);
 
   const handleSort = (column: AppSortColumn) => {
     if (column === sortBy) {
@@ -548,7 +476,7 @@ export function UninstallHub() {
 
   const openApp = async (target: InstalledApp) => {
     setStageError("");
-    setError("");
+    setActionError("");
     setSession(undefined);
     setOutcome(undefined);
     setReport(undefined);
@@ -558,7 +486,7 @@ export function UninstallHub() {
       setSession(next);
       setApp(target);
     } catch (cause) {
-      setError(String(cause));
+      setActionError(String(cause));
     }
   };
 
@@ -733,8 +661,14 @@ export function UninstallHub() {
             ? `Leitura parcial: ${snapshot.partialReason}`
             : "Tamanho medido pelo Pulse no disco: pasta do programa (deduzida quando o instalador não a informa) e, à parte, os dados em AppData/ProgramData. Sem pasta, vale a estimativa do instalador."}
         </p>
+        {cachedAt != null && (
+          <p className="dt-note un-cache-note" role="status">
+            {`Exibindo a última varredura (${formatScanTime(cachedAt)}); conferindo no disco em segundo plano`}
+            {snapshot?.apps.length ? ` — ${settledCount} de ${snapshot.apps.length} atualizados.` : "."}
+          </p>
+        )}
 
-        {error && <p className="un-alert" role="alert">{error}</p>}
+        {(actionError || error) && <p className="un-alert" role="alert">{actionError || error}</p>}
 
         <div className="dt-table">
           <div className="dt-head">
@@ -1084,6 +1018,13 @@ export function UninstallHub() {
       )}
     </section>
   );
+}
+
+/** Data/hora da varredura em cache, ex.: "13/11 14:05". */
+export function formatScanTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "data indisponível";
+  return date.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 export function stageLabel(stage: Stage): string {
