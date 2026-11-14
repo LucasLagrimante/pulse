@@ -397,13 +397,23 @@ pub fn describe_exit_code(code: i32) -> (String, bool) {
         0x8007_0005 => admin("Acesso negado pelo Windows; tente como administrador"),
         0x8A15_0006 => plain("O instalador do aplicativo terminou com erro"),
         0x8A15_0008 => plain("Falha ao baixar o instalador"),
+        0x8007_3D02 => plain("O aplicativo está aberto; feche-o e tente de novo"),
         0x8A15_0010 => plain("Nenhum instalador do pacote é compatível com este sistema"),
         0x8A15_0011 => plain("O instalador baixado não confere com o hash do manifesto"),
+        // Visto com o PowerShell 7.6 (MSI): a listagem correlaciona o pacote
+        // pelo nome, mas o winget não o encontra pelo ID na hora de atualizar.
+        0x8A15_0014 => plain(
+            "O winget lista a atualização, mas não encontra o pacote instalado pelo ID; atualize pelo próprio aplicativo ou pelo site do fabricante",
+        ),
+        0x8A15_0016 => plain("Mais de um pacote corresponde a este ID"),
         0x8A15_002B => plain(
             "Nenhuma atualização aplicável: a versão instalada não pôde ser comparada ou o pacote está fixado",
         ),
         0x8A15_002C => plain("Uma ou mais atualizações falharam"),
         0x8A15_0065 => plain("Um ou mais aplicativos não foram instalados"),
+        0x8A15_008E => plain(
+            "A versão nova usa outro tipo de instalador que a instalada; desinstale e instale de novo",
+        ),
         0x8A15_0101 => plain("O aplicativo está em execução; feche-o e tente de novo"),
         0x8A15_0102 => plain("Outra instalação já está em andamento; tente mais tarde"),
         0x8A15_0103 => plain("Há arquivos do aplicativo em uso; feche-o e tente de novo"),
@@ -1197,6 +1207,11 @@ mod tests {
         assert!(message.contains("em execução"));
         let (message, _) = describe_exit_code(0x8A15_0006_u32 as i32);
         assert!(message.contains("instalador"));
+        // Códigos reais do lote de 2026-11-14 que saíam sem tradução.
+        let (message, _) = describe_exit_code(0x8A15_008E_u32 as i32);
+        assert!(message.contains("outro tipo de instalador"));
+        let (message, _) = describe_exit_code(0x8A15_0014_u32 as i32);
+        assert!(message.contains("não encontra o pacote"));
         let (message, _) = describe_exit_code(0x8A15_FFFF_u32 as i32);
         assert!(message.contains("0x8A15FFFF"));
         let (message, needs_admin) = describe_exit_code(UAC_CANCELLED_EXIT_CODE);
