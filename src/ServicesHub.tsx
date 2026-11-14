@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Download, Play, RefreshCw, Search, Square } from "lucide-react";
+import { Download, Play, RefreshCw, Search, ShieldCheck, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AI_PROVIDERS, type SupportedAiProvider } from "./AiDiskAdvisorModal";
 import { AiProviderCycleButton } from "./AiProviderCycleButton";
@@ -11,6 +11,7 @@ import {
   consumeRefreshRequest,
   getUpgradeJobsState,
   pruneUpgradeJobs,
+  retryBatchFailuresAsAdmin,
   startPackageUpgrade,
   startUpgradeAll,
   subscribeUpgradeJobs,
@@ -332,8 +333,18 @@ export function ServicesHub() {
   // Instalações vivem fora do componente: o hub é desmontado ao trocar de área,
   // mas o winget segue rodando e o progresso precisa estar lá na volta.
   const upgrades = useSyncExternalStore(subscribeUpgradeJobs, getUpgradeJobsState);
-  const { jobs: updateJobs, busyAll, batchLog, batchStartedAt, batchNotice, batchError, needsRefresh } =
-    upgrades;
+  const {
+    jobs: updateJobs,
+    busyAll,
+    batchLog,
+    batchStartedAt,
+    batchNotice,
+    batchError,
+    batchFailures,
+    batchTotal,
+    needsRefresh,
+  } = upgrades;
+  const adminFailures = useMemo(() => batchFailures.filter(item => item.needsAdmin), [batchFailures]);
 
   const runningCount = useMemo(
     () => Object.values(updateJobs).filter(job => job.state === "running").length,
@@ -483,7 +494,7 @@ export function ServicesHub() {
     }
   };
 
-  const runUpgrade = (update: PendingUpdate) => startPackageUpgrade(update.id);
+  const runUpgrade = (update: PendingUpdate, elevated = false) => startPackageUpgrade(update.id, { elevated });
 
   const runUpgradeAll = () => {
     setUpdatesError("");
@@ -878,6 +889,42 @@ export function ServicesHub() {
               {updatesError || batchError}
             </p>
           )}
+          {!busyAll && batchFailures.length > 0 && (
+            <div className="sh-error sh-batch-report" role="alert">
+              <strong>
+                {batchFailures.length === 1
+                  ? `1 de ${formatCount(batchTotal)} aplicativos não foi atualizado`
+                  : `${formatCount(batchFailures.length)} de ${formatCount(batchTotal)} aplicativos não foram atualizados`}
+              </strong>
+              <ul>
+                {batchFailures.map(failure => (
+                  <li key={failure.id}>
+                    <b>{failure.name}</b>
+                    <span>{failure.message}</span>
+                    {failure.code && <code>{failure.code}</code>}
+                  </li>
+                ))}
+              </ul>
+              {adminFailures.length > 0 && (
+                <div className="sh-batch-report-actions">
+                  <small>
+                    {adminFailures.length === 1
+                      ? "1 pacote precisa de privilégios de administrador. O Windows vai pedir confirmação."
+                      : `${formatCount(adminFailures.length)} pacotes precisam de privilégios de administrador. O Windows pede confirmação para cada um.`}
+                  </small>
+                  <button
+                    type="button"
+                    className="sh-btn"
+                    onClick={() => void retryBatchFailuresAsAdmin()}
+                    disabled={adminFailures.some(item => updateJobs[item.id]?.state === "running")}
+                  >
+                    <ShieldCheck size={13} aria-hidden="true" />
+                    {adminFailures.length === 1 ? "TENTAR COMO ADMINISTRADOR" : `TENTAR ${adminFailures.length} COMO ADMINISTRADOR`}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {(notice || batchNotice) && (
             <p className="sh-notice" role="status">
               {notice || batchNotice}
@@ -955,6 +1002,7 @@ export function ServicesHub() {
                             {job?.state === "error" && (
                               <small className="sh-item-error" role="alert">
                                 {job.message}
+                                {job.code ? ` (${job.code})` : ""}
                               </small>
                             )}
                           </span>
@@ -970,17 +1018,30 @@ export function ServicesHub() {
                           {done && <small className="sh-item-elapsed sh-item-elapsed-done">ATUALIZADO</small>}
                         </span>
                         <span className="dt-action">
-                          <button
-                            type="button"
-                            className="row-action"
-                            aria-label={`Atualizar ${update.name}`}
-                            title={`Atualizar ${update.name} para ${update.availableVersion || "a versão disponível"} via winget`}
-                            disabled={running}
-                            onClick={() => void runUpgrade(update)}
-                          >
-                            <Download size={13} strokeWidth={2.1} aria-hidden="true" />
-                            <span>{running ? "Atualizando…" : "Atualizar"}</span>
-                          </button>
+                          {job?.state === "error" && job.needsAdmin ? (
+                            <button
+                              type="button"
+                              className="row-action"
+                              aria-label={`Atualizar ${update.name} como administrador`}
+                              title={`Repetir a atualização de ${update.name} com privilégios de administrador (o Windows pede confirmação)`}
+                              onClick={() => void runUpgrade(update, true)}
+                            >
+                              <ShieldCheck size={13} strokeWidth={2.1} aria-hidden="true" />
+                              <span>Como admin</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="row-action"
+                              aria-label={`Atualizar ${update.name}`}
+                              title={`Atualizar ${update.name} para ${update.availableVersion || "a versão disponível"} via winget`}
+                              disabled={running}
+                              onClick={() => void runUpgrade(update)}
+                            >
+                              <Download size={13} strokeWidth={2.1} aria-hidden="true" />
+                              <span>{running ? "Atualizando…" : "Atualizar"}</span>
+                            </button>
+                          )}
                         </span>
                       </li>
                     );

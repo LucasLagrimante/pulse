@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-`upgrade_winget_package` / `upgrade_all_winget_packages` aceitam `AppHandle` e emitem `winget-upgrade-progress` (`{ id, phase, line }`, fases `started|log|finished|failed|timeout`, id `*` reservado ao lote) a cada linha de stdout/stderr, lida em threads próprias com `BufReader::lines()`.
+`upgrade_winget_package` / `upgrade_all_winget_packages` aceitam `AppHandle` e emitem `winget-upgrade-progress` (`{ id, phase, line }`, fases `started|log|finished|failed|timeout`, id `*` reservado ao resumo do lote; no lote cada pacote também emite com o próprio id e o store cria o job no `started`) a cada linha de stdout/stderr, lida em threads próprias com `BufReader::lines()`.
 
 **Why:** o winget **não expõe porcentagem** — uma barra com "62%" seria dado fictício, proibido pelo AGENTS.md §1.2. E o `winget list --upgrade-available` do host tem 57 pacotes: um único `busyUpdate: string` fazia o segundo clique cancelar o loading visual do primeiro (que continuava rodando em background, invisível).
 

@@ -159,6 +159,7 @@ pub fn run() {
             app_updates::list_pending_updates,
             app_updates::upgrade_winget_package,
             app_updates::upgrade_all_winget_packages,
+            app_updates::upgrade_winget_package_elevated,
             subscription_usage::get_subscription_usage,
             subscription_usage::get_subscription_settings,
             subscription_usage::set_openrouter_api_key,

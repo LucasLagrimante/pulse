@@ -551,7 +551,9 @@ describe("Aba de atualizações", () => {
   it("ATUALIZAR TUDO invoca upgrade_all_winget_packages e reconsulta a lista", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) =>
       Promise.resolve(
-        cmd === "list_pending_updates"
+        cmd === "upgrade_all_winget_packages"
+          ? { total: 2, succeeded: ["Docker.DockerDesktop", "Anki.Anki"], failed: [] }
+          : cmd === "list_pending_updates"
           ? updatesSnapshot({
               updates: [
                 { id: "Docker.DockerDesktop", name: "Docker Desktop", currentVersion: "4.35.1", availableVersion: "4.36.0", source: "winget" },
@@ -568,7 +570,7 @@ describe("Aba de atualizações", () => {
     fireEvent.click(screen.getByRole("button", { name: "ATUALIZAR TUDO" }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("upgrade_all_winget_packages"));
     await waitFor(() =>
-      expect(screen.getByRole("status").textContent).toContain("Todos os aplicativos desatualizados"),
+      expect(screen.getByRole("status").textContent).toContain("Todos os 2 aplicativos pendentes foram atualizados"),
     );
     // A lista é reconsultada após a execução em lote.
     const after = vi.mocked(invoke).mock.calls.filter(call => call[0] === "list_pending_updates").length;
@@ -637,6 +639,74 @@ describe("Aba de atualizações", () => {
       expect(screen.getByRole("alert").textContent).toContain("Acesso negado ao instalar o pacote"),
     );
   });
+  describe("falhas estruturadas do winget", () => {
+    const TWO = () =>
+      updatesSnapshot({
+        updates: [
+          { id: "Docker.DockerDesktop", name: "Docker Desktop", currentVersion: "4.35.1", availableVersion: "4.36.0", source: "winget" },
+          { id: "Anki.Anki", name: "Anki Launcher", currentVersion: "25.09", availableVersion: "26.09.3", source: "winget" },
+        ],
+        totalCount: 2,
+      });
+    const ADMIN_FAILURE = {
+      message: "O pacote registra um serviço do Windows e exige privilégios de administrador",
+      code: "0x80073D28",
+      needsAdmin: true,
+      detail: null,
+    };
+
+    it("lote com falhas lista a causa por pacote em vez da saída crua do winget", async () => {
+      vi.mocked(invoke).mockImplementation((cmd: string) => {
+        if (cmd === "list_pending_updates") return Promise.resolve(TWO());
+        if (cmd === "upgrade_all_winget_packages") {
+          return Promise.resolve({
+            total: 2,
+            succeeded: ["Docker.DockerDesktop"],
+            failed: [{ id: "Anki.Anki", name: "Anki Launcher", ...ADMIN_FAILURE }],
+          });
+        }
+        return Promise.resolve(defaultInvoke(cmd));
+      });
+      await openUpdatesTab();
+      await waitFor(() => expect(screen.getByText("Docker Desktop")).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "ATUALIZAR TUDO" }));
+
+      await waitFor(() => expect(screen.getByText("1 de 2 aplicativos não foi atualizado")).toBeTruthy());
+      const report = screen.getByText("1 de 2 aplicativos não foi atualizado").closest("[role=alert]");
+      expect(report?.textContent).toContain("Anki Launcher");
+      expect(report?.textContent).toContain("exige privilégios de administrador");
+      expect(report?.textContent).toContain("0x80073D28");
+      expect(screen.getByText("1 de 2 aplicativos atualizados.")).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: /TENTAR COMO ADMINISTRADOR/ }));
+      await waitFor(() =>
+        expect(invoke).toHaveBeenCalledWith("upgrade_winget_package_elevated", { id: "Anki.Anki" }),
+      );
+      // Sucesso como administrador tira o pacote do relatório.
+      await waitFor(() => expect(screen.queryByText("1 de 2 aplicativos não foi atualizado")).toBeNull());
+    });
+
+    it("falha que exige administrador oferece repetir elevado na própria linha", async () => {
+      vi.mocked(invoke).mockImplementation((cmd: string) => {
+        if (cmd === "list_pending_updates") return Promise.resolve(TWO());
+        if (cmd === "upgrade_winget_package") return Promise.reject(ADMIN_FAILURE);
+        return Promise.resolve(defaultInvoke(cmd));
+      });
+      await openUpdatesTab();
+      await waitFor(() => expect(screen.getByText("Anki Launcher")).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "Atualizar Anki Launcher" }));
+
+      await waitFor(() =>
+        expect(screen.getByRole("alert").textContent).toBe(
+          "O pacote registra um serviço do Windows e exige privilégios de administrador (0x80073D28)",
+        ),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Atualizar Anki Launcher como administrador" }));
+      await waitFor(() =>
+        expect(invoke).toHaveBeenCalledWith("upgrade_winget_package_elevated", { id: "Anki.Anki" }),
+      );
+    });
+});
 });
 
 describe("Atualizar tudo na aba de serviços", () => {

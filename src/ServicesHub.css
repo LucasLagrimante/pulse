@@ -128,6 +128,53 @@
   border: 1px solid color-mix(in srgb, var(--neu-danger) 30%, var(--neu-divider));
 }
 
+.sh-batch-report {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sh-batch-report ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sh-batch-report li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  overflow-wrap: anywhere;
+}
+
+.sh-batch-report li b {
+  color: var(--neu-text-primary);
+  font-weight: 600;
+}
+
+.sh-batch-report code {
+  font: inherit;
+  color: var(--neu-text-muted);
+}
+
+.sh-batch-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--neu-danger) 20%, var(--neu-divider));
+}
+
+.sh-batch-report-actions small {
+  color: var(--neu-text-muted);
+}
+
 .sh-notice {
   color: var(--neu-success);
   background: color-mix(in srgb, var(--neu-success) 10%, var(--neu-surface));

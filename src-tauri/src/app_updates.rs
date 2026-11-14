@@ -275,7 +275,9 @@ pub fn parse_footer_total(output: &str) -> Option<usize> {
         if digits.is_empty() {
             continue;
         }
-        if trimmed.contains("atualiza") || trimmed.contains("upgrade") || trimmed.contains("actualiza")
+        if trimmed.contains("atualiza")
+            || trimmed.contains("upgrade")
+            || trimmed.contains("actualiza")
         {
             return digits.parse().ok();
         }
@@ -314,67 +316,384 @@ fn validate_package_id(id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Falha de uma atualização, já traduzida para o usuário.
+///
+/// O `winget` devolve um HRESULT como código de saída e uma saída localizada
+/// que começa pela tabela de pacotes. Repassar essa saída crua à UI mostrava a
+/// tabela inteira como "erro" e escondia a causa real (ex.: `0x80073D28`,
+/// pacote MSIX que registra serviço e exige administrador). Por isso a causa é
+/// derivada do **código** (independe de idioma) e a saída entra só como
+/// `detail`, filtrada.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpgradeFailure {
+    /// Frase pronta para a UI, em pt-BR.
+    pub message: String,
+    /// Código de saída em hexadecimal (`0x8A15002C`), quando houver.
+    pub code: Option<String>,
+    /// A falha some ao repetir a operação com privilégios de administrador.
+    pub needs_admin: bool,
+    /// Últimas linhas úteis da saída do winget (sem tabela nem barra de progresso).
+    pub detail: Option<String>,
+}
+
+impl UpgradeFailure {
+    fn plain(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            code: None,
+            needs_admin: false,
+            detail: None,
+        }
+    }
+
+    fn from_exit_code(code: Option<i32>, output: &str) -> Self {
+        let detail = relevant_output_detail(output);
+        match code {
+            Some(code) => {
+                let (message, needs_admin) = describe_exit_code(code);
+                Self {
+                    message,
+                    code: Some(format_exit_code(code)),
+                    needs_admin,
+                    detail,
+                }
+            }
+            None => Self {
+                message: "O winget foi encerrado sem código de saída".to_string(),
+                code: None,
+                needs_admin: false,
+                detail,
+            },
+        }
+    }
+}
+
+/// Código de saída no formato em que o winget e a documentação o exibem.
+pub fn format_exit_code(code: i32) -> String {
+    if !(0..=0xFFFF).contains(&code) {
+        format!("0x{:08X}", code as u32)
+    } else {
+        code.to_string()
+    }
+}
+
+/// `ERROR_CANCELLED`: devolvido pelo script de elevação quando o usuário
+/// recusa o aviso do Controle de Conta de Usuário.
+const UAC_CANCELLED_EXIT_CODE: i32 = 1223;
+
+/// Traduz o código de saída do winget (HRESULT) para pt-BR e diz se a falha
+/// depende de privilégios de administrador.
+///
+/// Tabela oficial: `winget error --output` / doc `returnCodes.md` do winget-cli.
+pub fn describe_exit_code(code: i32) -> (String, bool) {
+    let admin = |text: &str| (text.to_string(), true);
+    let plain = |text: &str| (text.to_string(), false);
+    match code as u32 {
+        0x8007_3D28 => admin(
+            "O pacote registra um serviço do Windows e exige privilégios de administrador",
+        ),
+        0x8A15_0019 => admin("O comando exige privilégios de administrador"),
+        0x8007_0005 => admin("Acesso negado pelo Windows; tente como administrador"),
+        0x8A15_0006 => plain("O instalador do aplicativo terminou com erro"),
+        0x8A15_0008 => plain("Falha ao baixar o instalador"),
+        0x8A15_0010 => plain("Nenhum instalador do pacote é compatível com este sistema"),
+        0x8A15_0011 => plain("O instalador baixado não confere com o hash do manifesto"),
+        0x8A15_002B => plain(
+            "Nenhuma atualização aplicável: a versão instalada não pôde ser comparada ou o pacote está fixado",
+        ),
+        0x8A15_002C => plain("Uma ou mais atualizações falharam"),
+        0x8A15_0065 => plain("Um ou mais aplicativos não foram instalados"),
+        0x8A15_0101 => plain("O aplicativo está em execução; feche-o e tente de novo"),
+        0x8A15_0102 => plain("Outra instalação já está em andamento; tente mais tarde"),
+        0x8A15_0103 => plain("Há arquivos do aplicativo em uso; feche-o e tente de novo"),
+        0x8A15_0104 => plain("Falta uma dependência do pacote neste sistema"),
+        0x8A15_0105 => plain("Sem espaço livre em disco para instalar"),
+        0x8A15_0106 => plain("Memória insuficiente para instalar; feche outros aplicativos"),
+        0x8A15_0107 => plain("O instalador precisa de conexão com a internet"),
+        0x8A15_0109 => plain("Reinicie o computador para concluir a instalação"),
+        0x8A15_010A => plain("Reinicie o computador e tente de novo"),
+        0x8A15_010C => plain("A instalação foi cancelada"),
+        0x8A15_010E => plain("Uma versão mais nova do aplicativo já está instalada"),
+        0x8A15_010F => plain("Políticas da organização bloqueiam esta instalação"),
+        0x8A15_0110 => plain("Falha ao instalar as dependências do pacote"),
+        0x8A15_0111 => plain("O aplicativo está em uso por outro programa; feche-o e tente de novo"),
+        0x8A15_0114 => plain(
+            "O instalador não aceita atualizar por cima; desinstale e instale de novo",
+        ),
+        _ if code == UAC_CANCELLED_EXIT_CODE => {
+            plain("A elevação foi recusada no aviso do Controle de Conta de Usuário")
+        }
+        _ => (format!("O winget falhou com o código {}", format_exit_code(code)), false),
+    }
+}
+
+/// Linhas da saída que explicam a falha.
+///
+/// A saída do `upgrade` repete a tabela de pacotes e barras de progresso
+/// (`██▒▒ 10 MB / 50 MB`); nada disso explica o erro. Descartamos linhas de
+/// tabela (ID conhecido + origem conhecida), separadores e progresso, e
+/// devolvemos as últimas 3 restantes — é onde o winget escreve o motivo.
+pub fn relevant_output_detail(output: &str) -> Option<String> {
+    let table_ids: Vec<String> = parse_winget_upgrades(output)
+        .into_iter()
+        .map(|update| update.id)
+        .collect();
+    let useful: Vec<&str> = output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| !line.chars().all(|ch| ch == '-' || ch.is_whitespace()))
+        .filter(|line| !line.contains('█') && !line.contains('▒'))
+        .filter(|line| !matches!(*line, "-" | "\\" | "|" | "/"))
+        .filter(|line| {
+            let last = line.split_whitespace().last().unwrap_or("");
+            !(KNOWN_SOURCES.contains(&last)
+                && table_ids.iter().any(|id| line.contains(id.as_str())))
+        })
+        .filter(|line| column_offsets(line).is_none())
+        .collect();
+    if useful.is_empty() {
+        return None;
+    }
+    let start = useful.len().saturating_sub(3);
+    Some(useful[start..].join("\n"))
+}
+
 /// Instala/atualiza um pacote via `winget upgrade`.
 ///
 /// Diferente da listagem, isto é uma ação do usuário: roda sob demanda, sem
-/// cache, com timeout longo (upgrade é lento) e propaga a mensagem de erro do
-/// Windows — como "Acesso negado" — para a UI, em vez de engoli-la.
+/// cache, com timeout longo (upgrade é lento) e propaga a causa da falha —
+/// como "exige administrador" — para a UI, em vez de engoli-la.
 #[tauri::command]
-pub async fn upgrade_winget_package(id: String, app: AppHandle) -> Result<String, String> {
-    validate_package_id(&id)?;
+pub async fn upgrade_winget_package(id: String, app: AppHandle) -> Result<String, UpgradeFailure> {
+    validate_package_id(&id).map_err(UpgradeFailure::plain)?;
     let package_id = id.trim().to_string();
 
-    tauri::async_runtime::spawn_blocking(move || run_upgrade(package_id, app))
-        .await
-        .map_err(|_| "A atualização foi interrompida".to_string())?
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        run_winget_upgrade(package_upgrade_args(&package_id), (app, package_id))
+    })
+    .await
+    .map_err(|_| UpgradeFailure::plain("A atualização foi interrompida"))?;
+    invalidate_updates_cache();
+    result
 }
 
-fn run_upgrade(id: String, app: AppHandle) -> Result<String, String> {
-    run_winget_upgrade(
-        vec![
-            "upgrade".to_string(),
-            "--id".to_string(),
-            id.clone(),
-            "--exact".to_string(),
-        ],
-        (app, id),
+fn package_upgrade_args(id: &str) -> Vec<String> {
+    vec![
+        "upgrade".to_string(),
+        "--id".to_string(),
+        id.to_string(),
+        "--exact".to_string(),
+    ]
+}
+
+/// Falha de um pacote dentro do lote.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchFailure {
+    pub id: String,
+    pub name: String,
+    #[serde(flatten)]
+    pub failure: UpgradeFailure,
+}
+
+/// Resultado de "Atualizar tudo": quem foi atualizado e por que os demais não.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchUpgradeReport {
+    pub total: usize,
+    pub succeeded: Vec<String>,
+    pub failed: Vec<BatchFailure>,
+}
+
+/// Atualiza **todos** os pacotes pendentes, um `winget upgrade --id` por vez.
+///
+/// Não usamos `winget upgrade --all`: ele devolve um único código
+/// (`0x8A15002C`, "concluído com falhas") e uma saída localizada sem dizer
+/// qual pacote falhou nem por quê. Pacote a pacote, cada um tem código de
+/// saída próprio, a linha correspondente mostra o próprio progresso e o
+/// relatório final lista as falhas com a causa traduzida.
+#[tauri::command]
+pub async fn upgrade_all_winget_packages(
+    app: AppHandle,
+) -> Result<BatchUpgradeReport, UpgradeFailure> {
+    let result = tauri::async_runtime::spawn_blocking(move || run_upgrade_all(&app))
+        .await
+        .map_err(|_| UpgradeFailure::plain("A atualização foi interrompida"))?;
+    invalidate_updates_cache();
+    result
+}
+
+fn run_upgrade_all(app: &AppHandle) -> Result<BatchUpgradeReport, UpgradeFailure> {
+    let snapshot = cached_or_fresh_snapshot(false);
+    if let Some(reason) = snapshot.unavailable_reason {
+        return Err(UpgradeFailure::plain(reason));
+    }
+
+    let total = snapshot.updates.len();
+    emit_progress(
+        app,
+        ALL_PACKAGES_ID,
+        "started",
+        &format!("{total} aplicativos na fila de atualização"),
+    );
+    let mut succeeded = Vec::new();
+    let mut failed = Vec::new();
+    for (index, update) in snapshot.updates.iter().enumerate() {
+        emit_progress(
+            app,
+            ALL_PACKAGES_ID,
+            "log",
+            &format!("({}/{total}) Atualizando {}…", index + 1, update.name),
+        );
+        let outcome = validate_package_id(&update.id)
+            .map_err(UpgradeFailure::plain)
+            .and_then(|_| {
+                run_winget_upgrade(
+                    package_upgrade_args(&update.id),
+                    (app.clone(), update.id.clone()),
+                )
+            });
+        match outcome {
+            Ok(_) => succeeded.push(update.id.clone()),
+            Err(failure) => failed.push(BatchFailure {
+                id: update.id.clone(),
+                name: update.name.clone(),
+                failure,
+            }),
+        }
+    }
+    emit_progress(
+        app,
+        ALL_PACKAGES_ID,
+        "finished",
+        &format!("{} de {total} aplicativos atualizados", succeeded.len()),
+    );
+    Ok(BatchUpgradeReport {
+        total,
+        succeeded,
+        failed,
+    })
+}
+
+/// Repete a atualização de um pacote **como administrador**.
+///
+/// O Pulse roda sem elevação; pacotes MSIX que registram serviço (Claude,
+/// WSL, Codex) falham com `0x80073D28`. Aqui o winget é relançado via
+/// `Start-Process -Verb RunAs`, o que mostra o aviso do UAC — o usuário decide.
+/// Um processo elevado não pode ter a saída redirecionada para um processo
+/// comum, então o progresso é só o código de saída final.
+#[tauri::command]
+pub async fn upgrade_winget_package_elevated(
+    id: String,
+    app: AppHandle,
+) -> Result<String, UpgradeFailure> {
+    validate_package_id(&id).map_err(UpgradeFailure::plain)?;
+    let package_id = id.trim().to_string();
+
+    let result =
+        tauri::async_runtime::spawn_blocking(move || run_elevated_upgrade(package_id, app))
+            .await
+            .map_err(|_| UpgradeFailure::plain("A atualização foi interrompida"))?;
+    invalidate_updates_cache();
+    result
+}
+
+/// Script PowerShell de uma linha que relança o winget elevado e devolve o
+/// código de saída dele. Recusa no UAC vira `1223` (`ERROR_CANCELLED`).
+pub fn elevated_upgrade_script(winget: &str, id: &str) -> String {
+    let quote = |text: &str| format!("'{}'", text.replace('\'', "''"));
+    let mut args = package_upgrade_args(id);
+    args.extend(
+        [
+            "--accept-source-agreements",
+            "--accept-package-agreements",
+            "--disable-interactivity",
+        ]
+        .map(String::from),
+    );
+    let arg_list = args
+        .iter()
+        .map(|arg| quote(arg))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "$ErrorActionPreference='Stop'; try {{ $p = Start-Process -FilePath {} -ArgumentList @({arg_list}) -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $p.ExitCode }} catch {{ $e = $_.Exception; while ($e) {{ if ($e.NativeErrorCode -eq {UAC_CANCELLED_EXIT_CODE} -or $e.HResult -eq -2147023673) {{ exit {UAC_CANCELLED_EXIT_CODE} }}; $e = $e.InnerException }}; [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}",
+        quote(winget)
     )
 }
 
-/// Atualiza **todos** os pacotes desatualizados de uma vez (`winget upgrade --all`).
-///
-/// Ação explícita do usuário, como `upgrade_winget_package`: sem cache, timeout
-/// longo (instalações em série podem passar de minutos) e erro do Windows
-/// propagado para a UI. A lista é reconsultada pelo front após o retorno.
-#[tauri::command]
-pub async fn upgrade_all_winget_packages(app: AppHandle) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        // O progresso em lote é emitido sob o id reservado `*`: o front mostra
-        // uma barra geral, sem ambiguidade sobre qual pacote está em curso.
-        run_winget_upgrade(
-            vec!["upgrade".to_string(), "--all".to_string()],
-            (app, ALL_PACKAGES_ID.to_string()),
-        )
-    })
-    .await
-    .map_err(|_| "A atualização foi interrompida".to_string())?
+fn run_elevated_upgrade(id: String, app: AppHandle) -> Result<String, UpgradeFailure> {
+    use base64::Engine;
+
+    let Some(path) = winget_path() else {
+        return Err(UpgradeFailure::plain(
+            "Gerenciador de Pacotes do Windows (winget) não encontrado neste sistema",
+        ));
+    };
+    let script = elevated_upgrade_script(&path.to_string_lossy(), &id);
+    // `-EncodedCommand` (UTF-16LE em base64) elimina qualquer problema de
+    // aspas ao repassar o script como argumento.
+    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let encoded = base64::engine::general_purpose::STANDARD.encode(utf16);
+
+    let mut child = crate::process::hidden_command("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-EncodedCommand",
+            &encoded,
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            UpgradeFailure::plain(format!("Não foi possível iniciar o PowerShell: {error}"))
+        })?;
+
+    emit_progress(
+        &app,
+        &id,
+        "started",
+        "Aguardando confirmação no aviso de administrador do Windows…",
+    );
+    let mut readers = Vec::new();
+    if let Some(pipe) = child.stdout.take() {
+        readers.push(spawn_output_reader(pipe, app.clone(), id.clone()));
+    }
+    if let Some(pipe) = child.stderr.take() {
+        readers.push(spawn_output_reader(pipe, app.clone(), id.clone()));
+    }
+
+    let status = wait_for_upgrade(&mut child, &app, &id)?;
+    let output = join_readers(readers);
+    if !status.success() {
+        let failure = UpgradeFailure::from_exit_code(status.code(), &output);
+        emit_progress(&app, &id, "failed", &failure.message);
+        return Err(failure);
+    }
+    emit_progress(&app, &id, "finished", "Concluído como administrador");
+    Ok(truncate_chars(&output, UPGRADE_OUTPUT_LIMIT))
 }
 
 /// Executa `winget upgrade` com os argumentos informados e devolve a saída.
 ///
 /// Com `progress` o comando emite `UPGRADE_PROGRESS_EVENT` a cada linha de
-/// saída do winget: o front precisa mostrar o que está rodando, porque several
+/// saída do winget: o front precisa mostrar o que está rodando, porque vários
 /// upgrades podem ficar em paralelo. O `winget` **não expõe porcentagem** de
 /// progresso, então a barra é indeterminada e o texto da saída é o feedback
 /// honesto disponível — nada de porcentagem fictícia.
 fn run_winget_upgrade(
     mut args: Vec<String>,
     progress: (AppHandle, String),
-) -> Result<String, String> {
+) -> Result<String, UpgradeFailure> {
     let Some(path) = winget_path() else {
-        return Err(
-            "Gerenciador de Pacotes do Windows (winget) não encontrado neste sistema".to_string(),
-        );
+        return Err(UpgradeFailure::plain(
+            "Gerenciador de Pacotes do Windows (winget) não encontrado neste sistema",
+        ));
     };
 
     args.extend([
@@ -388,7 +707,9 @@ fn run_winget_upgrade(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|error| format!("Não foi possível executar o winget: {error}"))?;
+        .map_err(|error| {
+            UpgradeFailure::plain(format!("Não foi possível executar o winget: {error}"))
+        })?;
 
     let (app, id) = progress;
     emit_progress(&app, &id, "started", "Instalação iniciada pelo winget");
@@ -396,78 +717,75 @@ fn run_winget_upgrade(
     // Os pipes são drenados em threads próprias: sem isso o buffer do OS
     // enche, o winget trava escrevendo e o `try_wait` só veria um processo morto
     // de verdade — não um travamento de pipe.
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
     let mut readers = Vec::new();
-    if let Some(pipe) = stdout {
+    if let Some(pipe) = child.stdout.take() {
         readers.push(spawn_output_reader(pipe, app.clone(), id.clone()));
     }
-    if let Some(pipe) = stderr {
+    if let Some(pipe) = child.stderr.take() {
         readers.push(spawn_output_reader(pipe, app.clone(), id.clone()));
     }
 
-    let deadline = Instant::now() + UPGRADE_TIMEOUT;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    for reader in readers {
-                        let _ = reader.join();
-                    }
-                    emit_progress(&app, &id, "timeout", "Tempo limite de 15 minutos excedido");
-                    return Err(
-                        "A atualização excedeu o tempo limite de 15 minutos e foi cancelada"
-                            .to_string(),
-                    );
-                }
-                std::thread::sleep(Duration::from_millis(120));
-            }
-            Err(error) => {
-                for reader in readers {
-                    let _ = reader.join();
-                }
-                return Err(format!("Falha ao ler a saída do winget: {error}"));
-            }
-        }
-    };
-
-    let mut output_text = String::new();
-    for reader in readers {
-        if let Ok(text) = reader.join() {
-            output_text.push_str(&text);
-        }
-    }
+    let status = wait_for_upgrade(&mut child, &app, &id)?;
+    let output_text = join_readers(readers);
 
     if !status.success() {
-        let detail = output_text.trim();
-        emit_progress(
-            &app,
-            &id,
-            "failed",
-            if detail.is_empty() {
-                format!("O winget falhou (código {:?})", status.code())
-            } else {
-                detail.lines().last().unwrap_or(detail).to_string()
-            }
-            .as_str(),
-        );
-        return Err(if detail.is_empty() {
-            format!("O winget falhou ao atualizar o pacote (código {:?})", status.code())
-        } else {
-            detail.to_string()
-        });
+        let failure = UpgradeFailure::from_exit_code(status.code(), &output_text);
+        emit_progress(&app, &id, "failed", &failure.message);
+        return Err(failure);
     }
 
     emit_progress(&app, &id, "finished", "Concluído");
     Ok(truncate_chars(&output_text, UPGRADE_OUTPUT_LIMIT))
 }
 
+/// Espera o processo com o teto de `UPGRADE_TIMEOUT`. No timeout o processo é
+/// encerrado e a falha devolvida; as threads de leitura terminam sozinhas
+/// quando o pipe fecha.
+fn wait_for_upgrade(
+    child: &mut std::process::Child,
+    app: &AppHandle,
+    id: &str,
+) -> Result<std::process::ExitStatus, UpgradeFailure> {
+    let deadline = Instant::now() + UPGRADE_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    emit_progress(app, id, "timeout", "Tempo limite de 15 minutos excedido");
+                    return Err(UpgradeFailure::plain(
+                        "A atualização excedeu o tempo limite de 15 minutos e foi cancelada",
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(120));
+            }
+            Err(error) => {
+                return Err(UpgradeFailure::plain(format!(
+                    "Falha ao acompanhar o processo do winget: {error}"
+                )));
+            }
+        }
+    }
+}
+
+fn join_readers(readers: Vec<std::thread::JoinHandle<String>>) -> String {
+    let mut output = String::new();
+    for reader in readers {
+        if let Ok(text) = reader.join() {
+            output.push_str(&text);
+        }
+    }
+    output
+}
+
 /// Lê a saída de um pipe linha a linha, emitindo cada linha e devolvendo o
 /// texto completo. `Read::read` bloqueia até haver dado, então a linha só é
 /// emitida quando o winget a escreve de fato — nada de progresso inventado.
+///
+/// O winget redesenha a barra de progresso com `\r` na mesma linha; só o
+/// último quadro de cada linha é aproveitado.
 fn spawn_output_reader<R: std::io::Read + Send + 'static>(
     pipe: R,
     app: AppHandle,
@@ -478,10 +796,9 @@ fn spawn_output_reader<R: std::io::Read + Send + 'static>(
         let mut full = String::new();
         for line in reader.lines() {
             let Ok(line) = line else { break };
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
+            let Some(trimmed) = last_frame(&line) else {
                 continue;
-            }
+            };
             if full.len() < UPGRADE_OUTPUT_LIMIT {
                 full.push_str(trimmed);
                 full.push('\n');
@@ -490,6 +807,13 @@ fn spawn_output_reader<R: std::io::Read + Send + 'static>(
         }
         full
     })
+}
+
+/// Último quadro não vazio de uma linha redesenhada com `\r`.
+fn last_frame(line: &str) -> Option<&str> {
+    line.split('\r')
+        .map(str::trim)
+        .rfind(|frame| !frame.is_empty())
 }
 
 fn emit_progress(app: &AppHandle, id: &str, phase: &str, line: &str) {
@@ -516,7 +840,17 @@ fn truncate_chars(text: &str, limit: usize) -> String {
 
 #[tauri::command]
 pub async fn list_pending_updates(force_refresh: Option<bool>) -> UpdatesSnapshot {
-    if !force_refresh.unwrap_or(false) {
+    let force = force_refresh.unwrap_or(false);
+    match tauri::async_runtime::spawn_blocking(move || cached_or_fresh_snapshot(force)).await {
+        Ok(snapshot) => snapshot,
+        Err(_) => unavailable("A verificação de atualizações foi interrompida"),
+    }
+}
+
+/// Lista do cache (TTL de 30 min) ou recém-consultada no winget. Bloqueante:
+/// chamar só de dentro de `spawn_blocking`.
+fn cached_or_fresh_snapshot(force_refresh: bool) -> UpdatesSnapshot {
+    if !force_refresh {
         if let Ok(guard) = UPDATES_CACHE.lock() {
             if let Some(cached) = guard.as_ref() {
                 if cached.fetched_at.elapsed() < UPDATES_CACHE_TTL {
@@ -526,12 +860,7 @@ pub async fn list_pending_updates(force_refresh: Option<bool>) -> UpdatesSnapsho
         }
     }
 
-    let snapshot =
-        match tauri::async_runtime::spawn_blocking(collect_updates).await {
-            Ok(snapshot) => snapshot,
-            Err(_) => unavailable("A verificação de atualizações foi interrompida"),
-        };
-
+    let snapshot = collect_updates();
     if let Ok(mut guard) = UPDATES_CACHE.lock() {
         *guard = Some(UpdatesCache {
             snapshot: snapshot.clone(),
@@ -539,6 +868,13 @@ pub async fn list_pending_updates(force_refresh: Option<bool>) -> UpdatesSnapsho
         });
     }
     snapshot
+}
+
+/// Depois de instalar algo a lista em cache está defasada.
+fn invalidate_updates_cache() {
+    if let Ok(mut guard) = UPDATES_CACHE.lock() {
+        *guard = None;
+    }
 }
 
 fn collect_updates() -> UpdatesSnapshot {
@@ -597,7 +933,9 @@ fn collect_updates() -> UpdatesSnapshot {
 
     let mut updates = parse_winget_upgrades(&combined);
     enrich_updates_with_icons(&mut updates);
-    if updates.is_empty() && !combined.contains("atualiza") && parse_footer_total(&combined).is_none()
+    if updates.is_empty()
+        && !combined.contains("atualiza")
+        && parse_footer_total(&combined).is_none()
     {
         return unavailable(format!(
             "O winget não retornou uma lista legível{}",
@@ -633,7 +971,10 @@ mod tests {
         assert_eq!(updates.len(), 6);
         assert_eq!(updates[0].id, "Anaconda.Anaconda3");
         // Nome com espaços é preservado inteiro, sem cortar na coluna ID.
-        assert_eq!(updates[0].name, "Anaconda3 2024.06-1 (Python 3.12.4 64-bit)");
+        assert_eq!(
+            updates[0].name,
+            "Anaconda3 2024.06-1 (Python 3.12.4 64-bit)"
+        );
         assert_eq!(updates[0].current_version, "2024.06-1");
         assert_eq!(updates[0].available_version, "2026.07-1");
         assert_eq!(updates[0].source, "winget");
@@ -779,7 +1120,10 @@ mod tests {
 
     #[test]
     fn extracts_footer_total_in_multiple_locales() {
-        assert_eq!(parse_footer_total("57 atualizações disponíveis.\n"), Some(57));
+        assert_eq!(
+            parse_footer_total("57 atualizações disponíveis.\n"),
+            Some(57)
+        );
         assert_eq!(parse_footer_total("3 upgrades available.\n"), Some(3));
         assert_eq!(parse_footer_total("sem número aqui"), None);
     }
@@ -788,7 +1132,10 @@ mod tests {
     fn unavailable_snapshot_never_looks_like_zero_updates() {
         let snapshot = unavailable("winget ausente");
         assert_eq!(snapshot.total_count, 0);
-        assert_eq!(snapshot.unavailable_reason.as_deref(), Some("winget ausente"));
+        assert_eq!(
+            snapshot.unavailable_reason.as_deref(),
+            Some("winget ausente")
+        );
     }
 
     #[test]
@@ -832,5 +1179,71 @@ mod tests {
         let cut = truncate_chars(&long, 10);
         assert_eq!(cut.chars().filter(|c| *c == 'á').count(), 10);
         assert!(cut.ends_with("(saída truncada)"));
+    }
+
+    #[test]
+    fn exit_code_requiring_admin_is_flagged() {
+        // Código real do log: MSIX que registra serviço (Claude, WSL, Codex).
+        let (message, needs_admin) = describe_exit_code(0x8007_3D28_u32 as i32);
+        assert!(needs_admin);
+        assert!(message.contains("administrador"));
+        assert_eq!(format_exit_code(0x8007_3D28_u32 as i32), "0x80073D28");
+    }
+
+    #[test]
+    fn known_winget_codes_are_translated_and_unknown_keeps_the_code() {
+        let (message, needs_admin) = describe_exit_code(0x8A15_0101_u32 as i32);
+        assert!(!needs_admin);
+        assert!(message.contains("em execução"));
+        let (message, _) = describe_exit_code(0x8A15_0006_u32 as i32);
+        assert!(message.contains("instalador"));
+        let (message, _) = describe_exit_code(0x8A15_FFFF_u32 as i32);
+        assert!(message.contains("0x8A15FFFF"));
+        let (message, needs_admin) = describe_exit_code(UAC_CANCELLED_EXIT_CODE);
+        assert!(!needs_admin);
+        assert!(message.contains("Controle de Conta de Usuário"));
+        assert_eq!(format_exit_code(2), "2");
+    }
+
+    /// Regressão: a UI mostrava a tabela de pacotes como mensagem de erro.
+    #[test]
+    fn failure_detail_drops_table_and_progress_lines() {
+        let output = format!(
+            "{PT_BR_SAMPLE}██████████▒▒▒▒▒  40.0 MB / 98.5 MB\n-\nFalha na instalação com o código de saída: 0x80073d28 : Privilégios de administrador necessários\n"
+        );
+        let failure = UpgradeFailure::from_exit_code(Some(0x8007_3D28_u32 as i32), &output);
+        assert!(failure.needs_admin);
+        assert_eq!(failure.code.as_deref(), Some("0x80073D28"));
+        let detail = failure.detail.expect("detalhe útil");
+        assert!(detail.contains("código de saída"), "{detail}");
+        assert!(
+            !detail.contains("Anaconda.Anaconda3"),
+            "tabela vazou: {detail}"
+        );
+        assert!(!detail.contains('█'), "progresso vazou: {detail}");
+        assert!(relevant_output_detail(PT_BR_SAMPLE).is_none());
+    }
+
+    #[test]
+    fn last_frame_keeps_only_the_final_redraw() {
+        assert_eq!(last_frame("  10%\r  50%\r Instalado\r"), Some("Instalado"));
+        assert_eq!(last_frame("   \r  "), None);
+        assert_eq!(last_frame("linha simples"), Some("linha simples"));
+    }
+
+    #[test]
+    fn elevated_script_quotes_arguments_and_maps_uac_cancel() {
+        let script = elevated_upgrade_script(r"C:\Users\o'neil\winget.exe", "Anthropic.Claude");
+        assert!(
+            script.contains(r"-FilePath 'C:\Users\o''neil\winget.exe'"),
+            "{script}"
+        );
+        assert!(
+            script.contains("'--id','Anthropic.Claude','--exact'"),
+            "{script}"
+        );
+        assert!(script.contains("-Verb RunAs"));
+        assert!(script.contains("exit 1223"));
+        assert!(!script.contains('"'), "aspas duplas quebram o argumento");
     }
 }
