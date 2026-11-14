@@ -26,8 +26,7 @@ const HKCU_APPROVED_STARTUP_FOLDER: &str =
 const HKLM_APPROVED_STARTUP_FOLDER: &str =
     r"HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder";
 
-const APPMODEL_APPDATA_KEY: &str =
-    r"HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData";
+const APPMODEL_APPDATA_KEY: &str = r"HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData";
 
 // Cache de itens de inicialização com TTL de 10s para evitar subprocessos repetidos
 struct StartupCache {
@@ -323,7 +322,8 @@ pub fn parse_appx_state_output(output: &str) -> Vec<(String, String, bool)> {
 
     for line in output.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("HKEY_CURRENT_USER\\") || trimmed.starts_with("HKEY_LOCAL_MACHINE\\") {
+        if trimmed.starts_with("HKEY_CURRENT_USER\\") || trimmed.starts_with("HKEY_LOCAL_MACHINE\\")
+        {
             current_key = Some(trimmed.to_string());
             continue;
         }
@@ -365,7 +365,8 @@ pub fn parse_appx_values_by_family(output: &str, target_val_name: &str) -> HashM
 
     for line in output.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("HKEY_CURRENT_USER\\") || trimmed.starts_with("HKEY_LOCAL_MACHINE\\") {
+        if trimmed.starts_with("HKEY_CURRENT_USER\\") || trimmed.starts_with("HKEY_LOCAL_MACHINE\\")
+        {
             current_key = Some(trimmed.to_string());
             continue;
         }
@@ -395,7 +396,8 @@ pub fn clean_appx_display_name(
 ) -> String {
     if let Some(name) = raw_name {
         let trimmed = name.trim();
-        if !trimmed.is_empty() && !trimmed.starts_with("ms-resource:") && !trimmed.starts_with("@{") {
+        if !trimmed.is_empty() && !trimmed.starts_with("ms-resource:") && !trimmed.starts_with("@{")
+        {
             if trimmed.eq_ignore_ascii_case("ChatGPT Classic") {
                 return "ChatGPT".to_string();
             }
@@ -477,14 +479,25 @@ fn search_folder_for_icon(base: &Path) -> Option<String> {
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.is_file() {
-                    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                    let ext = p
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
                     if ext == "ico" {
                         if let Some(icon) = crate::app_icons::icon_for_path(&p) {
                             return Some(icon);
                         }
                     } else if ext == "png" {
-                        let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
-                        if stem.contains("logo") || stem.contains("targetsize-48") || stem.contains("targetsize-32") {
+                        let stem = p
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        if stem.contains("logo")
+                            || stem.contains("targetsize-48")
+                            || stem.contains("targetsize-32")
+                        {
                             if let Ok(bytes) = std::fs::read(&p) {
                                 use base64::Engine;
                                 let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
@@ -509,7 +522,9 @@ fn find_appx_icon(package_family: &str, package_full_name: Option<&str>) -> Opti
     }
 
     if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
-        let pkg_folder = PathBuf::from(local_appdata).join("Packages").join(package_family);
+        let pkg_folder = PathBuf::from(local_appdata)
+            .join("Packages")
+            .join(package_family);
         if let Some(icon) = search_folder_for_icon(&pkg_folder) {
             return Some(icon);
         }
@@ -577,7 +592,8 @@ pub fn parse_startup_folder(
 }
 
 fn resolve_startup_folder_filename(name: &str) -> String {
-    let user_folder = dirs::data_dir().map(|p| p.join(r"Microsoft\Windows\Start Menu\Programs\Startup"));
+    let user_folder =
+        dirs::data_dir().map(|p| p.join(r"Microsoft\Windows\Start Menu\Programs\Startup"));
     let common_folder = std::env::var_os("ProgramData")
         .map(|p| PathBuf::from(p).join(r"Microsoft\Windows\Start Menu\Programs\Startup"));
 
@@ -642,17 +658,19 @@ fn load_appx_startup_items(durations_map: &HashMap<String, u64>) -> Vec<StartupI
         .output()
     {
         if an_out.status.success() {
-            app_names_map = parse_appx_values_by_family(
-                &String::from_utf8_lossy(&an_out.stdout),
-                "AppName",
-            );
+            app_names_map =
+                parse_appx_values_by_family(&String::from_utf8_lossy(&an_out.stdout), "AppName");
         }
     }
 
     for (pkg_family, task_id, enabled) in appx_entries {
-        let raw_app_name = app_names_map.get(&pkg_family.to_lowercase()).map(|s| s.as_str());
+        let raw_app_name = app_names_map
+            .get(&pkg_family.to_lowercase())
+            .map(|s| s.as_str());
         let display_name = clean_appx_display_name(raw_app_name, &pkg_family, &task_id);
-        let pkg_full_name = full_names_map.get(&pkg_family.to_lowercase()).map(|s| s.as_str());
+        let pkg_full_name = full_names_map
+            .get(&pkg_family.to_lowercase())
+            .map(|s| s.as_str());
         let icon = find_appx_icon(&pkg_family, pkg_full_name);
         let command = format!("{pkg_family}!{task_id}");
         let (impact, startup_time_ms) = determine_impact(&display_name, &command, durations_map);
@@ -739,9 +757,16 @@ pub fn list_startup_items() -> Result<Vec<StartupItem>, String> {
     }
 
     // 4. Pasta Inicializar do Usuário (%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup)
-    if let Some(user_startup) = dirs::data_dir().map(|p| p.join(r"Microsoft\Windows\Start Menu\Programs\Startup")) {
+    if let Some(user_startup) =
+        dirs::data_dir().map(|p| p.join(r"Microsoft\Windows\Start Menu\Programs\Startup"))
+    {
         if user_startup.is_dir() {
-            let folder_items = parse_startup_folder(&user_startup, "Startup (Usuário)", &folder_approved, &durations_map);
+            let folder_items = parse_startup_folder(
+                &user_startup,
+                "Startup (Usuário)",
+                &folder_approved,
+                &durations_map,
+            );
             items.extend(folder_items);
         }
     }
@@ -751,7 +776,12 @@ pub fn list_startup_items() -> Result<Vec<StartupItem>, String> {
         .map(|p| PathBuf::from(p).join(r"Microsoft\Windows\Start Menu\Programs\Startup"))
     {
         if common_startup.is_dir() {
-            let common_items = parse_startup_folder(&common_startup, "Startup (Comum)", &folder_approved, &durations_map);
+            let common_items = parse_startup_folder(
+                &common_startup,
+                "Startup (Comum)",
+                &folder_approved,
+                &durations_map,
+            );
             items.extend(common_items);
         }
     }
@@ -997,7 +1027,7 @@ mod tests {
         let xml = r#"
         <Event>
             <EventData>
-                <Data Name='Name'>C:\Users\lucas\AppData\Local\Discord\app-1.0.9000\Discord.exe</Data>
+                <Data Name='Name'>C:\Users\dev\AppData\Local\Discord\app-1.0.9000\Discord.exe</Data>
                 <Data Name='TotalTime'>2150</Data>
             </EventData>
         </Event>
@@ -1066,9 +1096,9 @@ HKEY_CURRENT_USER\Software\Classes\Local Settings\Software\Microsoft\Windows\Cur
         "#;
         let map = parse_appx_values_by_family(fn_text, "PackageFullName");
         assert_eq!(
-            map.get("openai.chatgpt-desktop_2p2nqsd0c76g0").map(|s| s.as_str()),
+            map.get("openai.chatgpt-desktop_2p2nqsd0c76g0")
+                .map(|s| s.as_str()),
             Some("OpenAI.ChatGPT-Desktop_1.2026.190.0_x64__2p2nqsd0c76g0")
         );
     }
 }
-

@@ -4,9 +4,9 @@ Orientações para agentes de IA trabalhando na Landing Page oficial do **Pulse*
 
 ## Arquitetura Unificada
 
-A Landing Page agora reside de forma unificada em `/home/lucas/projects/pulse/landing` e é espelhada automaticamente em `/home/lucas/projects/pulse-lp` pelo script `scripts/sync-landing.mjs`.
+A Landing Page agora reside de forma unificada em `landing/` (neste repositório) e é espelhada automaticamente em `../pulse-lp` pelo script `scripts/sync-landing.mjs`.
 
-- **Aplicação (`pulse`)**: `/home/lucas/projects/pulse` (WSL). App nativo Windows 11 (Rust + Tauri 2 + React 19).
+- **Aplicação (`pulse`)**: `~/projects/pulse` (WSL). App nativo Windows 11 (Rust + Tauri 2 + React 19).
 - **Build & Sincronização Automática**: Rodar `npm run build:native` (ou `npm run lp:sync` na raiz do `pulse`) lê o instalador NSIS do bundle (`src-tauri/target/release/bundle/nsis/Pulse_<versão>_x64-setup.exe`), recalcula tamanho em MB e hash `SHA-256`, atualiza `index.html`, `public/index.md`, `public/llms.txt` e `public/release.json` (com `installer.assetUrl` da GitHub Release), compila `dist/`, executa `check-seo.mjs` e sincroniza `../pulse-lp`.
 - **Regra de Paridade**: Qualquer nova funcionalidade ou módulo criado no aplicativo Pulse deve ser documentado e refletido no simulador e nas seções de recursos da Landing Page.
 

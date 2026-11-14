@@ -6,7 +6,7 @@ metadata:
   type: project
 ---
 
-**Why:** O repositório vive no WSL (`/home/lucas/projects/pulse`), mas o backend Rust/Tauri exige toolchain MSVC (`cargo.exe`, `link.exe`, `vcvars64.bat`) e bundler NSIS no Windows. Compilar via rede `\\wsl.localhost\...` (9P) é lento e `cmd.exe` rejeita caminhos UNC como `cwd`.
+**Why:** O repositório vive no WSL (`~/projects/pulse`), mas o backend Rust/Tauri exige toolchain MSVC (`cargo.exe`, `link.exe`, `vcvars64.bat`) e bundler NSIS no Windows. Compilar via rede `\\wsl.localhost\...` (9P) é lento e `cmd.exe` rejeita caminhos UNC como `cwd`.
 
 **How to apply:**
 - Use `npm run build:native` (ou `npm run tauri:build`), que executa `scripts/build-native.sh`.

@@ -7,7 +7,7 @@ metadata:
   pin: true
 ---
 
-**Why:** A API SCM do Windows (`OpenSCManagerW` + `EnumServicesStatusExW`, advapi32) **exige privilégio administrativo para ENUMERAR**, não só para iniciar/parar. Medido nesta máquina com usuário `LUCAS-PC\lucas` (`IsAdmin: False`):
+**Why:** A API SCM do Windows (`OpenSCManagerW` + `EnumServicesStatusExW`, advapi32) **exige privilégio administrativo para ENUMERAR**, não só para iniciar/parar. Medido nesta máquina com usuário comum (não administrador) (`IsAdmin: False`):
 
 ```
 DIAG FAIL SERVICE_WIN32:         HRESULT(0x80070005)

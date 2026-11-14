@@ -771,7 +771,7 @@ describe("Formatters and Components", () => {
             processName: "node",
             runtime: "Vite",
             projectName: "pulse-landing",
-            projectPath: "/home/lucas/projects/pulse/landing",
+            projectPath: "/home/dev/projects/pulse/landing",
             commandLine: "node vite --port 5173",
             environment: "wsl",
             wslDistro: "Ubuntu",
@@ -967,7 +967,7 @@ describe("Formatters and Components", () => {
             progress: {
               itemsScanned: 17,
               totalBytesScanned: 4096,
-              currentPath: "C:\\Users\\lucas",
+              currentPath: "C:\\Users\\dev",
             },
             result: null,
             error: null,
@@ -1279,21 +1279,21 @@ describe("Pulse application shell", () => {
           return Promise.resolve([
             {
               name: "relatorio.pdf",
-              path: "C:\\Users\\lucas\\Documents\\relatorio.pdf",
+              path: "C:\\Users\\dev\\Documents\\relatorio.pdf",
               category: "document",
               sizeBytes: 204800,
               modifiedAtUnixMs: 1725000000000,
             },
             {
               name: "foto.png",
-              path: "C:\\Users\\lucas\\Pictures\\foto.png",
+              path: "C:\\Users\\dev\\Pictures\\foto.png",
               category: "image",
               sizeBytes: 1048576,
               modifiedAtUnixMs: 1725005000000,
             },
             {
               name: "backup.zip",
-              path: "C:\\Users\\lucas\\Downloads\\backup.zip",
+              path: "C:\\Users\\dev\\Downloads\\backup.zip",
               category: "archive",
               sizeBytes: 52428800,
               modifiedAtUnixMs: 1724900000000,
@@ -2128,13 +2128,13 @@ describe("Pulse application shell", () => {
     const openButtons = screen.getAllByRole("button", { name: "Abrir" });
     fireEvent.click(openButtons[0]);
     expect(invoke).toHaveBeenCalledWith("open_recent_file", {
-      path: "C:\\Users\\lucas\\Pictures\\foto.png",
+      path: "C:\\Users\\dev\\Pictures\\foto.png",
     });
 
     const locationButtons = screen.getAllByRole("button", { name: "Localização" });
     fireEvent.click(locationButtons[0]);
     expect(invoke).toHaveBeenCalledWith("open_recent_file_location", {
-      path: "C:\\Users\\lucas\\Pictures\\foto.png",
+      path: "C:\\Users\\dev\\Pictures\\foto.png",
     });
   });
 

@@ -1093,22 +1093,22 @@ mod tests {
             true
         ));
         assert!(!is_cleanup_candidate(
-            r"C:\Users\lucas\AppData\Roaming\npm\node_modules",
+            r"C:\Users\dev\AppData\Roaming\npm\node_modules",
             "node_modules",
             true
         ));
         assert!(!is_cleanup_candidate(
-            r"C:\Users\lucas\AppData\Local\AnkiProgramFiles\cache",
+            r"C:\Users\dev\AppData\Local\AnkiProgramFiles\cache",
             "cache",
             true
         ));
         assert!(!is_cleanup_candidate(
-            r"C:\Users\lucas\.cache\huggingface",
+            r"C:\Users\dev\.cache\huggingface",
             "huggingface",
             true
         ));
         assert!(is_cleanup_candidate(
-            r"C:\Users\lucas\Projects\app\node_modules",
+            r"C:\Users\dev\Projects\app\node_modules",
             "node_modules",
             true
         ));

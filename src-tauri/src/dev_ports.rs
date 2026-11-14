@@ -1417,7 +1417,7 @@ mod tests {
         assert_eq!(
             infer_runtime(
                 "node",
-                Some("node /home/lucas/site/node_modules/.bin/next dev"),
+                Some("node /home/dev/site/node_modules/.bin/next dev"),
                 None
             ),
             "Next.js"
@@ -1450,16 +1450,16 @@ mod tests {
         let (name, path) = infer_project_info(
             "node",
             None,
-            Some("/home/lucas/projects/pulse/landing"),
-            Some("node /home/lucas/projects/pulse/landing/node_modules/.bin/vite"),
+            Some("/home/dev/projects/pulse/landing"),
+            Some("node /home/dev/projects/pulse/landing/node_modules/.bin/vite"),
             "Vite",
         );
         assert_eq!(name, "landing");
-        assert_eq!(path.as_deref(), Some("/home/lucas/projects/pulse/landing"));
+        assert_eq!(path.as_deref(), Some("/home/dev/projects/pulse/landing"));
 
         let (rust_name, rust_path) = infer_project_info(
             "backend.exe",
-            Some("C:\\Users\\lucas\\dev\\billing-api\\target\\debug\\backend.exe"),
+            Some("C:\\Users\\dev\\dev\\billing-api\\target\\debug\\backend.exe"),
             None,
             None,
             "Rust",
@@ -1467,7 +1467,7 @@ mod tests {
         assert_eq!(rust_name, "billing-api");
         assert_eq!(
             rust_path.as_deref(),
-            Some("C:\\Users\\lucas\\dev\\billing-api")
+            Some("C:\\Users\\dev\\dev\\billing-api")
         );
 
         let (cmd_name, cmd_path) = infer_project_info(
@@ -1484,8 +1484,8 @@ mod tests {
     #[test]
     fn parses_wsl_ss_output_with_ipv4_and_ipv6() {
         let sample = "\
-127.0.0.1:5173\t1420\tnode\t/home/lucas/projects/pulse/landing\tnode /home/lucas/projects/pulse/landing/node_modules/.bin/vite --port 5173
-[::]:3000\t2201\tnode\t/home/lucas/projects/saas-web\tnode /home/lucas/projects/saas-web/node_modules/.bin/next dev
+127.0.0.1:5173\t1420\tnode\t/home/dev/projects/pulse/landing\tnode /home/dev/projects/pulse/landing/node_modules/.bin/vite --port 5173
+[::]:3000\t2201\tnode\t/home/dev/projects/saas-web\tnode /home/dev/projects/saas-web/node_modules/.bin/next dev
 127.0.0.1:53\t101\tsystemd-resolve\t/\t/lib/systemd/systemd-resolved
 ";
         let entries = parse_wsl_ss_output("Ubuntu", sample);
@@ -1515,7 +1515,7 @@ mod tests {
                 process_name: "node".into(),
                 runtime: "Next.js".into(),
                 project_name: "web".into(),
-                project_path: Some("/home/lucas/web".into()),
+                project_path: Some("/home/dev/web".into()),
                 command_line: None,
                 environment: "wsl".into(),
                 wsl_distro: Some("Ubuntu".into()),
@@ -1530,7 +1530,7 @@ mod tests {
                 process_name: "node".into(),
                 runtime: "Next.js".into(),
                 project_name: "web".into(),
-                project_path: Some("/home/lucas/web".into()),
+                project_path: Some("/home/dev/web".into()),
                 command_line: None,
                 environment: "wsl".into(),
                 wsl_distro: Some("Ubuntu".into()),
@@ -1551,7 +1551,7 @@ mod tests {
         ));
         assert!(is_windows_noise_process(
             "Spotify.exe",
-            Some("C:\\Users\\lucas\\AppData\\Roaming\\Spotify\\Spotify.exe"),
+            Some("C:\\Users\\dev\\AppData\\Roaming\\Spotify\\Spotify.exe"),
             57621
         ));
         assert!(is_windows_noise_process("pulse-windows.exe", None, 3100));

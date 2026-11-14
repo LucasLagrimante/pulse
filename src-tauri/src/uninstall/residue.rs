@@ -1149,10 +1149,10 @@ mod tests {
             r"c:\programdata".to_string(),
             r"c:\users".to_string(),
             r"c:\windows".to_string(),
-            r"c:\users\lucas\appdata\local".to_string(),
-            r"c:\users\lucas\appdata\roaming".to_string(),
-            r"c:\users\lucas".to_string(),
-            r"c:\users\lucas\appdata".to_string(),
+            r"c:\users\dev\appdata\local".to_string(),
+            r"c:\users\dev\appdata\roaming".to_string(),
+            r"c:\users\dev".to_string(),
+            r"c:\users\dev\appdata".to_string(),
         ]
     }
 
@@ -1180,7 +1180,7 @@ mod tests {
     #[test]
     fn veto_em_pasta_conhecida_do_shell() {
         assert!(folder_deletion_veto(r"C:\Program Files", &shell(), &[]).is_some());
-        assert!(folder_deletion_veto(r"C:\Users\LUCAS\AppData\Local", &shell(), &[]).is_some());
+        assert!(folder_deletion_veto(r"C:\Users\DEV\AppData\Local", &shell(), &[]).is_some());
     }
 
     #[test]

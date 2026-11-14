@@ -527,7 +527,7 @@ mod tests {
     #[test]
     fn custom_folders_deduplicate() {
         let path = "D:\\Images\\Screenshots";
-        let mut folders = vec!["C:\\Users\\lucas\\Custom".to_string()];
+        let mut folders = vec!["C:\\Users\\dev\\Custom".to_string()];
         if !folders.iter().any(|f| f.eq_ignore_ascii_case(path)) {
             folders.push(path.to_string());
         }

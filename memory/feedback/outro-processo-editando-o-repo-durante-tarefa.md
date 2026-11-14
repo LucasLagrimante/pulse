@@ -19,7 +19,7 @@ o trabalho alheio em curso.
   disco **Windows** (ex.: `%LOCALAPPDATA%\Temp\<harness>`), remover os `#[tauri::command]` que
   dependem de `tauri::async_runtime`, e criar stubs de `crate::process` / `crate::app_icons`.
   Deps: só `serde` + `dirs`. Rodar `cargo.exe` a partir do WSL funciona via
-  `/mnt/c/Users/lucas/.cargo/bin/cargo.exe`.
+  `/mnt/c/Users/<usuario-windows>/.cargo/bin/cargo.exe`.
   - Os testes `#[cfg(windows)]` **rodam de verdade** nesse harness — foi assim que medi a
     classificação contra os 313 serviços reais da máquina.
 - Remover o harness ao terminar; ele é descartável, não um artefato do repo.

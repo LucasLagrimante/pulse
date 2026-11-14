@@ -29,10 +29,10 @@ const mockPreview: AiDiskAnalysisPreview = {
   drivePath: "C:\\",
   command: 'agy "Analise o relatório de armazenamento do Pulse para C:\\"',
   prompt: "Analise o relatório de armazenamento do Pulse para C:\\. Objetivo: quais pastas e arquivos são maiores e onde tem espaço seguro para limpar?",
-  contextFilePath: "C:\\Users\\Lucas\\AppData\\Local\\Temp\\pulse-disk-analysis-C.md",
+  contextFilePath: "C:\\Users\\Dev\\AppData\\Local\\Temp\\pulse-disk-analysis-C.md",
   topDirectories: [
     {
-      path: "C:\\Users\\Lucas\\AppData\\Local",
+      path: "C:\\Users\\Dev\\AppData\\Local",
       name: "AppData\\Local",
       sizeBytes: 45_000_000_000,
       sizeFormatted: "45.0 GB",
@@ -50,7 +50,7 @@ const mockPreview: AiDiskAnalysisPreview = {
   ],
   topFiles: [
     {
-      path: "C:\\Users\\Lucas\\Downloads\\ubuntu.iso",
+      path: "C:\\Users\\Dev\\Downloads\\ubuntu.iso",
       name: "ubuntu.iso",
       sizeBytes: 4_500_000_000,
       sizeFormatted: "4.50 GB",
@@ -60,7 +60,7 @@ const mockPreview: AiDiskAnalysisPreview = {
   ],
   cleanupCandidates: [
     {
-      path: "C:\\Users\\Lucas\\AppData\\Local\\Temp",
+      path: "C:\\Users\\Dev\\AppData\\Local\\Temp",
       name: "Temp",
       sizeBytes: 8_500_000_000,
       sizeFormatted: "8.50 GB",
@@ -257,7 +257,7 @@ describe("AiDiskAdvisorModal", () => {
 
   it("shows the AI cleanup plan card only when the plan file exists and opens it", async () => {
     const plan = {
-      path: "C:\\Users\\Lucas\\AppData\\Local\\Temp\\pulse-disk-cleanup-plan-C.md",
+      path: "C:\\Users\\Dev\\AppData\\Local\\Temp\\pulse-disk-cleanup-plan-C.md",
       exists: false,
       modifiedAtUnixMs: null as number | null,
       sizeBytes: 0,

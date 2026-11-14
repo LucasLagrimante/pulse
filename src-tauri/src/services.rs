@@ -153,7 +153,11 @@ pub fn sort_services(services: &mut [WindowsService]) {
         };
         rank(left.state_code)
             .cmp(&rank(right.state_code))
-            .then_with(|| left.display_name.to_lowercase().cmp(&right.display_name.to_lowercase()))
+            .then_with(|| {
+                left.display_name
+                    .to_lowercase()
+                    .cmp(&right.display_name.to_lowercase())
+            })
     });
 }
 
@@ -387,7 +391,7 @@ fn path_is_inside(child: &str, root: &str) -> bool {
 /// pasta de persistência.
 ///
 /// Medido nesta máquina: o ChatGPT é um serviço `LocalSystem` + automático em
-/// `C:\Users\lucas\AppData\Local\Programs\ChatGPT\ChatGPT.exe`. Sem esta
+/// `C:\Users\dev\AppData\Local\Programs\ChatGPT\ChatGPT.exe`. Sem esta
 /// exceção, o sinal forte mais forte do filtro acusaria software instalado
 /// normalmente. A diferença é real e verificável: `Programs\...` é o que o
 /// Windows e os instaladores usam para instalação por usuário; `%APPDATA%`,
@@ -423,9 +427,7 @@ pub fn is_per_user_service_name(name: &str) -> bool {
     let Some((_, sufixo)) = name.rsplit_once('_') else {
         return false;
     };
-    !sufixo.is_empty()
-        && sufixo.len() <= 10
-        && sufixo.chars().all(|c| c.is_ascii_digit())
+    !sufixo.is_empty() && sufixo.len() <= 10 && sufixo.chars().all(|c| c.is_ascii_digit())
 }
 
 /// Verdadeiro quando o `StartName` é uma das contas internas do Windows.
@@ -481,7 +483,9 @@ fn edit_distance(left: &str, right: &str) -> usize {
         current[0] = i + 1;
         for (j, right_char) in right.iter().enumerate() {
             let cost = usize::from(left_char != right_char);
-            let mut best = (previous[j + 1] + 1).min(current[j] + 1).min(previous[j] + cost);
+            let mut best = (previous[j + 1] + 1)
+                .min(current[j] + 1)
+                .min(previous[j] + cost);
             if i > 0 && j > 0 && *left_char == right[j - 1] && left[i - 1] == *right_char {
                 best = best.min(previous_previous[j - 1] + 1);
             }
@@ -697,7 +701,12 @@ mod platform {
 
     pub fn enumerate() -> Result<Vec<WindowsService>, String> {
         let mut child = match crate::process::hidden_command("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command", ENUMERATE_COMMAND])
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                ENUMERATE_COMMAND,
+            ])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
@@ -731,8 +740,7 @@ mod platform {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
 
-        let services: Vec<WindowsService> =
-            stdout.lines().filter_map(parse_service_line).collect();
+        let services: Vec<WindowsService> = stdout.lines().filter_map(parse_service_line).collect();
 
         if services.is_empty() {
             // Vazio COM falha é dado indisponível: declarar é obrigatório para
@@ -945,10 +953,10 @@ mod tests {
         // machine-wide e faria o Defender cair em revisão.
         ServiceTrustContext {
             user_writable_roots: vec![
-                r"c:\users\lucas\appdata\local".to_string(),
-                r"c:\users\lucas\appdata\roaming".to_string(),
-                r"c:\users\lucas\downloads".to_string(),
-                r"c:\users\lucas".to_string(),
+                r"c:\users\dev\appdata\local".to_string(),
+                r"c:\users\dev\appdata\roaming".to_string(),
+                r"c:\users\dev\downloads".to_string(),
+                r"c:\users\dev".to_string(),
                 r"c:\temp".to_string(),
             ],
         }
@@ -976,7 +984,10 @@ mod tests {
         assert_eq!(describe_state("Paused"), ("Pausado".to_string(), 7));
         assert_eq!(describe_state("StartPending"), ("Iniciando".to_string(), 2));
         assert_eq!(describe_state("StopPending"), ("Parando".to_string(), 3));
-        assert_eq!(describe_state("ContinuePending"), ("Retomando".to_string(), 5));
+        assert_eq!(
+            describe_state("ContinuePending"),
+            ("Retomando".to_string(), 5)
+        );
         assert_eq!(describe_state("PausePending"), ("Pausando".to_string(), 6));
     }
 
@@ -993,7 +1004,10 @@ mod tests {
     fn translates_wmi_start_modes() {
         assert_eq!(describe_start_type("Auto"), ("Automático".to_string(), 2));
         assert_eq!(describe_start_type("Manual"), ("Manual".to_string(), 3));
-        assert_eq!(describe_start_type("Disabled"), ("Desativado".to_string(), 4));
+        assert_eq!(
+            describe_start_type("Disabled"),
+            ("Desativado".to_string(), 4)
+        );
         assert_eq!(describe_start_type("Boot").1, 0);
         assert_eq!(describe_start_type("System").1, 1);
         assert_eq!(describe_start_type("?").1, u32::MAX);
@@ -1029,7 +1043,8 @@ mod tests {
     /// campo ausente vira `None`, nunca string vazia.
     #[test]
     fn missing_optional_fields_become_none_not_empty_string() {
-        let line = r#"Spooler|Print Spooler|Stopped|Auto|0|LocalSystem||C:\WINDOWS\System32\spoolsv.exe"#;
+        let line =
+            r#"Spooler|Print Spooler|Stopped|Auto|0|LocalSystem||C:\WINDOWS\System32\spoolsv.exe"#;
         let parsed = parse_service_line(line).expect("linha válida");
         assert_eq!(parsed.publisher, None);
         assert_eq!(parsed.start_name.as_deref(), Some("LocalSystem"));
@@ -1060,7 +1075,11 @@ mod tests {
     fn preserves_accented_start_name_as_user_account() {
         let line = r#"MeuSvc|Meu Serviço|Running|Auto|77|DOMAINO\joão.silva|ACME|"C:\Program Files\ACME\svc.exe""#;
         let parsed = parse_service_line(line).expect("linha válida");
-        assert!(!parsed.start_name.as_deref().unwrap_or_default().contains('\u{FFFD}'));
+        assert!(!parsed
+            .start_name
+            .as_deref()
+            .unwrap_or_default()
+            .contains('\u{FFFD}'));
         assert_eq!(parsed.start_name.as_deref(), Some("DOMAINO\\joão.silva"));
         assert!(parsed.is_user_service);
         assert_eq!(parsed.publisher.as_deref(), Some("ACME"));
@@ -1069,7 +1088,8 @@ mod tests {
     /// PID 0 no WMI significa "sem processo" — nunca um processo de PID 0.
     #[test]
     fn stopped_service_has_no_pid_instead_of_pid_zero() {
-        let line = r"Spooler|Print Spooler|Stopped|Auto|0|LocalSystem||C:\WINDOWS\System32\spoolsv.exe";
+        let line =
+            r"Spooler|Print Spooler|Stopped|Auto|0|LocalSystem||C:\WINDOWS\System32\spoolsv.exe";
         let parsed = parse_service_line(line).expect("linha válida");
         assert_eq!(parsed.state_code, 1);
         assert_eq!(parsed.process_id, None);
@@ -1127,7 +1147,12 @@ mod tests {
         let order: Vec<&str> = services.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(
             order,
-            vec!["Alfa Rodando", "Beta Iniciando", "Gama Pausado", "Zeta Parado"]
+            vec![
+                "Alfa Rodando",
+                "Beta Iniciando",
+                "Gama Pausado",
+                "Zeta Parado"
+            ]
         );
     }
 
@@ -1167,10 +1192,16 @@ mod tests {
             "NT Authority\\NetworkService",
             "nt authority\\system",
         ] {
-            assert!(is_system_account(Some(account)), "{account} deveria ser conta do sistema");
-            assert!(!is_user_service(Some(account)), "{account} não é conta de usuário");
+            assert!(
+                is_system_account(Some(account)),
+                "{account} deveria ser conta do sistema"
+            );
+            assert!(
+                !is_user_service(Some(account)),
+                "{account} não é conta de usuário"
+            );
         }
-        assert!(is_user_service(Some("LUCAS-PC\\lucas")));
+        assert!(is_user_service(Some("DEV-PC\\dev")));
         assert!(is_user_service(Some("DOMINIO\\joão.silva")));
         // Sem StartName não se inventa vínculo com usuário.
         assert!(!is_user_service(None));
@@ -1196,7 +1227,7 @@ mod tests {
     #[test]
     fn installed_user_service_stays_in_user_category() {
         let svc = classifiable(
-            Some("LUCAS-PC\\lucas"),
+            Some("DEV-PC\\dev"),
             Some(r"C:\Program Files\MeuApp\servico.exe"),
             3,
             Some("MeuApp Ltda"),
@@ -1218,16 +1249,19 @@ mod tests {
             None,
             "'servico.exe' é português, não imitação de services.exe"
         );
-        assert_eq!(classify_service(
-            &classifiable(
-                Some("LUCAS-PC\\lucas"),
-                Some(r"C:\Program Files\Loja\servico.exe"),
-                3,
-                Some("Loja")
-            ),
-            &trust_context(),
-        )
-        .category, "user");
+        assert_eq!(
+            classify_service(
+                &classifiable(
+                    Some("DEV-PC\\dev"),
+                    Some(r"C:\Program Files\Loja\servico.exe"),
+                    3,
+                    Some("Loja")
+                ),
+                &trust_context(),
+            )
+            .category,
+            "user"
+        );
     }
 
     /// Transposição tem que contar 1: `scvhost.exe` é camuflagem clássica e
@@ -1246,7 +1280,7 @@ mod tests {
     fn writable_directory_flags_review_with_honest_reason() {
         let svc = classifiable(
             Some("LocalSystem"),
-            Some(r#""C:\Users\lucas\AppData\Roaming\algo\svc.exe" --run"#),
+            Some(r#""C:\Users\dev\AppData\Roaming\algo\svc.exe" --run"#),
             3,
             Some("Algo"),
         );
@@ -1257,16 +1291,16 @@ mod tests {
                 .reasons
                 .iter()
                 .any(|reason| reason.contains("gravável pelo usuário")
-                    && reason.contains(r"c:\users\lucas\appdata\roaming")),
+                    && reason.contains(r"c:\users\dev\appdata\roaming")),
             "motivos: {:?}",
             result.reasons
         );
     }
 
     /// Fabricante ausente **não** leva a revisão sozinho: medido nesta máquina,
-/// Easy Anti-Cheat, Corsair Device Listing e Grafana SignalRgb não declaram
-/// `CompanyName` e são legítimos. Vira corroborante de um sinal forte.
-#[test]
+    /// Easy Anti-Cheat, Corsair Device Listing e Grafana SignalRgb não declaram
+    /// `CompanyName` e são legítimos. Vira corroborante de um sinal forte.
+    #[test]
     fn missing_publisher_alone_does_not_flag_review() {
         let fora = classifiable(
             Some("LocalSystem"),
@@ -1280,14 +1314,20 @@ mod tests {
         // fabricante ausente vira motivo adicional.
         let combo = classifiable(
             Some("LocalSystem"),
-            Some(r"C:\Users\lucas\AppData\Local\svc.exe"),
+            Some(r"C:\Users\dev\AppData\Local\svc.exe"),
             2,
             None,
         );
         let resultado = classify_service(&combo, &trust_context());
         assert_eq!(resultado.category, "review");
-        assert!(resultado.reasons.iter().any(|r| r.contains("sem fabricante")));
-        assert!(resultado.reasons.iter().any(|r| r.contains("conta de sistema")));
+        assert!(resultado
+            .reasons
+            .iter()
+            .any(|r| r.contains("sem fabricante")));
+        assert!(resultado
+            .reasons
+            .iter()
+            .any(|r| r.contains("conta de sistema")));
     }
 
     /// Regressão medida nesta máquina: com `%PROGRAMDATA%` na lista de pastas
@@ -1296,11 +1336,25 @@ mod tests {
     #[test]
     fn programdata_services_are_not_flagged_as_user_writable() {
         for (nome, caminho) in [
-            ("WinDefend", r"C:\ProgramData\Microsoft\Windows Defender\Platform\4.18\MpCmdRun.exe"),
-            ("Sense", r"C:\ProgramData\Microsoft\Windows Defender\Platform\MsSense.exe"),
-            ("SignalRgb", r"C:\ProgramData\SignalRgb\SignalRgb.Service.exe"),
+            (
+                "WinDefend",
+                r"C:\ProgramData\Microsoft\Windows Defender\Platform\4.18\MpCmdRun.exe",
+            ),
+            (
+                "Sense",
+                r"C:\ProgramData\Microsoft\Windows Defender\Platform\MsSense.exe",
+            ),
+            (
+                "SignalRgb",
+                r"C:\ProgramData\SignalRgb\SignalRgb.Service.exe",
+            ),
         ] {
-            let svc = classifiable(Some("LocalSystem"), Some(caminho), 2, Some("Microsoft Corporation"));
+            let svc = classifiable(
+                Some("LocalSystem"),
+                Some(caminho),
+                2,
+                Some("Microsoft Corporation"),
+            );
             let resultado = classify_service(&svc, &trust_context());
             assert_eq!(
                 resultado.category, "system",
@@ -1308,7 +1362,8 @@ mod tests {
             );
         }
         assert!(
-            !ServiceTrustContext::detect().user_writable_roots
+            !ServiceTrustContext::detect()
+                .user_writable_roots
                 .iter()
                 .any(|root| root.contains("programdata")),
             "%PROGRAMDATA% não é raiz gravável por usuário neste filtro"
@@ -1323,10 +1378,26 @@ mod tests {
         for (nome, caminho, fabricante) in [
             // ChatGPT é `LocalSystem` + automático **e** mora em pasta gravável:
             // os dois motivos de alerta caem, e ainda assim é software legítimo.
-            ("ChatGPT", r"C:\Users\lucas\AppData\Local\Programs\ChatGPT\ChatGPT.exe", None),
-            ("WSLService", r"C:\Program Files\WSL\wslservice.exe", Some("Microsoft Corporation")),
-            ("GoogleUpdater", r"C:\Program Files\Google\Update\GoogleUpdater.exe", None),
-            ("AnyDesk", r"C:\Program Files (x86)\AnyDesk\AnyDesk.exe", Some("AnyDesk Software GmbH")),
+            (
+                "ChatGPT",
+                r"C:\Users\dev\AppData\Local\Programs\ChatGPT\ChatGPT.exe",
+                None,
+            ),
+            (
+                "WSLService",
+                r"C:\Program Files\WSL\wslservice.exe",
+                Some("Microsoft Corporation"),
+            ),
+            (
+                "GoogleUpdater",
+                r"C:\Program Files\Google\Update\GoogleUpdater.exe",
+                None,
+            ),
+            (
+                "AnyDesk",
+                r"C:\Program Files (x86)\AnyDesk\AnyDesk.exe",
+                Some("AnyDesk Software GmbH"),
+            ),
         ] {
             let mut svc = classifiable(Some("LocalSystem"), Some(caminho), 2, fabricante);
             svc.name = nome.to_string();
@@ -1345,21 +1416,24 @@ mod tests {
     #[test]
     fn per_user_install_exception_is_limited_to_install_subtrees() {
         assert!(is_per_user_install_path(
-            r"C:\Users\lucas\AppData\Local\Programs\ChatGPT\ChatGPT.exe"
+            r"C:\Users\dev\AppData\Local\Programs\ChatGPT\ChatGPT.exe"
         ));
         assert!(is_per_user_install_path(
-            r"C:\Users\lucas\AppData\Local\Microsoft\WindowsApps\App.exe"
+            r"C:\Users\dev\AppData\Local\Microsoft\WindowsApps\App.exe"
         ));
         assert!(!is_per_user_install_path(
-            r"C:\Users\lucas\AppData\Roaming\algo\svc.exe"
+            r"C:\Users\dev\AppData\Roaming\algo\svc.exe"
         ));
         let roaming = classifiable(
             Some("LocalSystem"),
-            Some(r"C:\Users\lucas\AppData\Roaming\algo\svc.exe"),
+            Some(r"C:\Users\dev\AppData\Roaming\algo\svc.exe"),
             2,
             None,
         );
-        assert_eq!(classify_service(&roaming, &trust_context()).category, "review");
+        assert_eq!(
+            classify_service(&roaming, &trust_context()).category,
+            "review"
+        );
     }
 
     #[test]
@@ -1381,8 +1455,8 @@ mod tests {
     #[test]
     fn review_wins_over_user_but_keeps_the_user_flag() {
         let svc = classifiable(
-            Some("LUCAS-PC\\lucas"),
-            Some(r"C:\Users\lucas\Downloads\svchost.exe"),
+            Some("DEV-PC\\dev"),
+            Some(r"C:\Users\dev\Downloads\svchost.exe"),
             3,
             None,
         );
@@ -1395,18 +1469,20 @@ mod tests {
     /// `AppData2` não está dentro de `AppData` — comparação por segmento.
     #[test]
     fn writable_root_match_respects_path_segments() {
-        // Só as raízes que interessam ao teste: sem `c:\users\lucas` no meio,
+        // Só as raízes que interessam ao teste: sem `c:\users\dev` no meio,
         // `AppData2` seria filho de `AppData` por engano de string.
         let context = ServiceTrustContext {
-            user_writable_roots: vec![r"c:\users\lucas\appdata\local".to_string()],
+            user_writable_roots: vec![r"c:\users\dev\appdata\local".to_string()],
         };
         assert!(context
-            .writable_root_of(r"C:\Users\lucas\AppData\Local\Temp\svc.exe")
+            .writable_root_of(r"C:\Users\dev\AppData\Local\Temp\svc.exe")
             .is_some());
         assert!(context
-            .writable_root_of(r"C:\Users\lucas\AppData\Local2\svc.exe")
+            .writable_root_of(r"C:\Users\dev\AppData\Local2\svc.exe")
             .is_none());
-        assert!(context.writable_root_of(r"C:\Windows\System32\svc.exe").is_none());
+        assert!(context
+            .writable_root_of(r"C:\Windows\System32\svc.exe")
+            .is_none());
         // Barra normalizada: o WMI às vezes emite "/" e caminho com barra final.
         assert!(trust_context()
             .writable_root_of("C:/Temp/vendor/")
@@ -1424,14 +1500,30 @@ mod tests {
     /// `build_snapshot` classifica a lista inteira com um único contexto.
     #[test]
     fn snapshot_classifies_every_service() {
-        let mut sistema = classifiable(Some("LocalSystem"), Some(r"C:\Windows\System32\svchost.exe"), 2, None);
+        let mut sistema = classifiable(
+            Some("LocalSystem"),
+            Some(r"C:\Windows\System32\svchost.exe"),
+            2,
+            None,
+        );
         sistema.name = "Sistema".to_string();
-        let mut usuario = classifiable(Some("LUCAS-PC\\lucas"), Some(r"C:\Program Files\App\svc.exe"), 3, Some("App"));
+        let mut usuario = classifiable(
+            Some("DEV-PC\\dev"),
+            Some(r"C:\Program Files\App\svc.exe"),
+            3,
+            Some("App"),
+        );
         usuario.name = "Usuario".to_string();
-        let mut revisao = classifiable(Some("LocalSystem"), Some(r"C:\Temp\wmiapv.exe"), 3, Some("X"));
+        let mut revisao = classifiable(
+            Some("LocalSystem"),
+            Some(r"C:\Temp\wmiapv.exe"),
+            3,
+            Some("X"),
+        );
         revisao.name = "Revisao".to_string();
 
-        let snapshot = build_snapshot_with_context(vec![sistema, usuario, revisao], trust_context());
+        let snapshot =
+            build_snapshot_with_context(vec![sistema, usuario, revisao], trust_context());
         let by_name = |name: &str| {
             snapshot
                 .services
@@ -1459,10 +1551,23 @@ mod tests {
             "cbdhsvc_128821",
             "DevicesFlowUserSvc_128821",
         ] {
-            assert!(is_per_user_service_name(nome), "{nome} deveria ser grupo por usuário");
+            assert!(
+                is_per_user_service_name(nome),
+                "{nome} deveria ser grupo por usuário"
+            );
         }
-        for nome in ["AudioSrv", "Appinfo", "meu_servico", "svc_", "svc_abc", "svc_12345678901"] {
-            assert!(!is_per_user_service_name(nome), "{nome} não é grupo por usuário");
+        for nome in [
+            "AudioSrv",
+            "Appinfo",
+            "meu_servico",
+            "svc_",
+            "svc_abc",
+            "svc_12345678901",
+        ] {
+            assert!(
+                !is_per_user_service_name(nome),
+                "{nome} não é grupo por usuário"
+            );
         }
 
         let mut svc = classifiable(
@@ -1522,13 +1627,14 @@ mod tests {
     }
 
     /// `StartName` é a base da separação usuário/sistema: sem ele, todo serviço
-/// cairia em "unknown". Alguns serviços do Windows realmente não têm conta
-/// (drivers de kernel, serviços sem imagem), então o teste exige **a maioria**
-/// preenchida e nenhum valor lixo — e que a leitura não dependa de elevação.
-#[cfg(windows)]
+    /// cairia em "unknown". Alguns serviços do Windows realmente não têm conta
+    /// (drivers de kernel, serviços sem imagem), então o teste exige **a maioria**
+    /// preenchida e nenhum valor lixo — e que a leitura não dependa de elevação.
+    #[cfg(windows)]
     #[test]
     fn real_enumeration_reads_start_name_and_classifies() {
-        let services = platform::enumerate().unwrap_or_else(|reason| panic!("WMI falhou: {reason}"));
+        let services =
+            platform::enumerate().unwrap_or_else(|reason| panic!("WMI falhou: {reason}"));
         let with_start_name = services
             .iter()
             .filter(|svc| svc.start_name.is_some())
@@ -1545,9 +1651,11 @@ mod tests {
             "nenhum serviço com conta interna do Windows — StartName pode estar mal lido"
         );
         assert!(
-            services
-                .iter()
-                .all(|svc| !svc.start_name.as_deref().unwrap_or_default().contains('\u{FFFD}')),
+            services.iter().all(|svc| !svc
+                .start_name
+                .as_deref()
+                .unwrap_or_default()
+                .contains('\u{FFFD}')),
             "acentos corrompidos em StartName"
         );
 
@@ -1564,7 +1672,10 @@ mod tests {
         let review = contagem("review");
         let unknown = contagem("unknown");
 
-        assert!(system > 50, "só {system} serviços de sistema — sinal de campo trocado");
+        assert!(
+            system > 50,
+            "só {system} serviços de sistema — sinal de campo trocado"
+        );
         // Nenhum serviço pode ficar sem categoria: sem StartName e sem
         // executável é "unknown", nunca um rótulo inventado.
         assert_eq!(system + review + contagem("user") + unknown, total);
@@ -1591,12 +1702,13 @@ mod tests {
             }
         }
         assert!(
-            snapshot.services.iter().all(|svc| !svc.suspicion_reasons.iter().any(
-                |reason| {
+            snapshot
+                .services
+                .iter()
+                .all(|svc| !svc.suspicion_reasons.iter().any(|reason| {
                     let lower = reason.to_lowercase();
                     lower.contains("malware") || lower.contains("vírus")
-                }
-            )),
+                })),
             "a lista de motivos jamais pode rotular o executável como malware"
         );
         // Limiar de alarme falso: a primeira versão marcava 8% da máquina
@@ -1613,7 +1725,8 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn real_enumeration_reads_services_without_elevation() {
-        let services = platform::enumerate().unwrap_or_else(|reason| panic!("WMI falhou: {reason}"));
+        let services =
+            platform::enumerate().unwrap_or_else(|reason| panic!("WMI falhou: {reason}"));
         assert!(
             services.len() > 100,
             "um Windows real tem centenas de serviços, veio {}",

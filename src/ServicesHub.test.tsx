@@ -96,7 +96,7 @@ const MIXED_SERVICES = [
   service({
     name: "MeuAppSvc",
     displayName: "Serviço do MeuApp",
-    startName: "LUCAS-PC\\lucas",
+    startName: "DEV-PC\\dev",
     isUserService: true,
     category: "user",
     executablePath: "C:\\Program Files\\MeuApp\\servico.exe",
@@ -111,12 +111,12 @@ const MIXED_SERVICES = [
   service({
     name: "AchadoNaReview",
     displayName: "Serviço em diretório gravável",
-    startName: "LUCAS-PC\\lucas",
+    startName: "DEV-PC\\dev",
     isUserService: true,
     category: "review",
-    executablePath: "C:\\Users\\lucas\\AppData\\Roaming\\algo\\svc.exe",
+    executablePath: "C:\\Users\\dev\\AppData\\Roaming\\algo\\svc.exe",
     publisher: null,
-    suspicionReasons: ["Executável em diretório gravável pelo usuário (c:\\users\\lucas\\appdata\\roaming)"],
+    suspicionReasons: ["Executável em diretório gravável pelo usuário (c:\\users\\dev\\appdata\\roaming)"],
   }),
 ];
 
