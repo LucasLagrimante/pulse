@@ -48,7 +48,7 @@
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.2",
     "vite": "^8.0.16",
-    "vitest": "^3.2.4"
+    "vitest": "^5.1.0"
   },
   "optionalDependencies": {
     "@tauri-apps/cli-win32-x64-msvc": "2.11.5"
