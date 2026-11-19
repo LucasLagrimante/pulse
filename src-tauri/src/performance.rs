@@ -30,7 +30,32 @@ pub struct PerformanceDetails {
     pub thermal_sensors: Vec<ThermalSensor>,
 }
 
+#[cfg(target_os = "linux")]
+pub mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
+
 pub fn get_performance_details_sync() -> PerformanceDetails {
+    #[cfg(windows)]
+    {
+        windows_details()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux::get_performance_details()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        macos::get_performance_details()
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    {
+        unavailable("Telemetria de hardware não suportada neste sistema operacional")
+    }
+}
+
+#[cfg(windows)]
+fn windows_details() -> PerformanceDetails {
     // Um único PowerShell por coleta: o cold start do `powershell.exe`
     // (centenas de ms) domina o custo, então nome da GPU e todas as fontes
     // térmicas de firmware vêm no mesmo snapshot. Antes eram duas chamadas
@@ -81,6 +106,7 @@ $probes = @(Get-CimInstance Win32_TemperatureProbe | Select-Object Name, Current
 /// Executa o snapshot WMI num único `powershell.exe`. Namespaces ausentes
 /// (LHM/OHM só existem com o app em execução) viram listas vazias sem erro;
 /// `Err` só quando o próprio PowerShell falha.
+#[cfg(windows)]
 fn run_wmi_snapshot(script: &str) -> Result<serde_json::Value, &'static str> {
     let output = crate::process::hidden_command("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
@@ -89,13 +115,14 @@ fn run_wmi_snapshot(script: &str) -> Result<serde_json::Value, &'static str> {
     if !output.status.success() {
         return Err("O driver de vídeo não expôs telemetria via WMI");
     }
-    let text =
-        std::str::from_utf8(&output.stdout).map_err(|_| "A resposta do driver não é texto válido")?;
+    let text = std::str::from_utf8(&output.stdout)
+        .map_err(|_| "A resposta do driver não é texto válido")?;
     serde_json::from_str(text.trim()).map_err(|_| "O driver não retornou dados de vídeo")
 }
 
 /// Extrai o nome da GPU do snapshot (`gpu` é `null` sem placa válida).
 /// Função pura para permitir testes unitários fora do Windows.
+#[cfg(any(windows, test))]
 fn parse_gpu_name(value: &serde_json::Value) -> Capability<String> {
     value
         .get("gpu")
@@ -144,6 +171,7 @@ fn valid_celsius(value: f64) -> Option<f64> {
 
 /// Lê um sensor por GPU via `nvidia-smi`, ignorando linhas como "N/A" ou
 /// "[Not Supported]".
+#[cfg(windows)]
 fn read_nvidia_gpu_sensors() -> Vec<ThermalSensor> {
     let output = crate::process::hidden_command("nvidia-smi")
         .args([
@@ -163,6 +191,7 @@ fn read_nvidia_gpu_sensors() -> Vec<ThermalSensor> {
 /// Extrai `(índice, nome, °C)` de cada linha CSV do `nvidia-smi`
 /// (`0, NVIDIA GeForce RTX 4070 SUPER, 67`).
 /// Função pura para permitir testes unitários fora do Windows.
+#[cfg(any(windows, test))]
 fn parse_nvidia_smi_sensors(text: &str) -> Vec<ThermalSensor> {
     let mut sensors = Vec::new();
     for line in text.lines() {
@@ -208,6 +237,7 @@ fn parse_nvidia_smi_sensors(text: &str) -> Vec<ThermalSensor> {
 /// décimos de Kelvin (°C = valor / 10 − 273.15); `Value` do LHM/OHM já vem
 /// em °C. Zonas com `Active: false` são ignoradas; sem `Active`, ativa.
 /// Função pura para permitir testes unitários fora do Windows.
+#[cfg(any(windows, test))]
 fn parse_snapshot_sensors(value: &serde_json::Value) -> Vec<ThermalSensor> {
     let mut sensors = Vec::new();
     let items = |key: &str| -> Vec<&serde_json::Value> {
@@ -219,12 +249,21 @@ fn parse_snapshot_sensors(value: &serde_json::Value) -> Vec<ThermalSensor> {
     };
     // LibreHardwareMonitor e OpenHardwareMonitor (legado) expõem o mesmo
     // esquema `Sensor`; ambos só existem com o app correspondente em execução.
-    for (key, source) in [("lhm", "LibreHardwareMonitor"), ("ohm", "OpenHardwareMonitor")] {
+    for (key, source) in [
+        ("lhm", "LibreHardwareMonitor"),
+        ("ohm", "OpenHardwareMonitor"),
+    ] {
         let prefix = if key == "ohm" { "ohm" } else { "lhm" };
         for item in items(key) {
             let name = item.get("Name").and_then(|v| v.as_str()).unwrap_or("");
-            let identifier = item.get("Identifier").and_then(|v| v.as_str()).unwrap_or("");
-            let celsius = item.get("Value").and_then(|v| v.as_f64()).and_then(valid_celsius);
+            let identifier = item
+                .get("Identifier")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let celsius = item
+                .get("Value")
+                .and_then(|v| v.as_f64())
+                .and_then(valid_celsius);
             if let Some(celsius) = celsius.filter(|_| !name.is_empty()) {
                 sensors.push(ThermalSensor {
                     id: format!("{prefix}-{}", sanitize_id(identifier)),
@@ -254,13 +293,19 @@ fn parse_snapshot_sensors(value: &serde_json::Value) -> Vec<ThermalSensor> {
         // Remove só o sufixo de instância (`TZ00_0` → `TZ00`).
         let zone = match raw_name.rsplit_once('_') {
             Some((base, suffix))
-                if !base.is_empty() && !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) =>
+                if !base.is_empty()
+                    && !suffix.is_empty()
+                    && suffix.chars().all(|c| c.is_ascii_digit()) =>
             {
                 base
             }
             _ => raw_name,
         };
-        let zone = if zone.is_empty() { "desconhecida" } else { zone };
+        let zone = if zone.is_empty() {
+            "desconhecida"
+        } else {
+            zone
+        };
         sensors.push(ThermalSensor {
             id: format!("acpi-{}", sanitize_id(zone)),
             label: format!("Zona térmica {zone}"),
@@ -277,8 +322,7 @@ fn parse_snapshot_sensors(value: &serde_json::Value) -> Vec<ThermalSensor> {
                 continue;
             }
         }
-        let Some(celsius) =
-            raw_decikelvin(item, "CurrentReading").and_then(decikelvin_to_celsius)
+        let Some(celsius) = raw_decikelvin(item, "CurrentReading").and_then(decikelvin_to_celsius)
         else {
             continue;
         };
@@ -303,19 +347,16 @@ fn parse_snapshot_sensors(value: &serde_json::Value) -> Vec<ThermalSensor> {
 }
 
 /// Lê um inteiro de décimos de Kelvin tolerando número ou string numérica.
+#[cfg(any(windows, test))]
 fn raw_decikelvin(item: &serde_json::Value, key: &str) -> Option<u64> {
     item.get(key)
         .and_then(|v| v.as_u64())
-        .or_else(|| {
-            item
-                .get(key)
-                .and_then(|v| v.as_f64())
-                .map(|v| v as u64)
-        })
+        .or_else(|| item.get(key).and_then(|v| v.as_f64()).map(|v| v as u64))
 }
 
 /// Décimos de Kelvin para °C, só na faixa plausível 0–150 °C
 /// (bruto 2732–4232). Função pura para testes fora do Windows.
+#[cfg(any(windows, test))]
 fn decikelvin_to_celsius(raw: u64) -> Option<f64> {
     if !(2732..=4232).contains(&raw) {
         return None;
@@ -329,7 +370,11 @@ fn sanitize_id(raw: &str) -> String {
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
-    let collapsed = cleaned.split('-').filter(|part| !part.is_empty()).collect::<Vec<_>>().join("-");
+    let collapsed = cleaned
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
     if collapsed.is_empty() {
         "sensor".into()
     } else {
@@ -406,7 +451,9 @@ mod tests {
 
     #[test]
     fn ignores_unsupported_gpu_lines() {
-        let sensors = parse_nvidia_smi_sensors("0, NVIDIA GeForce RTX 4070 SUPER, [Not Supported]\n1, Other GPU, N/A\n");
+        let sensors = parse_nvidia_smi_sensors(
+            "0, NVIDIA GeForce RTX 4070 SUPER, [Not Supported]\n1, Other GPU, N/A\n",
+        );
         assert!(sensors.is_empty());
         assert!(parse_nvidia_smi_sensors("").is_empty());
     }
@@ -547,8 +594,18 @@ mod tests {
     #[test]
     fn hottest_sensor_reports_maximum() {
         let sensors = vec![
-            ThermalSensor { id: "a".into(), label: "A".into(), celsius: 41.0, source: "ACPI".into() },
-            ThermalSensor { id: "b".into(), label: "B".into(), celsius: 67.0, source: "nvidia-smi".into() },
+            ThermalSensor {
+                id: "a".into(),
+                label: "A".into(),
+                celsius: 41.0,
+                source: "ACPI".into(),
+            },
+            ThermalSensor {
+                id: "b".into(),
+                label: "B".into(),
+                celsius: 67.0,
+                source: "nvidia-smi".into(),
+            },
         ];
         let hottest = hottest_sensor(&sensors);
         assert_eq!(hottest.value, Some(67.0));
@@ -560,7 +617,10 @@ mod tests {
 
     #[test]
     fn sanitizes_sensor_ids() {
-        assert_eq!(sanitize_id("/intelcpu/0/temperature/0"), "intelcpu-0-temperature-0");
+        assert_eq!(
+            sanitize_id("/intelcpu/0/temperature/0"),
+            "intelcpu-0-temperature-0"
+        );
         assert_eq!(sanitize_id(""), "sensor");
     }
 

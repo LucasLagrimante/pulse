@@ -4,6 +4,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+#[cfg(unix)]
+mod unix;
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TopProcess {
@@ -30,6 +33,10 @@ pub struct TopProcess {
     /// (`kernel`, `memory`, `virtualization`, `security`).
     #[serde(default)]
     pub system_kind: Option<String>,
+    /// Conta dona do processo (Linux/macOS). Ausente no Windows, onde o
+    /// payload continua idêntico ao de antes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
 }
 
 fn default_process_count() -> usize {
@@ -65,6 +72,7 @@ struct RawSystemOverview {
     top_processes: Vec<TopProcess>,
 }
 
+#[cfg(any(windows, test))]
 const OVERVIEW_SCRIPT: &str = r#"
 $all = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.WorkingSet64 -ge 0 })
 $processById = @{}
@@ -168,7 +176,8 @@ fn now_unix_ms() -> Result<u64, String> {
 /// grupo. Ausência de medição vira `None` (indisponível), nunca zero falso.
 /// Retorna o uso total da engine gráfica mais ocupada, se disponível.
 fn attach_usage_metrics(processes: &mut [TopProcess]) -> Option<f64> {
-    #[cfg(windows)]
+    // Windows: GetProcessTimes + PDH. Linux/macOS: sysinfo + DRM fdinfo /
+    // nvidia-smi. A agregação por grupo é a mesma em todas as plataformas.
     {
         let pids: Vec<u32> = processes.iter().flat_map(member_ids).collect();
         let cpu = crate::process_usage::cpu_percent_by_pid(&pids);
@@ -185,12 +194,6 @@ fn attach_usage_metrics(processes: &mut [TopProcess]) -> Option<f64> {
         }
 
         gpu.map(|usage| usage.total_percent)
-    }
-
-    #[cfg(not(windows))]
-    {
-        let _ = processes;
-        None
     }
 }
 
@@ -227,9 +230,18 @@ fn attach_process_icons(processes: &mut [TopProcess]) {
         }
     }
 
-    #[cfg(not(windows))]
+    // Linux: entrada .desktop + tema de ícones; macOS ainda sem extração.
+    #[cfg(unix)]
     {
-        let _ = processes;
+        for process in processes.iter_mut() {
+            if process.icon.is_none() {
+                process.icon = crate::app_icons::icon_for_process(
+                    process.id,
+                    process.path.as_deref(),
+                    &process.name,
+                );
+            }
+        }
     }
 }
 
@@ -504,7 +516,24 @@ pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
                     attach_process_icons(&mut fresh.top_processes);
                     return Ok(fresh);
                 }
-                #[cfg(not(windows))]
+                #[cfg(unix)]
+                {
+                    let mut fresh = cached.data.clone();
+                    if let Some(cpu) = unix::read_cpu_percent() {
+                        fresh.cpu_percent = Some(cpu);
+                    }
+                    if let Some((used, total)) = unix::read_memory_gb() {
+                        fresh.memory_used_gb = Some(used);
+                        fresh.memory_total_gb = Some(total);
+                    }
+                    if let Ok(ms) = now_unix_ms() {
+                        fresh.sampled_at_unix_ms = ms;
+                    }
+                    fresh.gpu_percent = attach_usage_metrics(&mut fresh.top_processes);
+                    attach_process_icons(&mut fresh.top_processes);
+                    return Ok(fresh);
+                }
+                #[cfg(not(any(windows, unix)))]
                 return Ok(cached.data.clone());
             }
         }
@@ -568,10 +597,47 @@ pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
 
             Ok(overview)
         }
-        #[cfg(not(windows))]
+        #[cfg(unix)]
+        {
+            use crate::debug::Failure;
+            let sampled_at = now_unix_ms().map_err(|e| {
+                Failure::new("Relógio do sistema inválido")
+                    .stage("clock")
+                    .detail(e)
+            })?;
+            let top_processes = unix::collect_top_processes().map_err(|e| {
+                Failure::new("Não foi possível listar os processos")
+                    .stage("processes")
+                    .detail(e)
+            })?;
+            let memory = unix::read_memory_gb();
+            let disk = unix::read_root_disk_gb();
+            let mut overview = SystemOverview {
+                cpu_percent: unix::read_cpu_percent(),
+                gpu_percent: None,
+                memory_used_gb: memory.map(|(used, _)| used),
+                memory_total_gb: memory.map(|(_, total)| total),
+                disk_used_gb: disk.map(|(used, _)| used),
+                disk_total_gb: disk.map(|(_, total)| total),
+                startup_item_count: 0,
+                top_processes,
+                sampled_at_unix_ms: sampled_at,
+                source: UNIX_SOURCE.to_owned(),
+            };
+            if let Ok(items) = crate::startup_inventory::list_startup_items() {
+                overview.startup_item_count = items.len() as u32;
+            }
+
+            crate::process_identity::enrich(&mut overview.top_processes);
+            overview.gpu_percent = attach_usage_metrics(&mut overview.top_processes);
+            attach_process_icons(&mut overview.top_processes);
+
+            Ok(overview)
+        }
+        #[cfg(not(any(windows, unix)))]
         {
             Err(crate::debug::Failure::new(
-                "A coleta de telemetria é compatível somente com Windows.",
+                "A coleta de telemetria não é compatível com este sistema operacional.",
             )
             .stage("platform"))
         }
@@ -709,18 +775,91 @@ fn terminate_process_sync(id: u32) -> Result<(), String> {
         Ok(())
     }
 
-    #[cfg(not(windows))]
+    #[cfg(unix)]
+    {
+        let display_name = process.display_name.as_deref().unwrap_or(&process.name);
+        signal_group(&process_ids, display_name)?;
+        if let Ok(mut guard) = CACHE.lock() {
+            *guard = None;
+        }
+        Ok(())
+    }
+
+    #[cfg(not(any(windows, unix)))]
     Err(format!(
-        "Encerramento de processos só está disponível no Windows (PID {}).",
+        "Encerramento de processos não é compatível com este sistema (PID {}).",
         process_ids[0]
     ))
 }
 
+#[cfg(target_os = "linux")]
+const UNIX_SOURCE: &str = "Linux /proc + sysinfo";
+#[cfg(all(unix, not(target_os = "linux")))]
+const UNIX_SOURCE: &str = "macOS sysinfo";
+
+/// Envia SIGTERM (encerramento educado, equivalente ao `taskkill` sem `/F`)
+/// a cada membro do grupo. Não escala para SIGKILL: no Windows o Pulse só
+/// força quando o próprio sistema declara que o processo não aceita o pedido
+/// educado, e o Linux não tem esse sinal. Quem decide permissão é o kernel:
+/// processo de outro usuário devolve o EPERM real.
+#[cfg(unix)]
+fn signal_group(process_ids: &[u32], display_name: &str) -> Result<(), String> {
+    // PID 1 é o init; PID acima de i32::MAX viraria negativo em `kill(2)` e
+    // atingiria um grupo de processos inteiro.
+    if process_ids
+        .iter()
+        .any(|pid| *pid <= 1 || *pid > i32::MAX as u32)
+    {
+        return Err("O Pulse não pode encerrar este processo.".to_owned());
+    }
+
+    let mut delivered = 0usize;
+    let mut denied: Option<u32> = None;
+    for &pid in process_ids {
+        // SAFETY: `kill` só lê os argumentos; o PID foi validado como positivo.
+        let rc = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+        if rc == 0 {
+            delivered += 1;
+            continue;
+        }
+        let error = std::io::Error::last_os_error();
+        match error.raw_os_error() {
+            // Encerrou sozinho entre a coleta e o pedido.
+            Some(libc::ESRCH) => {}
+            Some(libc::EPERM) => {
+                denied.get_or_insert(pid);
+            }
+            _ => {
+                return Err(format!(
+                    "Não foi possível encerrar {display_name} (PID {pid}): {error}"
+                ))
+            }
+        }
+    }
+
+    if let Some(pid) = denied {
+        let partial = if delivered > 0 {
+            format!(" {delivered} processo(s) do grupo receberam o pedido.")
+        } else {
+            String::new()
+        };
+        return Err(format!(
+            "Permissão negada para encerrar {display_name} (PID {pid}): o processo pertence a outro usuário ou é protegido pelo sistema (EPERM).{partial}"
+        ));
+    }
+    if delivered == 0 {
+        return Err(format!("{display_name} já não estava em execução."));
+    }
+    Ok(())
+}
+
+#[cfg(any(windows, test))]
 fn is_wsl_host_process(name: &str) -> bool {
     name.trim_end_matches(".exe")
         .eq_ignore_ascii_case("vmmemWSL")
 }
 
+#[cfg(any(windows, test))]
 fn requires_forced_termination(stderr: &[u8]) -> bool {
     let detail = String::from_utf8_lossy(stderr).to_lowercase();
     detail.contains("can only be terminated forcefully")
@@ -884,5 +1023,61 @@ mod tests {
         let process = &parse_overview(payload, 123).unwrap().top_processes[0];
         assert_eq!(process.path.as_deref(), Some("C:\\app.exe"));
         assert_eq!(process.icon.as_deref(), Some("data:image/png;base64,abc"));
+    }
+
+    #[test]
+    fn user_field_is_omitted_when_absent() {
+        let payload = r#"{"cpuPercent":1,"startupItemCount":0,"topProcesses":[{"name":"app","id":42,"memoryMb":1.0}]}"#;
+        let overview = parse_overview(payload, 1).unwrap();
+        let json = serde_json::to_string(&overview).unwrap();
+        assert!(!json.contains("\"user\""));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn signal_group_refuses_init_and_negative_pids() {
+        assert!(super::signal_group(&[1], "init").is_err());
+        assert!(super::signal_group(&[u32::MAX], "x").is_err());
+        assert!(super::signal_group(&[0], "x").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn signal_group_terminates_own_child_with_sigterm() {
+        use std::os::unix::process::ExitStatusExt;
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        super::signal_group(&[child.id()], "sleep").unwrap();
+        let status = child.wait().unwrap();
+        assert_eq!(status.signal(), Some(libc::SIGTERM));
+        // Processo já encerrado (e colhido) não é sucesso silencioso.
+        assert!(super::signal_group(&[child.id()], "sleep").is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn signal_group_reports_real_eperm_for_other_users() {
+        // Só faz sentido sem privilégio de root.
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let error = super::signal_group(&[2], "kthreadd").unwrap_err();
+        assert!(error.contains("EPERM"), "{error}");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn coleta_completa_do_overview_enriquece_e_respeita_forma() {
+        let overview = super::get_system_overview_sync().expect("system_overview");
+        assert!(overview
+            .cpu_percent
+            .is_some_and(|v| (0.0..=100.0).contains(&v)));
+        assert!(overview.memory_total_gb.is_some_and(|v| v > 0.0));
+        assert!(overview.disk_total_gb.is_some_and(|v| v > 0.0));
+        assert!(!overview.top_processes.is_empty() && overview.top_processes.len() <= 25);
+        assert!(overview.top_processes.iter().any(|p| p.user.is_some()));
+        assert!(overview.top_processes.iter().any(|p| p.path.is_some()));
     }
 }
