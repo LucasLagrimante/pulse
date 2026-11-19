@@ -20,22 +20,27 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-use super::installed::{self, parse_app_id, InstalledApp};
+#[cfg(windows)]
+use super::installed::parse_app_id;
+use super::installed::{self, InstalledApp};
 use super::platform::{self, RestorePointOutcome};
+#[cfg(windows)]
 use super::registry::RegHandle;
 use super::residue::{self, SnapshotEntry, UninstallTargets};
 
 /// Teto de espera do desinstalador. Passado isso, o Pulse **não** mata o
 /// processo — matar um instalador no meio deixa o sistema inconsistente.
-const UNINSTALLER_TIMEOUT: Duration = Duration::from_secs(900);
+pub(super) const UNINSTALLER_TIMEOUT: Duration = Duration::from_secs(900);
 /// Espera extra pela removal da chave de desinstalação: muitos instaladores
 /// terminam o processo antes de limpar o registro.
-const REGISTRY_SETTLE_TIMEOUT: Duration = Duration::from_secs(60);
+pub(super) const REGISTRY_SETTLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
 pub struct Session {
     token: String,
     app_id: String,
+    #[cfg(unix)]
+    app: InstalledApp,
     targets: UninstallTargets,
     registry_snapshot: Vec<SnapshotEntry>,
     folder_snapshot: Vec<SnapshotEntry>,
@@ -98,6 +103,8 @@ fn touch_session(session: &Session) {
         guard.push(Session {
             token: session.token.clone(),
             app_id: session.app_id.clone(),
+            #[cfg(unix)]
+            app: session.app.clone(),
             targets: session.targets.clone(),
             registry_snapshot: session.registry_snapshot.clone(),
             folder_snapshot: session.folder_snapshot.clone(),
@@ -290,26 +297,39 @@ pub fn describe_exit_code(exit_code: i32) -> Vec<String> {
 
 #[tauri::command]
 pub async fn start_uninstall_session(app_id: String) -> Result<UninstallSession, String> {
-    // Uma única enumeração do registro: procurar o app e varrer os resíduos são
-    // o mesmo trabalho. Três varreduras completas por sessão travariam a UI.
+    // Uma única enumeração do inventário: procurar o app e varrer os resíduos
+    // são o mesmo trabalho. Três varreduras completas por sessão travariam a UI.
     let scan_id = app_id.clone();
     let scanned = tauri::async_runtime::spawn_blocking(move || {
-        find_app(&scan_id).map(|app| residue::scan(&app))
+        let app = find_app(&scan_id)?;
+        if let Some(reason) = &app.protected_reason {
+            return Some(Err(format!(
+                "O Pulse não desinstala {}: {reason}.",
+                app.display_name
+            )));
+        }
+        let targets = residue::scan(&app);
+        Some(Ok((app, targets)))
     })
     .await
     .map_err(|_| "A análise de resíduos foi interrompida".to_string())?;
-    let targets = scanned.ok_or_else(|| {
-        "Este programa não está mais registrado. Atualize a lista.".to_string()
-    })?;
+    let (app, targets) = match scanned {
+        Some(Ok(pair)) => pair,
+        Some(Err(reason)) => return Err(reason),
+        None => {
+            return Err("Este programa não está mais registrado. Atualize a lista.".to_string());
+        }
+    };
+    #[cfg(not(unix))]
+    let _ = app;
 
     // O snapshot percorre até 20 mil itens por pasta: em thread de I/O, nunca
     // no runtime do Tauri (AGENTS.md §3.1).
     let snapshot_targets = targets.clone();
-    let (registry_snapshot, folder_snapshot) = tauri::async_runtime::spawn_blocking(move || {
-        take_snapshot(&snapshot_targets)
-    })
-    .await
-    .unwrap_or((Vec::new(), Vec::new()));
+    let (registry_snapshot, folder_snapshot) =
+        tauri::async_runtime::spawn_blocking(move || take_snapshot(&snapshot_targets))
+            .await
+            .unwrap_or((Vec::new(), Vec::new()));
     let capabilities = platform::capabilities();
     let app_id = targets.app_id.clone();
     let token = new_token();
@@ -326,6 +346,8 @@ pub async fn start_uninstall_session(app_id: String) -> Result<UninstallSession,
     register_session(Session {
         token,
         app_id,
+        #[cfg(unix)]
+        app,
         targets: session.targets.clone(),
         registry_snapshot,
         folder_snapshot,
@@ -337,7 +359,8 @@ pub async fn start_uninstall_session(app_id: String) -> Result<UninstallSession,
 }
 
 /// Etapas 1 e 2 do modal: grava o ponto de restauração (se pedido) e roda o
-/// desinstalador padrão do fabricante, aguardando o fim de verdade.
+/// desinstalador padrão do fabricante (ou gerenciador no Linux/macOS),
+/// aguardando o fim de verdade.
 #[tauri::command]
 pub async fn run_app_uninstaller(
     session_token: String,
@@ -353,77 +376,130 @@ pub async fn run_app_uninstaller(
             session.targets.display_name
         );
         Some(
-            tauri::async_runtime::spawn_blocking(move || platform::create_restore_point(&description))
-                .await
-                .map_err(|_| "A criação do ponto de restauração foi interrompida".to_string())?,
+            tauri::async_runtime::spawn_blocking(move || {
+                platform::create_restore_point(&description)
+            })
+            .await
+            .map_err(|_| "A criação do ponto de restauração foi interrompida".to_string())?,
         )
     } else {
         None
     };
 
-    let Some(command_line) = session.targets.uninstall_string.clone() else {
-        let message = "Este programa não declara um desinstalador. Use o Painel de Controle."
-            .to_string();
-        touch_session(&session);
-        return Err(message);
+    #[cfg(windows)]
+    let (exit_code, timed_out, entry_removed, detection_note, messages, targets) = {
+        let Some(command_line) = session.targets.uninstall_string.clone() else {
+            let message =
+                "Este programa não declara um desinstalador. Use o Painel de Controle.".to_string();
+            touch_session(&session);
+            return Err(message);
+        };
+        let Some((program, args)) = split_command_line(&command_line) else {
+            let message = "O comando de desinstalação registrado é inválido".to_string();
+            touch_session(&session);
+            return Err(message);
+        };
+        let (program, args) = resolve_uninstaller_program(program, args);
+        let Some(program) = program else {
+            let message =
+                "O caminho do desinstalador não existe mais neste computador.".to_string();
+            touch_session(&session);
+            return Err(message);
+        };
+
+        let started_at = Instant::now();
+        let running_app_id = session.app_id.clone();
+        let outcome = tauri::async_runtime::spawn_blocking(move || {
+            wait_for_uninstaller(&program, &args, started_at, &running_app_id)
+        })
+        .await
+        .map_err(|_| "A execução do desinstalador foi interrompida".to_string())?;
+
+        if !outcome.started {
+            session.restore_point = restore_point;
+            touch_session(&session);
+            return Err(outcome
+                .detection_note
+                .unwrap_or_else(|| "O desinstalador não pôde ser iniciado.".to_string()));
+        }
+
+        let app_id = session.app_id.clone();
+        // Atualiza o inventário e revarre os resíduos: o que sobrou só é conhecido
+        // depois que o desinstalador terminou.
+        installed::invalidate_cache();
+        let fresh = tauri::async_runtime::spawn_blocking(move || {
+            find_app(&app_id).map(|app| residue::scan(&app))
+        })
+        .await
+        .unwrap_or(None);
+
+        // Sem varredura nova (o uninstaller removeu a chave), a lista fica vazia em
+        // vez de repetir a antiga: oferecer de novo o que já foi removido seria
+        // mentira.
+        let targets = fresh.unwrap_or_else(|| UninstallTargets {
+            registry_keys: Vec::new(),
+            folders: Vec::new(),
+            skipped_reason: Some(
+                "O programa não está mais registrado; não há resíduos a analisar.".to_string(),
+            ),
+            ..session.targets.clone()
+        });
+        (
+            outcome.exit_code,
+            outcome.timed_out,
+            outcome.entry_removed,
+            outcome.detection_note,
+            outcome.messages,
+            targets,
+        )
     };
-    let Some((program, args)) = split_command_line(&command_line) else {
-        let message = "O comando de desinstalação registrado é inválido".to_string();
-        touch_session(&session);
-        return Err(message);
+
+    #[cfg(unix)]
+    let (exit_code, timed_out, entry_removed, detection_note, messages, targets) = {
+        let app_for_run = session.app.clone();
+        let outcome =
+            tauri::async_runtime::spawn_blocking(move || super::uninstall_unix::run(&app_for_run))
+                .await
+                .map_err(|_| "A execução do desinstalador foi interrompida".to_string())?;
+
+        if !outcome.started {
+            session.restore_point = restore_point;
+            touch_session(&session);
+            return Err(outcome
+                .detection_note
+                .unwrap_or_else(|| "O desinstalador não pôde ser iniciado.".to_string()));
+        }
+
+        // Atualiza o inventário e revarre os resíduos reais que ficaram na pasta
+        // pessoal: no Linux/macOS o gerenciador remove o app mas preserva os
+        // dados do usuário, que precisam ser reanalisados usando o app da sessão.
+        installed::invalidate_cache();
+        let app_for_rescan = session.app.clone();
+        let targets = tauri::async_runtime::spawn_blocking(move || residue::scan(&app_for_rescan))
+            .await
+            .unwrap_or_else(|_| UninstallTargets {
+                registry_keys: Vec::new(),
+                folders: Vec::new(),
+                skipped_reason: Some(
+                    "A reanálise de resíduos após a desinstalação foi interrompida.".to_string(),
+                ),
+                ..session.targets.clone()
+            });
+        (
+            outcome.exit_code,
+            outcome.timed_out,
+            outcome.entry_removed,
+            outcome.detection_note,
+            outcome.messages,
+            targets,
+        )
     };
-    let (program, args) = resolve_uninstaller_program(program, args);
-    let Some(program) = program else {
-        let message =
-            "O caminho do desinstalador não existe mais neste computador.".to_string();
-        touch_session(&session);
-        return Err(message);
-    };
 
-    let started_at = Instant::now();
-    let running_app_id = session.app_id.clone();
-    let outcome = tauri::async_runtime::spawn_blocking(move || {
-        wait_for_uninstaller(&program, &args, started_at, &running_app_id)
-    })
-    .await
-    .map_err(|_| "A execução do desinstalador foi interrompida".to_string())?;
-
-    if !outcome.started {
-        session.restore_point = restore_point;
-        touch_session(&session);
-        return Err(outcome.detection_note.unwrap_or_else(|| {
-            "O desinstalador não pôde ser iniciado.".to_string()
-        }));
-    }
-
-    let entry_removed = outcome.entry_removed;
-    let app_id = session.app_id.clone();
-    // Atualiza o inventário e revarre os resíduos: o que sobrou só é conhecido
-    // depois que o desinstalador terminou.
-    installed::invalidate_cache();
-    let fresh = tauri::async_runtime::spawn_blocking(move || {
-        find_app(&app_id).map(|app| residue::scan(&app))
-    })
-    .await
-    .unwrap_or(None);
-
-    // Sem varredura nova (o uninstaller removeu a chave), a lista fica vazia em
-    // vez de repetir a antiga: oferecer de novo o que já foi removido seria
-    //lie.
-    let targets = fresh.unwrap_or_else(|| UninstallTargets {
-        registry_keys: Vec::new(),
-        folders: Vec::new(),
-        skipped_reason: Some(
-            "O programa não está mais registrado; não há resíduos a analisar.".to_string(),
-        ),
-        ..session.targets.clone()
-    });
     let snapshot_targets = targets.clone();
-    let (registry_snapshot, folder_snapshot) = tauri::async_runtime::spawn_blocking(move || {
-        take_snapshot(&snapshot_targets)
-    })
-    .await
-    .unwrap_or((Vec::new(), Vec::new()));
+    let (registry_snapshot, folder_snapshot) =
+        tauri::async_runtime::spawn_blocking(move || take_snapshot(&snapshot_targets))
+            .await
+            .unwrap_or((Vec::new(), Vec::new()));
 
     session.targets = targets.clone();
     session.registry_snapshot = registry_snapshot;
@@ -433,11 +509,11 @@ pub async fn run_app_uninstaller(
 
     Ok(UninstallerOutcome {
         started: true,
-        exit_code: outcome.exit_code,
-        timed_out: outcome.timed_out,
+        exit_code,
+        timed_out,
         entry_removed,
-        detection_note: outcome.detection_note,
-        messages: outcome.messages,
+        detection_note,
+        messages,
         restore_point,
         targets,
         finished_at_unix_ms: now_unix_ms(),
@@ -466,6 +542,7 @@ pub fn resolve_uninstaller_program(
     (None, tokens)
 }
 
+#[cfg(windows)]
 struct RunOutcome {
     started: bool,
     exit_code: Option<i32>,
@@ -475,6 +552,7 @@ struct RunOutcome {
     messages: Vec<String>,
 }
 
+#[cfg(windows)]
 fn wait_for_uninstaller(
     program: &str,
     args: &[String],
@@ -496,7 +574,10 @@ fn wait_for_uninstaller(
             // Se o usuário cancelou o UAC ou houve erro específico na tentativa de elevação,
             // reporta a nota gerada pelo fallback.
             if let Some(ref note) = elevated.detection_note {
-                if note.contains("UAC") || note.contains("administrador") || note.contains("elevação") {
+                if note.contains("UAC")
+                    || note.contains("administrador")
+                    || note.contains("elevação")
+                {
                     return elevated;
                 }
             }
@@ -646,11 +727,16 @@ fn wait_for_elevated_uninstaller(
 
     if let Err(err) = unsafe { ShellExecuteExW(&mut info) } {
         let code = err.code().0 as u32;
-        let note = if code == 1223 || code == 0x8007_04C7 || err.code() == ERROR_CANCELLED.to_hresult() {
-            "A solicitação de permissão de administrador (UAC) foi cancelada pelo usuário.".to_string()
-        } else {
-            format!("Não foi possível executar {} com elevação: {}", program, err)
-        };
+        let note =
+            if code == 1223 || code == 0x8007_04C7 || err.code() == ERROR_CANCELLED.to_hresult() {
+                "A solicitação de permissão de administrador (UAC) foi cancelada pelo usuário."
+                    .to_string()
+            } else {
+                format!(
+                    "Não foi possível executar {} com elevação: {}",
+                    program, err
+                )
+            };
         return RunOutcome {
             started: false,
             exit_code: None,
@@ -728,26 +814,7 @@ fn wait_for_elevated_uninstaller(
     }
 }
 
-#[cfg(not(windows))]
-fn wait_for_elevated_uninstaller(
-    program: &str,
-    _args: &[String],
-    _started_at: Instant,
-    _app_id: &str,
-) -> RunOutcome {
-    RunOutcome {
-        started: false,
-        exit_code: None,
-        timed_out: false,
-        entry_removed: false,
-        detection_note: Some(format!(
-            "Não foi possível executar {}: a operação requer elevação (não suportada nesta plataforma)",
-            program
-        )),
-        messages: Vec::new(),
-    }
-}
-
+#[cfg(windows)]
 fn describe_spawn_error(error: &std::io::Error, program: &str) -> String {
     use std::io::ErrorKind;
     match error.kind() {
@@ -764,6 +831,7 @@ fn describe_spawn_error(error: &std::io::Error, program: &str) -> String {
 
 /// Enquanto o item ainda estiver registrado, afirmar "terminou" seria mentira:
 /// a remoção da chave é a única prova observável de conclusão.
+#[cfg(windows)]
 fn wait_for_entry_removal(app_id: &str) -> bool {
     let deadline = Instant::now() + REGISTRY_SETTLE_TIMEOUT;
     loop {
@@ -780,9 +848,16 @@ fn wait_for_entry_removal(app_id: &str) -> bool {
 /// Existence check sem custo de inventário: usa a última chave conhecida pelo
 /// chamador. Mantido separado para que o poll não reenumere o sistema.
 pub fn app_entry_exists(app_id: &str) -> bool {
-    match parse_app_id(app_id) {
-        Some((hive, view, subkey)) => RegHandle::exists(hive, &subkey, view),
-        None => false,
+    #[cfg(windows)]
+    {
+        match parse_app_id(app_id) {
+            Some((hive, view, subkey)) => RegHandle::exists(hive, &subkey, view),
+            None => false,
+        }
+    }
+    #[cfg(unix)]
+    {
+        super::uninstall_unix::is_present(app_id)
     }
 }
 
@@ -850,7 +925,7 @@ fn cleanup_with_session(
             .iter()
             .find(|key| key.id == id)
         else {
-                return Err(format!(
+            return Err(format!(
                 "A chave {} não faz parte desta sessão de desinstalação",
                 id
             ));
@@ -901,6 +976,9 @@ fn cleanup_with_session(
                 path
             ));
         };
+        if let Some(reason) = &root.blocked_reason {
+            return Err(format!("{}: {}", normalized, reason));
+        }
         if let Some(reason) =
             residue::folder_deletion_veto(&normalized, &shell_patterns, &other_dirs)
         {
@@ -944,7 +1022,10 @@ fn cleanup_with_session(
         }
         // A raiz consumida some do snapshot: reenviar o mesmo item na próxima
         // chamada precisa falhar em vez de apagar de novo.
-        if let Some(entry) = refreshed_folders.iter_mut().find(|entry| entry.id == root.path) {
+        if let Some(entry) = refreshed_folders
+            .iter_mut()
+            .find(|entry| entry.id == root.path)
+        {
             entry.existed = false;
         }
 
@@ -988,11 +1069,22 @@ fn cleanup_with_session(
 }
 
 /// `true` quando `candidate` é a própria raiz ou está dentro dela. É o que
-/// impede o front de pedir a remoção de `C:\Windows` a partir de uma raiz
-/// Analysisada.
+/// impede o front de pedir a remoção de uma pasta de sistema a partir de uma
+/// raiz analisada.
 pub fn is_inside_tree(root: &str, candidate: &str) -> bool {
-    let root = residue::normalize(Path::new(root)).to_lowercase();
-    let candidate = residue::normalize(Path::new(candidate)).to_lowercase();
+    #[cfg(windows)]
+    {
+        is_inside_tree_windows(root, candidate)
+    }
+    #[cfg(unix)]
+    {
+        residue::unix::is_inside_tree(root, candidate)
+    }
+}
+
+pub fn is_inside_tree_windows(root: &str, candidate: &str) -> bool {
+    let root = residue::normalize_windows(Path::new(root)).to_lowercase();
+    let candidate = residue::normalize_windows(Path::new(candidate)).to_lowercase();
     if root.is_empty() || candidate.is_empty() {
         return false;
     }
@@ -1018,9 +1110,8 @@ mod tests {
 
     #[test]
     fn split_de_comando_com_caminho_espacado() {
-        let (program, args) =
-            split_command_line(r#""C:\Program Files\Foto\unins000.exe" /SILENT"#)
-                .expect("deve separar");
+        let (program, args) = split_command_line(r#""C:\Program Files\Foto\unins000.exe" /SILENT"#)
+            .expect("deve separar");
         assert_eq!(program, r"C:\Program Files\Foto\unins000.exe");
         assert_eq!(args, vec!["/SILENT".to_string()]);
     }
@@ -1049,20 +1140,101 @@ mod tests {
 
     #[test]
     fn containment_de_arvore() {
-        assert!(is_inside_tree(
+        assert!(is_inside_tree_windows(
             r"C:\Program Files\Foto",
             r"C:\Program Files\Foto\sub\a.txt"
         ));
-        assert!(is_inside_tree(
+        assert!(is_inside_tree_windows(
             r"C:\Program Files\Foto",
             r"C:\Program Files\Foto"
         ));
-        assert!(!is_inside_tree(
+        assert!(!is_inside_tree_windows(
             r"C:\Program Files\Foto",
             r"C:\Program Files\Fotografia\x"
         ));
-        assert!(!is_inside_tree(r"C:\Program Files\Foto", r"C:\Windows\x"));
-        assert!(!is_inside_tree("", r"C:\Windows"));
+        assert!(!is_inside_tree_windows(
+            r"C:\Program Files\Foto",
+            r"C:\Windows\x"
+        ));
+        assert!(!is_inside_tree_windows("", r"C:\Windows"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn containment_de_arvore_unix() {
+        assert!(is_inside_tree(
+            "/home/u/.config/Foto",
+            "/home/u/.config/Foto/sub/a.txt"
+        ));
+        assert!(is_inside_tree(
+            "/home/u/.config/Foto",
+            "/home/u/.config/Foto"
+        ));
+        assert!(!is_inside_tree(
+            "/home/u/.config/Foto",
+            "/home/u/.config/Fotografia/x"
+        ));
+        assert!(!is_inside_tree("/home/u/.config/Foto", "/etc/passwd"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_recusa_item_fora_da_sessao_e_item_bloqueado() {
+        use super::super::installed_unix::{base_app, SOURCE_DEB};
+        use super::super::residue::FolderNode;
+
+        let blocked_path = "/home/u/.config/compartilhado".to_string();
+        let session = Session {
+            token: "tok".to_string(),
+            app_id: "deb|system|meuapp".to_string(),
+            app: base_app(
+                SOURCE_DEB,
+                "system",
+                "meuapp",
+                "Meu App".to_string(),
+                "Pacote deb meuapp".to_string(),
+            ),
+            targets: UninstallTargets {
+                app_id: "deb|system|meuapp".to_string(),
+                display_name: "Meu App".to_string(),
+                publisher: None,
+                version: None,
+                uninstall_string: None,
+                install_location: None,
+                is_msi: false,
+                registry_keys: Vec::new(),
+                folders: vec![FolderNode {
+                    id: blocked_path.clone(),
+                    name: "compartilhado".to_string(),
+                    kind: "folder".to_string(),
+                    path: blocked_path.clone(),
+                    size_bytes: None,
+                    child_count: None,
+                    children: None,
+                    blocked_reason: Some(
+                        "O nome também identifica outro programa instalado".to_string(),
+                    ),
+                    truncated: None,
+                }],
+                skipped_reason: None,
+            },
+            registry_snapshot: Vec::new(),
+            folder_snapshot: Vec::new(),
+            created_at: Instant::now(),
+            restore_point: None,
+        };
+
+        let outside = cleanup_with_session(&session, vec![], vec!["/etc/hosts".to_string()]);
+        assert!(
+            outside.is_err(),
+            "caminho fora da sessão precisa ser recusado"
+        );
+
+        let blocked = cleanup_with_session(&session, vec![], vec![blocked_path]);
+        assert!(
+            blocked.is_err_and(|msg| msg.contains("outro programa")),
+            "pasta marcada como bloqueada na varredura precisa ser recusada"
+        );
     }
 
     #[test]

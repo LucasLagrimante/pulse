@@ -34,6 +34,15 @@ use serde::{Deserialize, Serialize};
 use super::installed::{parse_app_id, InstalledApp};
 use super::registry::{Hive, RegHandle, RegistryView, ERROR_FILE_NOT_FOUND_CODE};
 
+/// Regras de caminho de Linux/macOS (pasta pessoal, XDG, `~/Library`). A
+/// árvore, o snapshot e a remoção abaixo são os mesmos em toda plataforma;
+/// as funções públicas com regra de caminho despacham para lá fora do
+/// Windows. As versões `*_windows` continuam compiladas em todo lugar porque
+/// são puras e seus testes rodam em qualquer máquina.
+#[cfg(unix)]
+#[path = "residue_unix.rs"]
+pub mod unix;
+
 /// Profundidade e volume da árvore enviada ao front. Além disso a árvore é
 /// podada — mandar 40 mil nós para o DOM trava a janela.
 const TREE_MAX_DEPTH: usize = 12;
@@ -142,9 +151,21 @@ fn env_path(name: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// Pastas conhecidas do sistema que nunca são resíduo.
+pub fn shell_folder_patterns() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        shell_folder_patterns_windows()
+    }
+    #[cfg(unix)]
+    {
+        unix::shell_folder_patterns()
+    }
+}
+
 /// Pastas conhecidas do shell. Comparar por conjunto de componentes elimina
 /// qualquer variação de barra final, caixa ou caminho curto.
-pub fn shell_folder_patterns() -> Vec<String> {
+pub fn shell_folder_patterns_windows() -> Vec<String> {
     let mut patterns: BTreeSet<String> = BTreeSet::new();
     for variable in [
         "ProgramFiles",
@@ -194,10 +215,26 @@ const SHARED_SUBFOLDERS: &[&str] = &[
 /// Segmentos que nunca podem ser nome de resíduo de app.
 const SYSTEM_SEGMENTS: &[&str] = &["windows", "system32", "syswow64", "boot", "recovery"];
 
+/// Gate de segurança antes de oferecer ou apagar uma pasta.
+pub fn folder_deletion_veto(
+    normalized: &str,
+    shell_patterns: &[String],
+    other_install_dirs: &[String],
+) -> Option<String> {
+    #[cfg(windows)]
+    {
+        folder_deletion_veto_windows(normalized, shell_patterns, other_install_dirs)
+    }
+    #[cfg(unix)]
+    {
+        unix::folder_deletion_veto(normalized, shell_patterns, other_install_dirs)
+    }
+}
+
 /// Motivos de veto, em ordem de severidade. Retorna `None` quando a remoção é
 /// aceitável. Função pura: é o gate de segurança e precisa ser testável sem
 /// tocar o disco.
-pub fn folder_deletion_veto(
+pub fn folder_deletion_veto_windows(
     normalized: &str,
     shell_patterns: &[String],
     other_install_dirs: &[String],
@@ -275,17 +312,30 @@ pub fn is_reparse_point(path: &Path) -> bool {
         use std::os::windows::fs::MetadataExt;
         metadata.file_attributes() & 0x400 != 0
     }
+    // Fora do Windows o equivalente é o link simbólico: `symlink_metadata`
+    // não segue o link, então o tipo é o do próprio link.
     #[cfg(not(windows))]
     {
-        let _ = metadata;
-        false
+        metadata.file_type().is_symlink()
+    }
+}
+
+/// Forma canônica (lexical) do caminho usada em ids, comparações e vetos.
+pub fn normalize(path: &Path) -> String {
+    #[cfg(windows)]
+    {
+        normalize_windows(path)
+    }
+    #[cfg(unix)]
+    {
+        unix::normalize(path)
     }
 }
 
 /// Normaliza separadores, remove barra final e resolve `.` — sem canonicalizar,
 /// porque `canonicalize` exigiria que o caminho já existisse (e pode seguir
 /// link, que é justamente o que queremos recusar).
-pub fn normalize(path: &Path) -> String {
+pub fn normalize_windows(path: &Path) -> String {
     let text = path.to_string_lossy().replace('/', "\\");
     let mut parts: Vec<String> = Vec::new();
     for component in Path::new(&text).components() {
@@ -323,7 +373,21 @@ pub fn normalize(path: &Path) -> String {
 /// 2. basename do executável do desinstalador (`unins000.exe` → `unins000.exe`
 ///    não serve, mas `C:\Program Files\Foto\unins.exe` → `Foto`);
 /// 3. `DisplayName` normalizado e, se diferentes, sem sufixo de versão.
+///
+/// Fora do Windows os nomes vêm do inventário (pacote, id do atalho, id do
+/// Flatpak/Snap, bundle id) — ver `unix::candidate_names`.
 pub fn candidate_names(app: &InstalledApp) -> Vec<String> {
+    #[cfg(windows)]
+    {
+        candidate_names_windows(app)
+    }
+    #[cfg(unix)]
+    {
+        unix::candidate_names(app)
+    }
+}
+
+pub fn candidate_names_windows(app: &InstalledApp) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     let mut push = |value: String| {
         let trimmed = value.trim().to_string();
@@ -337,7 +401,7 @@ pub fn candidate_names(app: &InstalledApp) -> Vec<String> {
     };
 
     if let Some(location) = &app.install_location {
-        let normalized = normalize(Path::new(location));
+        let normalized = normalize_windows(Path::new(location));
         // `InstallLocation` apontando para dentro do Windows não gera
         // candidato: "C:\Windows\System32"-produziria o nome "System32", que
         // é exatamente o nome de pasta que o veto de sistema proíbe apagar.
@@ -361,7 +425,7 @@ pub fn candidate_names(app: &InstalledApp) -> Vec<String> {
                 .unwrap_or_default()
                 .to_string()
         };
-        let normalized = normalize(Path::new(&program));
+        let normalized = normalize_windows(Path::new(&program));
         if let Some(parent) = normalized.rsplit_once('\\').map(|(head, _)| head) {
             if let Some(basename) = parent.rsplit('\\').next() {
                 push(basename.to_string());
@@ -466,6 +530,17 @@ fn other_install_dirs(app: &InstalledApp) -> Vec<String> {
 }
 
 pub fn scan(app: &InstalledApp) -> UninstallTargets {
+    #[cfg(windows)]
+    {
+        scan_windows(app)
+    }
+    #[cfg(unix)]
+    {
+        unix::scan(app)
+    }
+}
+
+pub fn scan_windows(app: &InstalledApp) -> UninstallTargets {
     let names = candidate_names(app);
     let shell_patterns = shell_folder_patterns();
     let other_dirs = other_install_dirs(app);
@@ -1067,18 +1142,16 @@ pub fn remove_folder(
                 remove_link(&path);
                 continue;
             }
+            // Tamanho lido antes de apagar: no unix `DirEntry::metadata` faz
+            // `lstat` na hora e falharia depois da remoção (contaria 0 B).
+            let size = entry.metadata().map(|meta| meta.len()).unwrap_or(0);
             match fs::remove_file(&path) {
-                Ok(()) => {
-                    freed =
-                        freed.saturating_add(entry.metadata().map(|meta| meta.len()).unwrap_or(0))
-                }
+                Ok(()) => freed = freed.saturating_add(size),
                 Err(error) => {
                     clear_readonly(&path);
                     match fs::remove_file(&path) {
                         Ok(()) => {
-                            freed = freed.saturating_add(
-                                entry.metadata().map(|meta| meta.len()).unwrap_or(0),
-                            );
+                            freed = freed.saturating_add(size);
                         }
                         Err(_) => {
                             if path.exists() {
@@ -1120,6 +1193,36 @@ fn remove_link(path: &Path) {
     let _ = fs::remove_dir(path);
 }
 
+/// No unix, `set_readonly(false)` deixaria o item gravável por **todos**; e
+/// o que impede apagar um arquivo é a permissão da pasta, não a dele. Só a
+/// pasta (ou a pasta do arquivo) ganha escrita/execução para o dono.
+#[cfg(unix)]
+fn clear_readonly(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = if path.is_dir() {
+        path
+    } else {
+        match path.parent() {
+            Some(parent) => parent,
+            None => return,
+        }
+    };
+    let Ok(metadata) = fs::symlink_metadata(directory) else {
+        return;
+    };
+    if !metadata.is_dir() {
+        return;
+    }
+    let mut permissions = metadata.permissions();
+    let mode = permissions.mode();
+    if mode & 0o300 == 0o300 {
+        return;
+    }
+    permissions.set_mode(mode | 0o300);
+    let _ = fs::set_permissions(directory, permissions);
+}
+
+#[cfg(not(unix))]
 #[allow(clippy::permissions_set_readonly_false)]
 fn clear_readonly(path: &Path) {
     let permissions = match fs::metadata(path) {
@@ -1158,7 +1261,7 @@ mod tests {
 
     #[test]
     fn veto_em_raiz_de_unidade() {
-        assert!(folder_deletion_veto(r"c:\", &shell(), &[]).is_some());
+        assert!(folder_deletion_veto_windows(r"c:\", &shell(), &[]).is_some());
     }
 
     #[test]
@@ -1171,7 +1274,7 @@ mod tests {
             r"C:\Program Files\WindowsApps",
         ] {
             assert!(
-                folder_deletion_veto(path, &shell(), &[]).is_some(),
+                folder_deletion_veto_windows(path, &shell(), &[]).is_some(),
                 "{path} deveria ser bloqueado"
             );
         }
@@ -1179,24 +1282,30 @@ mod tests {
 
     #[test]
     fn veto_em_pasta_conhecida_do_shell() {
-        assert!(folder_deletion_veto(r"C:\Program Files", &shell(), &[]).is_some());
-        assert!(folder_deletion_veto(r"C:\Users\DEV\AppData\Local", &shell(), &[]).is_some());
+        assert!(folder_deletion_veto_windows(r"C:\Program Files", &shell(), &[]).is_some());
+        assert!(
+            folder_deletion_veto_windows(r"C:\Users\DEV\AppData\Local", &shell(), &[]).is_some()
+        );
     }
 
     #[test]
     fn veto_em_pasta_de_outro_programa() {
         let other = vec![r"c:\program files\outro app".to_string()];
-        assert!(folder_deletion_veto(r"C:\Program Files\Outro App", &shell(), &other).is_some());
-        assert!(folder_deletion_veto(r"C:\Program Files", &shell(), &other).is_some());
-        assert!(folder_deletion_veto(r"C:\Program Files\Meu App", &shell(), &other).is_none());
+        assert!(
+            folder_deletion_veto_windows(r"C:\Program Files\Outro App", &shell(), &other).is_some()
+        );
+        assert!(folder_deletion_veto_windows(r"C:\Program Files", &shell(), &other).is_some());
+        assert!(
+            folder_deletion_veto_windows(r"C:\Program Files\Meu App", &shell(), &other).is_none()
+        );
     }
 
     #[test]
     fn veto_em_caminho_relativo_ou_com_curinga() {
-        assert!(folder_deletion_veto("Program Files\\App", &shell(), &[]).is_some());
-        assert!(folder_deletion_veto(r"C:\Program Files\*", &shell(), &[]).is_some());
-        assert!(folder_deletion_veto(r"C:\..\Windows", &shell(), &[]).is_some());
-        assert!(folder_deletion_veto("", &shell(), &[]).is_some());
+        assert!(folder_deletion_veto_windows("Program Files\\App", &shell(), &[]).is_some());
+        assert!(folder_deletion_veto_windows(r"C:\Program Files\*", &shell(), &[]).is_some());
+        assert!(folder_deletion_veto_windows(r"C:\..\Windows", &shell(), &[]).is_some());
+        assert!(folder_deletion_veto_windows("", &shell(), &[]).is_some());
     }
 
     #[test]
@@ -1213,14 +1322,16 @@ mod tests {
         );
     }
 
+    // `Path::components` só separa por `\\` no Windows.
+    #[cfg(windows)]
     #[test]
     fn normalize_remove_barra_final_e_pontos() {
         assert_eq!(
-            normalize(Path::new(r"C:\Program Files\App\")),
+            normalize_windows(Path::new(r"C:\Program Files\App\")),
             r"C:\Program Files\App"
         );
         assert_eq!(
-            normalize(Path::new(r"C:\Program Files\App\.\Bin")),
+            normalize_windows(Path::new(r"C:\Program Files\App\.\Bin")),
             r"C:\Program Files\App\Bin"
         );
     }
@@ -1241,8 +1352,11 @@ mod tests {
             uninstall_string: Some(r"C:\Program Files\Foto\unins000.exe".to_string()),
             is_msi: false,
             icon: None,
+            source: None,
+            protected_reason: None,
+            match_names: Vec::new(),
         };
-        let names = candidate_names(&app);
+        let names = candidate_names_windows(&app);
         assert!(names.contains(&"Foto".to_string()));
         assert!(names.contains(&"Foto Studio".to_string()));
     }
@@ -1263,8 +1377,11 @@ mod tests {
             uninstall_string: None,
             is_msi: false,
             icon: None,
+            source: None,
+            protected_reason: None,
+            match_names: Vec::new(),
         };
-        assert!(candidate_names(&app).is_empty());
+        assert!(candidate_names_windows(&app).is_empty());
     }
 
     #[test]
@@ -1338,5 +1455,25 @@ mod tests {
         let mut current = snapshot.clone();
         current.kind = "registry".to_string();
         assert!(!matches_snapshot(&snapshot, &current));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_real_em_tempdir_detecta_arquivo_novo_em_subpasta() {
+        let base = std::env::temp_dir().join(format!("pulse-snapshot-dir-{}", std::process::id()));
+        let sub = base.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join("dados.json"), b"{}").unwrap();
+
+        let before = snapshot_folder(&base);
+        let unchanged = snapshot_folder(&base);
+        assert!(before.existed && before.complete);
+        assert!(matches_snapshot(&before, &unchanged));
+
+        fs::write(sub.join("novo.log"), b"log").unwrap();
+        let after = snapshot_folder(&base);
+        fs::remove_dir_all(&base).ok();
+
+        assert!(!matches_snapshot(&before, &after));
     }
 }
