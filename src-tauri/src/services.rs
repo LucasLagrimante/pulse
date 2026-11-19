@@ -49,7 +49,27 @@ use std::time::{Duration, Instant};
 const SERVICES_CACHE_TTL: Duration = Duration::from_secs(15);
 /// Tempo máximo do PowerShell. Acima disso o comando é encerrado e a falha é
 /// declarada, em vez de a UI esperar para sempre.
+#[cfg(windows)]
 const WMI_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Execução de comandos com tempo limite e saída drenada (Linux/macOS). Também
+/// usada por `startup_inventory`, `startup` e `app_updates`.
+#[cfg(unix)]
+pub(crate) mod command;
+#[cfg(target_os = "linux")]
+pub(crate) mod linux;
+#[cfg(target_os = "macos")]
+pub(crate) mod macos;
+
+/// Nome do sistema nas mensagens de classificação.
+#[cfg(windows)]
+const OS_NAME: &str = "Windows";
+#[cfg(target_os = "linux")]
+const OS_NAME: &str = "Linux";
+#[cfg(target_os = "macos")]
+const OS_NAME: &str = "macOS";
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+const OS_NAME: &str = "sistema";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -337,6 +357,14 @@ impl ServiceTrustContext {
         }
         candidates.extend(std::env::var_os("TEMP").map(std::path::PathBuf::from));
         candidates.extend(std::env::var_os("TMP").map(std::path::PathBuf::from));
+        // Linux/macOS: diretórios temporários graváveis por qualquer usuário. O
+        // `home` já entrou acima e cobre `~/.local`, `~/.config` e `Downloads`.
+        #[cfg(unix)]
+        candidates.extend(
+            ["/tmp", "/var/tmp", "/dev/shm", "/private/tmp"]
+                .iter()
+                .map(std::path::PathBuf::from),
+        );
 
         let mut roots = Vec::new();
         for candidate in candidates {
@@ -409,6 +437,27 @@ pub fn is_per_user_install_path(path: &str) -> bool {
     PER_USER_INSTALL_MARKERS
         .iter()
         .any(|marker| normalized.contains(marker))
+        || unix_per_user_install(&normalized)
+}
+
+/// Equivalente Linux/macOS do `AppData\Local\Programs`: destinos de instalação
+/// por usuário de gerenciadores de pacote (Flatpak, Snap, Homebrew de usuário).
+/// Script solto em `~/bin` ou `~/.local/bin` **não** entra — é exatamente o
+/// tipo de persistência que a revisão deve mostrar.
+#[cfg(unix)]
+const UNIX_PER_USER_INSTALL_MARKERS: [&str; 3] =
+    ["\\.local\\share\\flatpak\\", "\\snap\\", "\\applications\\"];
+
+#[cfg(unix)]
+fn unix_per_user_install(normalized: &str) -> bool {
+    UNIX_PER_USER_INSTALL_MARKERS
+        .iter()
+        .any(|marker| normalized.contains(marker))
+}
+
+#[cfg(not(unix))]
+fn unix_per_user_install(_normalized: &str) -> bool {
+    false
 }
 
 /// Reconhece o grupo de serviços **por usuário** do Windows 10/11 pelo sufixo
@@ -442,7 +491,26 @@ pub fn is_system_account(start_name: Option<&str>) -> bool {
     let leaf = normalized
         .strip_prefix(SYSTEM_ACCOUNT_DOMAIN)
         .unwrap_or(&normalized);
-    SYSTEM_ACCOUNTS.contains(&leaf)
+    SYSTEM_ACCOUNTS.contains(&leaf) || unix_system_account(&normalized)
+}
+
+/// Linux: `root`, usuário dinâmico do systemd ou UID de sistema (< 1000) no
+/// `/etc/passwd`.
+#[cfg(target_os = "linux")]
+fn unix_system_account(name: &str) -> bool {
+    linux::is_system_user(name)
+}
+
+/// macOS: `root` e as contas de serviço da Apple, que começam com `_`.
+/// TODO(macos): validar em hardware.
+#[cfg(target_os = "macos")]
+fn unix_system_account(name: &str) -> bool {
+    name == "root" || name.starts_with('_')
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn unix_system_account(_name: &str) -> bool {
+    false
 }
 
 /// Verdadeiro quando o serviço roda sob uma conta nominal (não as do Windows).
@@ -459,7 +527,34 @@ pub fn is_user_service(start_name: Option<&str>) -> bool {
 /// O executável está em `System32`/`SysWOW64`?
 pub fn is_windows_system_dir(path: &str) -> bool {
     let normalized = normalize_path(path);
-    normalized.contains("\\windows\\system32\\") || normalized.contains("\\windows\\syswow64\\")
+    normalized.contains("\\windows\\system32\\")
+        || normalized.contains("\\windows\\syswow64\\")
+        || unix_system_dir(&normalized)
+}
+
+/// Linux/macOS: diretórios do sistema gerenciados pelo gerenciador de pacotes
+/// (só root grava). `/usr/local` e `/opt` ficam de fora: recebem software de
+/// terceiros instalado à mão.
+#[cfg(unix)]
+fn unix_system_dir(normalized: &str) -> bool {
+    if normalized.starts_with("\\usr\\local\\") {
+        return false;
+    }
+    [
+        "\\usr\\",
+        "\\bin\\",
+        "\\sbin\\",
+        "\\lib\\",
+        "\\lib64\\",
+        "\\system\\",
+    ]
+    .iter()
+    .any(|prefix| normalized.starts_with(prefix))
+}
+
+#[cfg(not(unix))]
+fn unix_system_dir(_normalized: &str) -> bool {
+    false
 }
 
 /// Distância de Damerau-Levenshtein (alinhamento ótimo) sem matriz — o pior
@@ -514,6 +609,30 @@ pub fn windows_component_lookalike(executable: &str) -> Option<&'static str> {
         edit_distance(&file_name, component) <= LOOKALIKE_EDITS
     })
 }
+
+/// Raiz normalizada (`\home\dev`) de volta ao separador do sistema para exibição.
+#[cfg(windows)]
+fn display_root(root: &str) -> &str {
+    root
+}
+
+#[cfg(not(windows))]
+fn display_root(root: &str) -> String {
+    if root.starts_with('\\') {
+        root.replace('\\', "/")
+    } else {
+        root.to_string()
+    }
+}
+
+/// Fato corroborante quando o executável não declara origem.
+#[cfg(windows)]
+const MISSING_PUBLISHER_REASON: &str =
+    "Executável fora das pastas do Windows sem fabricante declarado nos recursos de versão";
+/// No Linux o "fabricante" é o pacote dpkg dono do arquivo.
+#[cfg(not(windows))]
+const MISSING_PUBLISHER_REASON: &str =
+    "Executável fora das pastas do sistema e sem fabricante declarado (nenhum pacote instalado é dono do arquivo)";
 
 /// Resultado da classificação de um serviço.
 #[derive(Debug, Clone, PartialEq)]
@@ -585,6 +704,7 @@ pub fn classify_service(service: &WindowsService, context: &ServiceTrustContext)
             .writable_root_of(path)
             .filter(|_| !is_per_user_install_path(path))
         {
+            let root = display_root(root);
             strong.push(format!(
                 "Executável em diretório gravável pelo usuário ({root})"
             ));
@@ -602,10 +722,7 @@ pub fn classify_service(service: &WindowsService, context: &ServiceTrustContext)
                 .filter(|value| !value.is_empty())
                 .is_none()
             {
-                corroborating.push(
-                    "Executável fora das pastas do Windows sem fabricante declarado nos recursos de versão"
-                        .to_string(),
-                );
+                corroborating.push(MISSING_PUBLISHER_REASON.to_string());
             }
         }
     }
@@ -619,7 +736,9 @@ pub fn classify_service(service: &WindowsService, context: &ServiceTrustContext)
         );
     }
     if user_account && service.start_type_code == 2 {
-        corroborating.push("Inicia automaticamente na inicialização do Windows".to_string());
+        corroborating.push(format!(
+            "Inicia automaticamente na inicialização do {OS_NAME}"
+        ));
     }
     if per_user_name {
         corroborating.push(
@@ -668,6 +787,7 @@ pub fn classify_service(service: &WindowsService, context: &ServiceTrustContext)
 /// `CompanyName` é lido **só** para executáveis fora de `System32`/`SysWOW64`.
 /// Abrir os recursos de versão dos ~300 binários do Windows custaria I/O sem
 /// ganho real: dentro do System32 o sinal não pesa (ver `classify_service`).
+#[cfg(windows)]
 const ENUMERATE_COMMAND: &str = r#"
 $ErrorActionPreference='Stop'
 $OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
@@ -794,18 +914,32 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+use linux as platform;
+
+#[cfg(target_os = "macos")]
+use macos as platform;
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 mod platform {
     use super::*;
 
     pub fn enumerate() -> Result<Vec<WindowsService>, String> {
-        Err("A leitura de serviços só é suportada no Windows".to_string())
+        Err("A leitura de serviços não é suportada neste sistema".to_string())
     }
 
     pub fn control(_name: &str, _action: &str) -> Result<(), String> {
-        Err("O controle de serviços só é suportado no Windows".to_string())
+        Err("O controle de serviços não é suportado neste sistema".to_string())
     }
 }
+
+/// Ações aceitas pelo comando. O Windows (`sc.exe`) só inicia e para; o
+/// systemd também reinicia, ativa e desativa (o frontend atual envia apenas
+/// `start`/`stop`).
+#[cfg(windows)]
+const SUPPORTED_ACTIONS: &[&str] = &["start", "stop"];
+#[cfg(not(windows))]
+const SUPPORTED_ACTIONS: &[&str] = &["start", "stop", "restart", "enable", "disable"];
 
 fn build_snapshot(services: Vec<WindowsService>) -> ServicesSnapshot {
     build_snapshot_with_context(services, ServiceTrustContext::detect())
@@ -903,7 +1037,7 @@ pub async fn set_windows_service_state(
     if target.is_empty() {
         return Err("Serviço não informado".to_string());
     }
-    if action != "start" && action != "stop" {
+    if !SUPPORTED_ACTIONS.contains(&action.as_str()) {
         return Err("Ação de serviço desconhecida".to_string());
     }
     // O nome vai como argumento separado do `sc.exe`; aspas seriam literais e um
