@@ -5,11 +5,24 @@
 //! execução (`wsl.exe -l --running -q`, sem nunca ligar a VM quando parada).
 //! Infere runtime/framework e pasta do projeto para permitir abrir no navegador,
 //! copiar a URL ou encerrar o processo diretamente pelo tray.
+//!
+//! Linux: `/proc/net/tcp{,6}` + dono por `/proc/<pid>/fd` (`dev_ports/linux.rs`).
+//! macOS: `lsof` (`dev_ports/macos.rs`). Partes POSIX comuns em `dev_ports/unix.rs`.
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+#[cfg(windows)]
+use std::collections::HashSet;
+#[cfg(windows)]
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::Path;
+
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(any(test, target_os = "macos"))]
+mod macos;
+#[cfg(unix)]
+mod unix;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -177,13 +190,27 @@ fn collect_dev_ports_uncached() -> Result<DevPortsInventory, crate::debug::Failu
         })
     }
 
-    #[cfg(not(windows))]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        #[cfg(target_os = "linux")]
+        let mut entries = linux::collect()?;
+        #[cfg(target_os = "macos")]
+        let mut entries = macos::collect()?;
+        finalize_entries(&mut entries);
+        Ok(DevPortsInventory {
+            ports: entries,
+            sampled_at_unix_ms: now_unix_ms(),
+            unavailable_reason: None,
+        })
+    }
+
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         Ok(DevPortsInventory {
             ports: Vec::new(),
             sampled_at_unix_ms: now_unix_ms(),
             unavailable_reason: Some(
-                "A inspeção nativa de portas do tray é suportada apenas no Windows 11.".to_owned(),
+                "A inspeção de portas não está disponível neste sistema operacional.".to_owned(),
             ),
         })
     }
@@ -347,15 +374,24 @@ pub fn kill_dev_port_sync(
         collect_dev_ports_sync(true)
     }
 
-    #[cfg(not(windows))]
+    #[cfg(unix)]
+    {
+        let _ = wsl_distro;
+        unix::terminate_listener(port, pid, &target.environment, &target.process_name)?;
+        invalidate_cache();
+        collect_dev_ports_sync(true)
+    }
+
+    #[cfg(not(any(windows, unix)))]
     {
         let _ = (wsl_distro, target);
         Err(format!(
-            "Encerramento de portas só está disponível no Windows (porta {port}, PID {pid})."
+            "Encerramento de portas não está disponível neste sistema (porta {port}, PID {pid})."
         ))
     }
 }
 
+#[cfg(windows)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RawTcpListener {
     pid: u32,
@@ -407,6 +443,7 @@ fn is_dev_build_binary(exe_path: Option<&str>) -> bool {
     lower.contains("/target/debug/") || lower.contains("/target/release/")
 }
 
+#[cfg(any(windows, test))]
 fn is_windows_noise_process(process_name: &str, exe_path: Option<&str>, port: u16) -> bool {
     if WINDOWS_SYSTEM_PORTS.contains(&port) {
         return true;

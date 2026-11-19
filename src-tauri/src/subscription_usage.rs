@@ -312,6 +312,43 @@ fn credits(value: Option<&Value>) -> Option<f64> {
     number(value.get("balance")).filter(|balance| *balance >= 0.0)
 }
 
+/// Variável com a pasta pessoal do usuário em cada plataforma.
+#[cfg(windows)]
+const HOME_VAR: &str = "USERPROFILE";
+#[cfg(not(windows))]
+const HOME_VAR: &str = "HOME";
+
+/// Fora do Windows: procura o executável no `PATH` e nas pastas onde os
+/// instaladores das CLIs costumam colocá-lo (apps abertos pelo menu gráfico
+/// nem sempre herdam o `PATH` do shell).
+#[cfg(not(windows))]
+fn command_path(name: &str) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    if name.is_empty() || name.contains('/') {
+        return None;
+    }
+    let mut directories: Vec<PathBuf> = env::var_os("PATH")
+        .map(|path| env::split_paths(&path).collect())
+        .unwrap_or_default();
+    if let Some(home) = crate::storage::paths::user_home() {
+        for relative in [".local/bin", ".bun/bin", ".npm-global/bin", ".cargo/bin"] {
+            directories.push(home.join(relative));
+        }
+    }
+    directories.push(PathBuf::from("/usr/local/bin"));
+    directories.push(PathBuf::from("/opt/homebrew/bin"));
+    directories
+        .into_iter()
+        .filter(|directory| directory.is_absolute())
+        .map(|directory| directory.join(name))
+        .find(|candidate| {
+            fs::metadata(candidate)
+                .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+                .unwrap_or(false)
+        })
+}
+
+#[cfg(windows)]
 fn command_path(name: &str) -> Option<PathBuf> {
     let output = crate::process::hidden_command("where.exe")
         .arg(name)
@@ -331,7 +368,13 @@ fn command_path(name: &str) -> Option<PathBuf> {
 fn decode_command_output(bytes: &[u8]) -> String {
     let looks_like_utf16le = bytes.len() >= 2
         && bytes.len().is_multiple_of(2)
-        && bytes.as_chunks::<2>().0.iter().filter(|pair| pair[1] == 0).count() >= bytes.len() / 4;
+        && bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .filter(|pair| pair[1] == 0)
+            .count()
+            >= bytes.len() / 4;
     if looks_like_utf16le {
         let units = bytes
             .as_chunks::<2>()
@@ -355,6 +398,10 @@ fn wsl_output(args: &[&str]) -> Option<String> {
 }
 
 fn wsl_distros() -> Vec<String> {
+    // WSL só existe no Windows; fora dele não há distros para consultar.
+    if !cfg!(windows) {
+        return Vec::new();
+    }
     let mut distros = wsl_output(&["-l", "-q"])
         .unwrap_or_default()
         .lines()
@@ -592,7 +639,16 @@ fn codex_from_rate_limits(data: &Value, source: &str) -> Option<ProviderUsage> {
             .and_then(Value::as_str)
             .filter(|v| !v.trim().is_empty())
             .map(str::to_owned),
-        environment: Some("Windows · assinatura única".into()),
+        environment: Some(
+            if cfg!(windows) {
+                "Windows · assinatura única"
+            } else if cfg!(target_os = "macos") {
+                "macOS · assinatura única"
+            } else {
+                "Linux · assinatura única"
+            }
+            .into(),
+        ),
         status: "available".into(),
         windows,
         credits_remaining: pick(rate_limits, &["credits"])
@@ -617,10 +673,20 @@ fn codex_from_rate_limits(data: &Value, source: &str) -> Option<ProviderUsage> {
 }
 
 fn codex_home() -> Option<PathBuf> {
-    env::var_os("CODEX_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".codex")))
+    if let Some(dir) = env::var_os("CODEX_HOME").filter(|value| !value.is_empty()) {
+        return Some(PathBuf::from(dir));
+    }
+    let home_codex = env::var_os(HOME_VAR).map(|home| PathBuf::from(home).join(".codex"));
+    #[cfg(not(windows))]
+    if home_codex.as_ref().is_none_or(|path| !path.exists()) {
+        if let Some(xdg) = dirs::config_dir()
+            .map(|dir| dir.join("codex"))
+            .filter(|path| path.exists())
+        {
+            return Some(xdg);
+        }
+    }
+    home_codex
 }
 
 fn collect_jsonl_files(
@@ -858,6 +924,15 @@ fn claude_credentials() -> Option<OAuthCredential> {
                 .join(".claude")
                 .join(".credentials.json"),
         );
+    }
+    #[cfg(not(windows))]
+    {
+        if let Some(dir) = env::var_os("CLAUDE_CONFIG_DIR").filter(|value| !value.is_empty()) {
+            paths.push(PathBuf::from(dir).join(".credentials.json"));
+        }
+        if let Some(config_dir) = dirs::config_dir() {
+            paths.push(config_dir.join("claude").join(".credentials.json"));
+        }
     }
     paths.extend(wsl_file_candidates(".claude/.credentials.json"));
     if let Some(token) = env::var("CLAUDE_CODE_OAUTH_TOKEN")
@@ -1203,7 +1278,12 @@ fn query_claude() -> ProviderUsage {
             "Claude Code",
             "Assinatura Anthropic",
             source,
-            "Credencial local não encontrada no Windows nem nas distros WSL.",
+            if cfg!(windows) {
+                "Credencial local não encontrada no Windows nem nas distros WSL."
+            } else {
+                // TODO(macos): o Claude Code guarda a credencial no Keychain; validar em hardware.
+                "Credencial local não encontrada em ~/.claude/.credentials.json nem em CLAUDE_CODE_OAUTH_TOKEN."
+            },
         );
     };
     let Ok(client) = http_client() else {
@@ -1315,7 +1395,16 @@ fn query_claude() -> ProviderUsage {
         provider: "Claude Code".into(),
         subtitle: "Assinatura Anthropic".into(),
         plan: credentials.plan,
-        environment: Some("Windows/WSL · OAuth local".into()),
+        environment: Some(
+            if cfg!(windows) {
+                "Windows/WSL · OAuth local"
+            } else if cfg!(target_os = "macos") {
+                "macOS · OAuth local"
+            } else {
+                "Linux · OAuth local"
+            }
+            .into(),
+        ),
         status: "available".into(),
         windows,
         credits_remaining,
@@ -1424,6 +1513,15 @@ fn antigravity_credentials() -> Option<OAuthCredential> {
                 .join("antigravity-oauth-token"),
         );
     }
+    #[cfg(not(windows))]
+    if let Some(config_dir) = dirs::config_dir() {
+        paths.push(
+            config_dir
+                .join("gemini")
+                .join("antigravity-cli")
+                .join("antigravity-oauth-token"),
+        );
+    }
     paths.extend(wsl_file_candidates(
         ".gemini/antigravity-cli/antigravity-oauth-token",
     ));
@@ -1474,7 +1572,11 @@ fn query_antigravity() -> ProviderUsage {
             "Antigravity",
             "Google AI Pro",
             source,
-            "Credencial local não encontrada no Credential Manager nem nas distros WSL.",
+            if cfg!(windows) {
+                "Credencial local não encontrada no Credential Manager nem nas distros WSL."
+            } else {
+                "Credencial local não encontrada no chaveiro do sistema nem em ~/.gemini/antigravity-cli."
+            },
         );
     };
     let Ok(client) = http_client() else {
@@ -1523,7 +1625,11 @@ fn query_antigravity() -> ProviderUsage {
                 "Google AI Pro",
                 source,
                 if credentials.refresh_token.is_some() && !google_refresh_configured() {
-                    "O login local foi encontrado, mas o access token expirou; abra o Antigravity/agy no WSL para renovar a sessão e atualize as cotas."
+                    if cfg!(windows) {
+                        "O login local foi encontrado, mas o access token expirou; abra o Antigravity/agy no WSL para renovar a sessão e atualize as cotas."
+                    } else {
+                        "O login local foi encontrado, mas o access token expirou; abra o Antigravity/agy para renovar a sessão e atualize as cotas."
+                    }
                 } else {
                     "A credencial local expirou; abra o Antigravity/agy para autenticar novamente."
                 },
@@ -1568,7 +1674,16 @@ fn query_antigravity() -> ProviderUsage {
         provider: "Antigravity".into(),
         subtitle: "Google AI Pro".into(),
         plan: nested_string(&body, &["name", "displayName"]),
-        environment: Some("Windows/WSL · OAuth local".into()),
+        environment: Some(
+            if cfg!(windows) {
+                "Windows/WSL · OAuth local"
+            } else if cfg!(target_os = "macos") {
+                "macOS · OAuth local"
+            } else {
+                "Linux · OAuth local"
+            }
+            .into(),
+        ),
         status: "available".into(),
         windows,
         credits_remaining: None,
@@ -1909,11 +2024,7 @@ pub fn init(handle: tauri::AppHandle) {
 }
 
 fn cache_file() -> PathBuf {
-    env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(env::temp_dir)
-        .join("Pulse")
-        .join("subscription-cache.json")
+    crate::storage::paths::pulse_local_dir().join("subscription-cache.json")
 }
 
 fn load_persisted_cache() -> Option<SubscriptionUsageReport> {
@@ -1953,11 +2064,7 @@ pub fn cached_providers_snapshot() -> Vec<ProviderUsage> {
 }
 
 fn preferences_file() -> PathBuf {
-    env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(env::temp_dir)
-        .join("Pulse")
-        .join("subscription-preferences.json")
+    crate::storage::paths::pulse_local_dir().join("subscription-preferences.json")
 }
 
 fn load_preferences() -> SubscriptionPreferences {
