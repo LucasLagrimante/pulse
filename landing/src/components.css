@@ -1010,6 +1010,17 @@
   transform: translateX(2px);
 }
 
+/* Módulo em destaque (marco do release): borda de acento e selo próprio,
+   sem cor fixa — usa os tokens do tema para seguir claro/escuro. */
+.feature-highlight {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-raised);
+}
+.feature-highlight .feature-badge {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 /* ---------- Seção: Provedores de IA & Histórico SQLite ---------- */
 
 .ai-showcase {
@@ -1351,9 +1362,11 @@
 .checksum-meta {
   min-width: 0;
   flex: 1;
+  max-width: 100%;
 }
-.checksum-meta span {
+.checksum-meta code {
   display: block;
+  max-width: 100%;
   font-family: var(--font-mono);
   font-size: 0.6rem;
   font-weight: 700;
@@ -1361,8 +1374,9 @@
   color: var(--text-caption);
   text-transform: uppercase;
 }
-.checksum-meta code {
+.checksum-meta code[data-release-sha256] {
   display: block;
+  max-width: 100%;
   font-family: var(--font-mono);
   font-size: 0.72rem;
   color: var(--text-primary);
