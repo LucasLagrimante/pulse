@@ -1,10 +1,16 @@
 use serde::{Deserialize, Serialize};
+#[cfg(windows)]
+use std::env;
 use std::{
-    env, fs,
+    fs,
     path::{Path, PathBuf},
     sync::Mutex,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+
+/// Linux: arquivos abertos recentemente segundo `recently-used.xbel`.
+#[cfg(target_os = "linux")]
+mod xbel;
 
 const MAX_RESULTS: usize = 200;
 const MAX_AGE_DAYS: u64 = 30;
@@ -54,10 +60,20 @@ static CACHE: Mutex<Option<(Vec<RecentFile>, Instant)>> = Mutex::new(None);
 const CACHE_TTL: Duration = Duration::from_secs(60);
 
 fn data_dir() -> PathBuf {
-    env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(env::temp_dir)
-        .join("Pulse")
+    crate::disk_analyzer::pulse_data_dir()
+}
+
+/// Mesma pasta na lista de varredura: no Windows o caminho não diferencia
+/// maiúsculas; no Linux e no macOS (APFS sensível ou não) compara exato.
+fn same_folder(a: &str, b: &str) -> bool {
+    #[cfg(windows)]
+    {
+        a.eq_ignore_ascii_case(b)
+    }
+    #[cfg(not(windows))]
+    {
+        a == b
+    }
 }
 
 fn custom_folders_file() -> PathBuf {
@@ -129,7 +145,12 @@ fn ignored(path: &Path) -> bool {
 }
 
 fn default_roots() -> Vec<PathBuf> {
+    #[cfg(windows)]
     let user_profile = env::var_os("USERPROFILE").map(PathBuf::from);
+    // Linux: `dirs` lê `~/.config/user-dirs.dirs` (xdg-user-dirs), então
+    // "Documentos", "Área de trabalho" etc. seguem o idioma do sistema.
+    #[cfg(not(windows))]
+    let user_profile = dirs::home_dir();
     let known_folders: [fn() -> Option<PathBuf>; 6] = [
         dirs::download_dir,
         dirs::desktop_dir,
@@ -139,17 +160,23 @@ fn default_roots() -> Vec<PathBuf> {
         dirs::audio_dir,
     ];
 
-    known_folders
-        .into_iter()
-        .zip(FOLDERS)
-        .filter_map(|(known_folder, fallback_name)| {
-            known_folder().or_else(|| {
-                user_profile
-                    .as_ref()
-                    .map(|profile| profile.join(fallback_name))
-            })
-        })
-        .collect()
+    let roots =
+        known_folders
+            .into_iter()
+            .zip(FOLDERS)
+            .filter_map(|(known_folder, fallback_name)| {
+                known_folder().or_else(|| {
+                    user_profile
+                        .as_ref()
+                        .map(|profile| profile.join(fallback_name))
+                })
+            });
+    // No xdg-user-dirs, pasta desativada aponta para a própria pasta pessoal
+    // (`XDG_DESKTOP_DIR="$HOME/"`): varrê-la como "Documentos" traria o
+    // perfil inteiro para o escopo de abertura de arquivos.
+    #[cfg(not(windows))]
+    let roots = roots.filter(|root| user_profile.as_ref() != Some(root));
+    roots.collect()
 }
 
 fn roots() -> Vec<PathBuf> {
@@ -280,6 +307,15 @@ fn scan_all() -> Vec<RecentFile> {
         };
         scan(&root, &mut files, cutoff, 0, &mut root_budget);
     }
+    #[cfg(target_os = "linux")]
+    for recent in xbel::recently_used(cutoff) {
+        if files.len() >= MAX_RESULTS {
+            break;
+        }
+        if !files.iter().any(|file| file.path == recent.path) {
+            files.push(recent);
+        }
+    }
     files.sort_by(|a, b| {
         b.modified_at_unix_ms
             .cmp(&a.modified_at_unix_ms)
@@ -361,12 +397,26 @@ pub async fn refresh_recent_files() -> Result<Vec<RecentFile>, String> {
     result
 }
 
+/// O caminho veio da última lista que o próprio backend montou (inclui os
+/// itens do `recently-used.xbel`, que podem estar fora das pastas padrão).
+fn listed_in_last_scan(canonical: &Path) -> bool {
+    let Ok(guard) = CACHE.lock() else {
+        return false;
+    };
+    guard.as_ref().is_some_and(|(files, _)| {
+        files
+            .iter()
+            .any(|file| fs::canonicalize(&file.path).is_ok_and(|listed| listed == canonical))
+    })
+}
+
 fn validated(path: &str) -> Result<PathBuf, String> {
     let p = fs::canonicalize(path).map_err(|e| format!("invalid recent file: {e}"))?;
     let allowed = roots()
         .into_iter()
         .filter_map(|r| fs::canonicalize(r).ok())
-        .any(|r| p.starts_with(r) && !ignored(&p));
+        .any(|r| p.starts_with(r) && !ignored(&p))
+        || (!ignored(&p) && listed_in_last_scan(&p));
     if !allowed || !p.is_file() || category(&p).is_none() {
         return Err("path is outside the recent-file scope".into());
     }
@@ -394,14 +444,13 @@ fn launch(path: &Path, reveal: bool) -> Result<(), String> {
         }
         command.spawn().map(|_| ()).map_err(|e| e.to_string())
     }
-    #[cfg(not(windows))]
+    #[cfg(unix)]
     {
-        let _ = reveal;
-        std::process::Command::new("xdg-open")
-            .arg(path)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+        if reveal {
+            crate::disk_analyzer::desktop::reveal_in_file_manager(path)
+        } else {
+            crate::disk_analyzer::desktop::open_with_default_app(path)
+        }
     }
 }
 
@@ -427,7 +476,7 @@ pub fn add_custom_scan_folder(path: String) -> Result<Vec<String>, String> {
         return Err("O caminho da pasta não pode ser vazio.".into());
     }
     let mut folders = load_custom_folders();
-    if folders.iter().any(|f| f.eq_ignore_ascii_case(clean)) {
+    if folders.iter().any(|f| same_folder(f, clean)) {
         return Err("Esta pasta já está na lista de varredura.".into());
     }
     folders.push(clean.to_string());
@@ -443,7 +492,7 @@ pub fn remove_custom_scan_folder(path: String) -> Result<Vec<String>, String> {
     let clean = path.trim();
     let mut folders = load_custom_folders();
     let initial_len = folders.len();
-    folders.retain(|f| !f.eq_ignore_ascii_case(clean));
+    folders.retain(|f| !same_folder(f, clean));
     if folders.len() == initial_len {
         return Err("Pasta não encontrada na lista.".into());
     }
@@ -564,6 +613,39 @@ mod tests {
     fn default_roots_use_the_configured_windows_known_folders() {
         let pictures = dirs::picture_dir().expect("Windows Pictures folder should resolve");
         assert!(default_roots().contains(&pictures));
+    }
+
+    /// Coleta real: as pastas vêm do `user-dirs.dirs` desta máquina (nomes em
+    /// português) e a pasta pessoal nunca entra como raiz.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn default_roots_follow_xdg_user_dirs_on_linux() {
+        let roots = default_roots();
+        if let Some(documents) = dirs::document_dir() {
+            assert!(roots.contains(&documents));
+        }
+        let home = dirs::home_dir().unwrap();
+        assert!(!roots.contains(&home));
+        assert!(roots.iter().all(|root| root.starts_with(&home)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn custom_folders_are_case_sensitive_on_unix() {
+        assert!(same_folder("/srv/Dados", "/srv/Dados"));
+        assert!(!same_folder("/srv/Dados", "/srv/dados"));
+    }
+
+    /// Coleta real só de leitura: a varredura completa termina e só devolve
+    /// arquivos existentes dentro do limite.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn real_scan_returns_existing_files() {
+        let files = scan_all();
+        assert!(files.len() <= MAX_RESULTS);
+        for file in files.iter().take(20) {
+            assert!(Path::new(&file.path).exists(), "{}", file.path);
+        }
     }
 
     #[cfg(windows)]

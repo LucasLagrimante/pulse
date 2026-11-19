@@ -10,6 +10,11 @@ use std::{
 };
 use tauri::{Emitter, Window};
 
+#[cfg(unix)]
+pub(crate) mod desktop;
+#[cfg(unix)]
+pub(crate) mod mounts;
+
 static CANCEL_FLAG: AtomicBool = AtomicBool::new(false);
 static IS_SCANNING: AtomicBool = AtomicBool::new(false);
 // A profundidade não é podada: o usuário precisa conseguir descer até o
@@ -121,11 +126,21 @@ fn set_scan_progress(progress: DiskScanProgress) {
     }
 }
 
-fn data_dir() -> PathBuf {
-    env::var_os("LOCALAPPDATA")
+/// Pasta de dados do Pulse por plataforma: `%LOCALAPPDATA%\Pulse` no Windows,
+/// `~/.local/share/Pulse` (`$XDG_DATA_HOME`) no Linux e
+/// `~/Library/Application Support/Pulse` no macOS.
+pub(crate) fn pulse_data_dir() -> PathBuf {
+    #[cfg(windows)]
+    let base = env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
-        .unwrap_or_else(env::temp_dir)
-        .join("Pulse")
+        .unwrap_or_else(env::temp_dir);
+    #[cfg(not(windows))]
+    let base = dirs::data_local_dir().unwrap_or_else(env::temp_dir);
+    base.join("Pulse")
+}
+
+fn data_dir() -> PathBuf {
+    pulse_data_dir()
 }
 
 fn disk_scan_cache_file() -> PathBuf {
@@ -373,29 +388,37 @@ pub fn get_system_drives() -> Vec<DriveInfo> {
         fallback
     }
 
-    #[cfg(not(windows))]
+    #[cfg(unix)]
     {
-        let mut drives = Vec::new();
-        for &mnt in &["/mnt/c", "/mnt/d", "/mnt/e"] {
-            if Path::new(mnt).exists() {
-                drives.push(DriveInfo {
-                    path: mnt.to_owned(),
-                    label: format!("Disco ({mnt})"),
-                    total_bytes: None,
-                    free_bytes: None,
-                });
-            }
-        }
-        if drives.is_empty() && Path::new("/").exists() {
-            drives.push(DriveInfo {
-                path: "/".to_owned(),
-                label: "Raiz do Sistema (/)".to_owned(),
-                total_bytes: None,
-                free_bytes: None,
-            });
-        }
-        drives
+        mounts::drives_with_home()
     }
+}
+
+/// Dispositivo (`st_dev`) do item. Fora do Unix devolve `None` e a checagem de
+/// troca de sistema de arquivos fica desligada (o Windows não precisa dela).
+#[cfg(unix)]
+fn device_id(metadata: &fs::Metadata) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt;
+    Some(metadata.dev())
+}
+
+#[cfg(not(unix))]
+fn device_id(_metadata: &fs::Metadata) -> Option<u64> {
+    None
+}
+
+/// `true` quando a subpasta é ponto de montagem de outro sistema de arquivos
+/// (`/proc`, `/sys`, outro disco, pendrive, FUSE). Como o `du -x`, a varredura
+/// não atravessa: cada volume aparece separado em "unidades".
+fn crosses_filesystem(parent_device: Option<u64>, entry: &fs::DirEntry) -> bool {
+    let Some(parent) = parent_device else {
+        return false;
+    };
+    entry
+        .metadata()
+        .ok()
+        .and_then(|metadata| device_id(&metadata))
+        .is_some_and(|device| device != parent)
 }
 
 pub struct ScanContext<'a> {
@@ -697,6 +720,7 @@ fn scan_path_recursive_stream(
         };
     }
 
+    let dir_device = device_id(&meta);
     let Ok(entries) = fs::read_dir(path) else {
         return DiskItemNode {
             id: path_str.clone(),
@@ -842,6 +866,9 @@ fn scan_path_recursive_stream(
             continue;
         }
 
+        if crosses_filesystem(dir_device, &entry) {
+            continue;
+        }
         let child_path = entry.path();
         if current_depth < ctx.max_depth {
             let child_node = {
@@ -905,7 +932,13 @@ fn scan_path_recursive_stream(
                     STREAM_SNAPSHOT_MAX_CHILDREN,
                 ));
             };
-            scan_path_aggregate_stream(&child_path, ctx, &mut aggregate, &mut bubble_aggregate);
+            scan_path_aggregate_stream(
+                &child_path,
+                dir_device,
+                ctx,
+                &mut aggregate,
+                &mut bubble_aggregate,
+            );
             total_size = total_size.saturating_add(aggregate.size_bytes);
             total_files = total_files.saturating_add(aggregate.file_count);
             total_dirs = total_dirs.saturating_add(aggregate.dir_count);
@@ -962,8 +995,11 @@ struct AggregateTotals {
     dir_count: u64,
 }
 
+/// `device` é o sistema de arquivos da varredura (o mesmo de `path`, que já
+/// passou por `crosses_filesystem`); subpastas de outro volume são puladas.
 fn scan_path_aggregate_stream(
     path: &Path,
+    device: Option<u64>,
     ctx: &ScanContext,
     totals: &mut AggregateTotals,
     on_partial: &mut dyn FnMut(AggregateTotals),
@@ -993,8 +1029,11 @@ fn scan_path_aggregate_stream(
             continue;
         }
         if file_type.is_dir() {
+            if crosses_filesystem(device, &entry) {
+                continue;
+            }
             let child_path = entry.path();
-            scan_path_aggregate_stream(&child_path, ctx, totals, on_partial);
+            scan_path_aggregate_stream(&child_path, device, ctx, totals, on_partial);
         } else {
             let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
             ctx.bytes_scanned.fetch_add(size, Ordering::Relaxed);
@@ -1127,6 +1166,52 @@ impl Drop for ScopedBackgroundPriority {
     }
 }
 
+/// Linux: classe de I/O ociosa (`IOPRIO_CLASS_IDLE`) só para a thread da
+/// varredura, restaurada ao sair. A thread vem do pool do `spawn_blocking` e é
+/// reaproveitada, por isso o `nice` não é alterado: sem `CAP_SYS_NICE` não daria
+/// para voltar ao valor anterior. A classe ociosa só tem efeito com escalonador
+/// de I/O que a respeita (BFQ; o `mq-deadline` e o `none` a ignoram) — nesses
+/// casos a varredura segue sem prioridade especial, como antes.
+#[cfg(target_os = "linux")]
+pub(crate) struct ScopedBackgroundPriority {
+    previous: Option<libc::c_long>,
+}
+
+#[cfg(target_os = "linux")]
+impl ScopedBackgroundPriority {
+    const IOPRIO_WHO_PROCESS: libc::c_long = 1;
+    const IOPRIO_CLASS_IDLE: libc::c_long = 3;
+    const IOPRIO_CLASS_SHIFT: libc::c_long = 13;
+
+    pub(crate) fn enter() -> Self {
+        // SAFETY: syscalls sem ponteiros; `who = 0` com IOPRIO_WHO_PROCESS
+        // significa a thread chamadora.
+        let previous = unsafe { libc::syscall(libc::SYS_ioprio_get, Self::IOPRIO_WHO_PROCESS, 0) };
+        if previous < 0 {
+            return Self { previous: None };
+        }
+        let idle = Self::IOPRIO_CLASS_IDLE << Self::IOPRIO_CLASS_SHIFT;
+        let status =
+            unsafe { libc::syscall(libc::SYS_ioprio_set, Self::IOPRIO_WHO_PROCESS, 0, idle) };
+        Self {
+            previous: (status == 0).then_some(previous),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for ScopedBackgroundPriority {
+    fn drop(&mut self) {
+        if let Some(previous) = self.previous {
+            // SAFETY: mesma thread que entrou; voltar de IDLE para a classe
+            // anterior (NONE/BE) não exige privilégio.
+            unsafe {
+                libc::syscall(libc::SYS_ioprio_set, Self::IOPRIO_WHO_PROCESS, 0, previous);
+            }
+        }
+    }
+}
+
 async fn run_disk_scan(
     window: Window,
     path: String,
@@ -1165,7 +1250,7 @@ async fn run_disk_scan(
     let depth_limit = max_depth.unwrap_or(MAX_TREE_DEPTH).min(MAX_TREE_DEPTH);
     let scan_started = Instant::now();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let _bg_priority = ScopedBackgroundPriority::enter();
 
         let items_scanned = AtomicU64::new(0);
@@ -1316,18 +1401,15 @@ pub fn open_disk_item(path: String, reveal: bool) -> Result<(), String> {
         command.spawn().map(|_| ()).map_err(|e| e.to_string())
     }
 
-    #[cfg(not(windows))]
+    // Mesma regra do Windows: arquivo só é mostrado na pasta, nunca aberto
+    // (o `xdg-open` de um `.desktop` ou script poderia executá-lo).
+    #[cfg(unix)]
     {
-        let target = if reveal && p.is_file() {
-            p.parent().unwrap_or(&p).to_path_buf()
+        if reveal {
+            desktop::reveal_in_file_manager(&p)
         } else {
-            p
-        };
-        std::process::Command::new("xdg-open")
-            .arg(target)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+            desktop::open_with_default_app(&p)
+        }
     }
 }
 
@@ -1693,5 +1775,49 @@ mod tests {
         assert!(items_scanned.load(Ordering::Relaxed) > 2_500);
 
         let _ = fs::remove_dir_all(&temp);
+    }
+
+    /// `/proc` é outro sistema de arquivos montado dentro de `/`: a varredura
+    /// não atravessa. `/etc` fica no mesmo volume da raiz.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn never_crosses_into_another_filesystem() {
+        let root_device = device_id(&fs::symlink_metadata("/").unwrap());
+        let entries: Vec<fs::DirEntry> = fs::read_dir("/").unwrap().flatten().collect();
+        let entry = |name: &str| entries.iter().find(|e| e.file_name() == name).unwrap();
+        assert!(crosses_filesystem(root_device, entry("proc")));
+        assert!(!crosses_filesystem(root_device, entry("etc")));
+        assert!(!crosses_filesystem(None, entry("proc")));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn background_io_priority_is_restored_on_drop() {
+        let read = || unsafe { libc::syscall(libc::SYS_ioprio_get, 1 as libc::c_long, 0) };
+        let before = read();
+        {
+            let _guard = ScopedBackgroundPriority::enter();
+            assert_eq!(read() >> 13, 3, "classe IDLE durante a varredura");
+        }
+        assert_eq!(read(), before);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn data_dir_follows_xdg_on_linux() {
+        let dir = pulse_data_dir();
+        assert!(dir.ends_with("Pulse"));
+        assert_eq!(dir.parent(), dirs::data_local_dir().as_deref());
+    }
+
+    /// Coleta real: a pasta pessoal vem primeiro e todas as entradas existem.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn real_drive_list_starts_with_home() {
+        let drives = get_system_drives();
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(drives[0].path, home.to_string_lossy());
+        assert!(drives[0].total_bytes.is_some());
+        assert!(drives.iter().all(|drive| Path::new(&drive.path).is_dir()));
     }
 }

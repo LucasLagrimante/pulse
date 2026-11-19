@@ -1,24 +1,50 @@
+use crate::cleanup_os::{empty_recycle_bin, on_external_power, query_recycle_bin, user_idle_time};
 use serde::{Deserialize, Serialize};
+#[cfg(windows)]
+use std::env;
 use std::{
-    env, fs,
+    fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::Emitter;
-use windows_sys::Win32::{
-    System::{
-        Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS},
-        SystemInformation::GetTickCount,
-    },
-    UI::{
-        Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO},
-        Shell::{
-            SHEmptyRecycleBinW, SHQueryRecycleBinW, SHERB_NOCONFIRMATION, SHERB_NOPROGRESSUI,
-            SHERB_NOSOUND, SHQUERYRBINFO,
-        },
-    },
-};
+
+/// Categorias, recuperação guiada e regras de preservação do Linux e do macOS.
+#[cfg(unix)]
+mod unix;
+#[cfg(unix)]
+use unix::{definitions, guided_insights, requires_admin, EntryGuard, InUseFiles};
+
+/// No Windows o próprio sistema bloqueia arquivos em uso e as pastas são do
+/// usuário ou do sistema por inteiro: nenhuma regra extra de preservação.
+#[cfg(windows)]
+struct InUseFiles;
+
+#[cfg(windows)]
+impl InUseFiles {
+    fn snapshot() -> Self {
+        Self
+    }
+}
+
+#[cfg(windows)]
+struct EntryGuard;
+
+#[cfg(windows)]
+impl EntryGuard {
+    fn new(_id: &str, _root: &Path, _in_use: Option<&InUseFiles>) -> Self {
+        Self
+    }
+
+    fn excludes(&self, _path: &Path, _metadata: &fs::Metadata) -> bool {
+        false
+    }
+
+    fn in_use(&self, _path: &Path, _metadata: &fs::Metadata) -> bool {
+        false
+    }
+}
 
 const MAX_DEPTH: usize = 3;
 const MAX_FILES_TOTAL: usize = 2_500;
@@ -76,12 +102,14 @@ pub struct CleanupResult {
     pub skipped_items: usize,
 }
 
+#[cfg(windows)]
 fn env_path(name: &str) -> Option<PathBuf> {
     env::var_os(name)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
 }
 
+#[cfg(windows)]
 fn browser_cache_roots(local: &Path, browser: &str) -> Vec<PathBuf> {
     let user_data = local.join(browser).join("User Data");
     let mut profiles = vec![user_data.join("Default")];
@@ -105,6 +133,7 @@ fn browser_cache_roots(local: &Path, browser: &str) -> Vec<PathBuf> {
         .collect()
 }
 
+#[cfg(windows)]
 fn firefox_cache_roots(local: &Path) -> Vec<PathBuf> {
     let profiles = local.join("Mozilla").join("Firefox").join("Profiles");
     let Ok(entries) = fs::read_dir(profiles) else {
@@ -116,25 +145,7 @@ fn firefox_cache_roots(local: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-fn query_recycle_bin() -> Result<(u64, usize), String> {
-    let mut info = SHQUERYRBINFO {
-        cbSize: std::mem::size_of::<SHQUERYRBINFO>() as u32,
-        ..Default::default()
-    };
-    // SAFETY: caminho nulo consulta todas as unidades do usuário atual; `info` é
-    // um buffer válido e tem `cbSize` inicializado conforme o contrato da API.
-    let status = unsafe { SHQueryRecycleBinW(std::ptr::null(), &mut info) };
-    if status < 0 {
-        return Err(format!(
-            "A Lixeira do Windows não pôde ser consultada (HRESULT 0x{status:08X})"
-        ));
-    }
-    Ok((
-        u64::try_from(info.i64Size).unwrap_or_default(),
-        usize::try_from(info.i64NumItems).unwrap_or_default(),
-    ))
-}
-
+#[cfg(windows)]
 fn definitions() -> Vec<CleanupDefinition> {
     let local = env_path("LOCALAPPDATA").unwrap_or_else(env::temp_dir);
     let windows = env_path("WINDIR").unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
@@ -258,7 +269,7 @@ struct ScanBudget {
     partial: bool,
 }
 
-fn measured_size(path: &Path, depth: usize, budget: &mut ScanBudget) -> u64 {
+fn measured_size(path: &Path, depth: usize, budget: &mut ScanBudget, guard: &EntryGuard) -> u64 {
     if depth > MAX_DEPTH
         || budget.files >= MAX_FILES_TOTAL
         || budget.started.elapsed() >= ROOT_TIMEOUT
@@ -269,7 +280,7 @@ fn measured_size(path: &Path, depth: usize, budget: &mut ScanBudget) -> u64 {
     let Ok(metadata) = fs::symlink_metadata(path) else {
         return 0;
     };
-    if metadata.file_type().is_symlink() {
+    if metadata.file_type().is_symlink() || guard.excludes(path, &metadata) {
         return 0;
     }
     if metadata.is_file() {
@@ -284,7 +295,7 @@ fn measured_size(path: &Path, depth: usize, budget: &mut ScanBudget) -> u64 {
     };
     entries
         .flatten()
-        .map(|entry| measured_size(&entry.path(), depth + 1, budget))
+        .map(|entry| measured_size(&entry.path(), depth + 1, budget, guard))
         .sum()
 }
 
@@ -301,6 +312,7 @@ fn is_pulse_owned(entry: &fs::DirEntry) -> bool {
     is_pulse_owned_name(&entry.file_name().to_string_lossy())
 }
 
+#[cfg(windows)]
 /// Categorias em pastas do sistema (Windows, ProgramData) que o Windows só deixa
 /// listar e apagar por completo com o Pulse em modo administrador.
 fn requires_admin(id: &str) -> bool {
@@ -350,6 +362,7 @@ fn analyze_definition(definition: CleanupDefinition) -> CleanupCategory {
             continue;
         }
         found_root = true;
+        let guard = EntryGuard::new(definition.id, root, None);
         let mut budget = ScanBudget {
             started: Instant::now(),
             files: 0,
@@ -361,10 +374,10 @@ fn analyze_definition(definition: CleanupDefinition) -> CleanupCategory {
                 let Ok(metadata) = fs::symlink_metadata(&path) else {
                     continue;
                 };
-                if metadata.file_type().is_symlink() {
+                if metadata.file_type().is_symlink() || guard.excludes(&path, &metadata) {
                     continue;
                 }
-                let size = measured_size(&path, 0, &mut budget);
+                let size = measured_size(&path, 0, &mut budget, &guard);
                 available_bytes = available_bytes.saturating_add(size);
                 item_count += 1;
                 largest_items.push(CleanupItem {
@@ -429,6 +442,7 @@ fn remove_entry(
     result: &mut CleanupResult,
     visited: &mut usize,
     cutoff: Option<SystemTime>,
+    guard: &EntryGuard,
 ) {
     let Ok(metadata) = fs::symlink_metadata(path) else {
         result.skipped_items += 1;
@@ -438,17 +452,23 @@ fn remove_entry(
         result.skipped_items += 1;
         return;
     }
+    // Fora do Windows: de outro usuário, de outro volume, socket ou item de
+    // sessão. Não é falha, é escopo — fica em silêncio como os recentes.
+    if guard.excludes(path, &metadata) {
+        return;
+    }
     if metadata.is_dir() {
         let Ok(entries) = fs::read_dir(path) else {
             result.skipped_items += 1;
             return;
         };
         for entry in entries.flatten() {
-            remove_entry(&entry.path(), result, visited, cutoff);
+            remove_entry(&entry.path(), result, visited, cutoff, guard);
         }
         // Com corte de idade, pasta recente ou que ainda guarda arquivos recentes
         // é preservada em silêncio: não é falha, é a regra da limpeza automática.
-        if is_recent(&metadata, cutoff) {
+        // Pasta que é o diretório atual de algum processo também fica.
+        if is_recent(&metadata, cutoff) || guard.in_use(path, &metadata) {
             return;
         }
         match fs::remove_dir(path) {
@@ -458,6 +478,10 @@ fn remove_entry(
         }
     } else if is_recent(&metadata, cutoff) {
         return;
+    } else if guard.in_use(path, &metadata) {
+        // Fora do Windows nada impede apagar arquivo aberto: o Pulse preserva
+        // e conta como "em uso", como o Windows faz com arquivos bloqueados.
+        result.skipped_items += 1;
     } else {
         let size = metadata.len();
         match fs::remove_file(path) {
@@ -507,22 +531,14 @@ fn clean_selected(category_ids: &[String], cutoff: Option<SystemTime>) -> Cleanu
     };
     let mut visited = 0;
     let temp_cutoff = SystemTime::now().checked_sub(TEMP_MIN_AGE);
+    let in_use = InUseFiles::snapshot();
     for definition in definitions()
         .into_iter()
         .filter(|definition| selected.contains(definition.id))
     {
         if definition.id == "recycle-bin" {
             let before = query_recycle_bin().unwrap_or_default();
-            // SAFETY: HWND e caminho nulos são aceitos pela API e significam todas as
-            // Lixeiras do usuário. A confirmação já ocorreu na interface do Pulse.
-            let status = unsafe {
-                SHEmptyRecycleBinW(
-                    std::ptr::null_mut(),
-                    std::ptr::null(),
-                    SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND,
-                )
-            };
-            if status >= 0 {
+            if empty_recycle_bin() {
                 let after = query_recycle_bin().unwrap_or_default();
                 result.reclaimed_bytes = result
                     .reclaimed_bytes
@@ -537,9 +553,10 @@ fn clean_selected(category_ids: &[String], cutoff: Option<SystemTime>) -> Cleanu
         }
         let cutoff = effective_cutoff(definition.id, cutoff, temp_cutoff);
         for root in definition.roots {
+            let guard = EntryGuard::new(definition.id, &root, Some(&in_use));
             if let Ok(entries) = fs::read_dir(&root) {
                 for entry in entries.flatten().filter(|entry| !is_pulse_owned(entry)) {
-                    remove_entry(&entry.path(), &mut result, &mut visited, cutoff);
+                    remove_entry(&entry.path(), &mut result, &mut visited, cutoff, &guard);
                 }
             }
         }
@@ -666,10 +683,7 @@ fn now_ms() -> u64 {
 }
 
 fn auto_cleanup_file() -> PathBuf {
-    env_path("LOCALAPPDATA")
-        .unwrap_or_else(env::temp_dir)
-        .join("Pulse")
-        .join(AUTO_CLEANUP_FILE)
+    crate::disk_analyzer::pulse_data_dir().join(AUTO_CLEANUP_FILE)
 }
 
 /// Remove ids desconhecidos/inelegíveis e normaliza o intervalo de um arquivo
@@ -790,35 +804,6 @@ pub async fn set_auto_cleanup(
     .map_err(|error| format!("A configuração não pôde ser salva: {error}"))?
 }
 
-/// Tempo desde a última entrada de teclado/mouse da sessão interativa.
-fn user_idle_time() -> Option<Duration> {
-    let mut info = LASTINPUTINFO {
-        cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
-        dwTime: 0,
-    };
-    // SAFETY: `info` é um buffer válido com `cbSize` inicializado.
-    if unsafe { GetLastInputInfo(&mut info) } == 0 {
-        return None;
-    }
-    // SAFETY: sem parâmetros; ambos os contadores usam a mesma base de 32 bits,
-    // então `wrapping_sub` trata o estouro a cada ~49,7 dias.
-    let now = unsafe { GetTickCount() };
-    Some(Duration::from_millis(u64::from(
-        now.wrapping_sub(info.dwTime),
-    )))
-}
-
-/// `false` só quando o Windows confirma que o notebook está na bateria.
-fn on_external_power() -> bool {
-    let mut status = SYSTEM_POWER_STATUS::default();
-    // SAFETY: `status` é um buffer válido do tamanho esperado pela API.
-    if unsafe { GetSystemPowerStatus(&mut status) } == 0 {
-        return true;
-    }
-    // 0 = bateria, 1 = tomada, 255 = desconhecido (desktops sem bateria).
-    status.ACLineStatus != 0
-}
-
 fn is_due(config: &AutoCleanupConfig, now: u64) -> bool {
     next_run_ms(config).is_some_and(|next| now >= next)
 }
@@ -837,7 +822,7 @@ fn run_auto_cleanup_if_due(app: &tauri::AppHandle) {
     let started = Instant::now();
     let cutoff = SystemTime::now().checked_sub(AUTO_MIN_AGE);
     let result = {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let _priority = crate::disk_analyzer::ScopedBackgroundPriority::enter();
         clean_selected(&config.category_ids, cutoff)
     };
@@ -885,6 +870,7 @@ pub struct GuidedInsight {
     pub command: String,
 }
 
+#[cfg(windows)]
 /// Discos virtuais conhecidos do WSL e do Docker Desktop (nome, caminho).
 fn virtual_disks(local: &Path) -> Vec<(String, PathBuf)> {
     let mut disks = Vec::new();
@@ -933,6 +919,7 @@ fn virtual_disks(local: &Path) -> Vec<(String, PathBuf)> {
     disks
 }
 
+#[cfg(windows)]
 fn compact_command(path: &Path) -> String {
     let file = path.to_string_lossy();
     format!(
@@ -948,6 +935,7 @@ fn compact_command(path: &Path) -> String {
     )
 }
 
+#[cfg(windows)]
 fn guided_insights() -> Vec<GuidedInsight> {
     let local = env_path("LOCALAPPDATA").unwrap_or_else(env::temp_dir);
     let mut insights: Vec<GuidedInsight> = virtual_disks(&local)
@@ -996,9 +984,11 @@ pub async fn get_cleanup_insights() -> Vec<GuidedInsight> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
+    use super::compact_command;
     use super::{
-        compact_command, definitions, effective_cutoff, is_auto_eligible, is_due,
-        is_pulse_owned_name, is_recent, requires_admin, sanitize_config, AutoCleanupConfig,
+        definitions, effective_cutoff, is_auto_eligible, is_due, is_pulse_owned_name, is_recent,
+        requires_admin, sanitize_config, AutoCleanupConfig,
     };
     use std::time::{Duration, SystemTime};
 
@@ -1066,14 +1056,15 @@ mod tests {
         let config = sanitize_config(AutoCleanupConfig {
             enabled: true,
             interval_days: 3,
-            category_ids: vec!["user-temp".into(), "recycle-bin".into(), "C:\\".into()],
+            category_ids: vec!["browser-cache".into(), "recycle-bin".into(), "C:\\".into()],
             last_run_at_unix_ms: None,
             last_result: None,
         });
-        assert_eq!(config.category_ids, vec!["user-temp".to_owned()]);
+        assert_eq!(config.category_ids, vec!["browser-cache".to_owned()]);
         assert_eq!(config.interval_days, 7);
     }
 
+    #[cfg(windows)]
     #[test]
     fn compact_command_only_attaches_read_only_and_never_deletes() {
         let command = compact_command(std::path::Path::new(r"C:\Users\x\docker_data.vhdx"));
@@ -1101,14 +1092,22 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), definitions.len());
+        #[cfg(not(target_os = "macos"))]
         assert!(ids.contains(&"user-temp"));
+        assert!(ids.contains(&"browser-cache"));
         assert!(ids.contains(&"recycle-bin"));
-        assert!(ids.contains(&"delivery-optimization"));
         assert!(definitions.iter().any(|definition| !definition.recommended));
-        // Toda categoria marcada como "exige administrador" precisa existir.
-        for id in ["windows-temp", "delivery-optimization", "nvidia-installers"] {
-            assert!(requires_admin(id) && ids.contains(&id), "{id}");
+        #[cfg(windows)]
+        {
+            assert!(ids.contains(&"delivery-optimization"));
+            // Toda categoria marcada como "exige administrador" precisa existir.
+            for id in ["windows-temp", "delivery-optimization", "nvidia-installers"] {
+                assert!(requires_admin(id) && ids.contains(&id), "{id}");
+            }
         }
+        // Fora do Windows nada exige administrador: o sistema vira recuperação guiada.
+        #[cfg(unix)]
+        assert!(ids.iter().all(|id| !requires_admin(id)));
         assert!(!requires_admin("user-temp"));
     }
 

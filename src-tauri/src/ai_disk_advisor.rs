@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(any(windows, target_os = "linux"))]
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -133,9 +134,10 @@ pub fn is_cleanup_candidate(path: &str, name: &str, is_dir: bool) -> bool {
     let norm_path = path.to_ascii_lowercase().replace('\\', "/");
     let norm_name = name.to_ascii_lowercase();
 
-    // Locais em que "cache"/"node_modules" fazem parte de software instalado
-    // ou de dados baixados de propósito: apagar quebra o app (npm global em
-    // Program Files, ambiente do Anki) ou força re-download de modelos.
+    // Locais em que "cache"/"node_modules" fazem parte de software instalado,
+    // do sistema ou de dados baixados de propósito: apagar quebra o app (npm
+    // global em Program Files, ambiente do Anki, pacotes do sistema) ou força
+    // re-download de modelos.
     const NEVER_CANDIDATE: &[&str] = &[
         "/program files/",
         "/program files (x86)/",
@@ -144,6 +146,17 @@ pub fn is_cleanup_candidate(path: &str, name: &str, is_dir: bool) -> bool {
         "/.cache/huggingface",
         "/.ollama/",
         "/.lmstudio/",
+        "/usr/",
+        "/lib/",
+        "/lib64/",
+        "/bin/",
+        "/sbin/",
+        "/etc/",
+        "/var/lib/",
+        "/opt/",
+        "/applications/",
+        "/system/library/",
+        "/.local/share/flatpak/",
     ];
     let probe = format!("{norm_path}/");
     if NEVER_CANDIDATE
@@ -160,6 +173,7 @@ pub fn is_cleanup_candidate(path: &str, name: &str, is_dir: bool) -> bool {
             "/.cache",
             "/caches",
             "/node_modules",
+            "/.npm/_cacache",
             "/target/debug",
             "/target/release",
             "/.gradle/caches",
@@ -194,9 +208,17 @@ pub fn is_cleanup_candidate(path: &str, name: &str, is_dir: bool) -> bool {
             }
         }
 
-        // Instaladores e imagens grandes em Downloads ou Temp
-        if (norm_path.contains("/downloads/") || norm_path.contains("/temp/"))
-            && (norm_name.ends_with(".iso") || norm_name.ends_with(".msi"))
+        // Instaladores e imagens grandes em Downloads ou pastas temporárias
+        if (norm_path.contains("/downloads/")
+            || norm_path.contains("/temp/")
+            || norm_path.contains("/tmp/"))
+            && (norm_name.ends_with(".iso")
+                || norm_name.ends_with(".msi")
+                || norm_name.ends_with(".deb")
+                || norm_name.ends_with(".rpm")
+                || norm_name.ends_with(".dmg")
+                || norm_name.ends_with(".pkg")
+                || norm_name.ends_with(".appimage"))
         {
             return true;
         }
@@ -246,28 +268,18 @@ pub fn collect_cleanup_candidates(
     (candidates, total_bytes)
 }
 
+#[cfg(windows)]
 fn command_exists_in_windows(cmd: &str) -> bool {
-    #[cfg(windows)]
-    {
-        for candidate in [
-            cmd,
-            &format!("{cmd}.exe"),
-            &format!("{cmd}.cmd"),
-            &format!("{cmd}.bat"),
-        ] {
-            if let Ok(output) = crate::process::hidden_command("where.exe")
-                .arg(candidate)
-                .output()
-            {
-                if output.status.success() {
-                    return true;
-                }
-            }
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        if let Ok(output) = Command::new("which").arg(cmd).output() {
+    for candidate in [
+        cmd,
+        &format!("{cmd}.exe"),
+        &format!("{cmd}.cmd"),
+        &format!("{cmd}.bat"),
+    ] {
+        if let Ok(output) = crate::process::hidden_command("where.exe")
+            .arg(candidate)
+            .output()
+        {
             if output.status.success() {
                 return true;
             }
@@ -276,53 +288,80 @@ fn command_exists_in_windows(cmd: &str) -> bool {
     false
 }
 
-/// Distros do WSL. Com `running_only`, lista só as que já estão ligadas
-/// (`wsl -l --running` não inicia a VM); só uma ação explícita do usuário pode
-/// ligar o WSL.
-fn wsl_distros(running_only: bool) -> Vec<String> {
-    #[cfg(windows)]
-    {
-        let args: &[&str] = if running_only {
-            &["-l", "--running", "-q"]
-        } else {
-            &["-l", "-q"]
-        };
-        if let Ok(output) = crate::process::hidden_command("wsl.exe")
-            .args(args)
-            .output()
-        {
-            if output.status.success() {
-                let text = String::from_utf16_lossy(
-                    &output
-                        .stdout
-                        .as_chunks::<2>()
-                        .0
-                        .iter()
-                        .map(|pair| u16::from_le_bytes(*pair))
-                        .collect::<Vec<_>>(),
-                );
-                let fallback = String::from_utf8_lossy(&output.stdout);
-                let content = if text.contains('\n') || text.contains('\r') {
-                    text
-                } else {
-                    fallback.into_owned()
-                };
-                let mut distros = content
-                    .lines()
-                    .map(|l| {
-                        l.trim_matches(|c| c == '\u{feff}' || c == '\0')
-                            .trim()
-                            .to_owned()
-                    })
-                    .filter(|l| !l.is_empty())
-                    .collect::<Vec<_>>();
-                distros.sort_unstable();
-                distros.dedup();
-                return distros;
+/// Procura um executável no `PATH` e em `~/.local/bin` (sessões gráficas
+/// iniciadas por `.desktop` nem sempre herdam `~/.local/bin` no `PATH`).
+#[cfg(unix)]
+fn resolve_unix_program(name: &str) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+
+    if name.is_empty() || name.contains('/') {
+        return None;
+    }
+    let is_exec = |path: &Path| {
+        fs::metadata(path)
+            .is_ok_and(|meta| meta.is_file() && (meta.permissions().mode() & 0o111 != 0))
+    };
+    if let Some(paths) = env::var_os("PATH") {
+        for dir in env::split_paths(&paths) {
+            let candidate = dir.join(name);
+            if is_exec(&candidate) {
+                return Some(candidate);
             }
         }
     }
-    let _ = running_only;
+    if let Some(home) = dirs::home_dir() {
+        let local_bin = home.join(".local").join("bin").join(name);
+        if is_exec(&local_bin) {
+            return Some(local_bin);
+        }
+    }
+    None
+}
+
+/// Distros do WSL. Com `running_only`, lista só as que já estão ligadas
+/// (`wsl -l --running` não inicia a VM); só uma ação explícita do usuário pode
+/// ligar o WSL.
+#[cfg(windows)]
+fn wsl_distros(running_only: bool) -> Vec<String> {
+    let args: &[&str] = if running_only {
+        &["-l", "--running", "-q"]
+    } else {
+        &["-l", "-q"]
+    };
+    if let Ok(output) = crate::process::hidden_command("wsl.exe")
+        .args(args)
+        .output()
+    {
+        if output.status.success() {
+            let text = String::from_utf16_lossy(
+                &output
+                    .stdout
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|pair| u16::from_le_bytes(*pair))
+                    .collect::<Vec<_>>(),
+            );
+            let fallback = String::from_utf8_lossy(&output.stdout);
+            let content = if text.contains('\n') || text.contains('\r') {
+                text
+            } else {
+                fallback.into_owned()
+            };
+            let mut distros = content
+                .lines()
+                .map(|l| {
+                    l.trim_matches(|c| c == '\u{feff}' || c == '\0')
+                        .trim()
+                        .to_owned()
+                })
+                .filter(|l| !l.is_empty())
+                .collect::<Vec<_>>();
+            distros.sort_unstable();
+            distros.dedup();
+            return distros;
+        }
+    }
     Vec::new()
 }
 
@@ -335,18 +374,15 @@ pub(crate) enum WslProbe {
     AllowStart,
 }
 
+#[cfg(windows)]
 fn command_exists_in_wsl(distro: &str, cmd: &str) -> bool {
-    #[cfg(windows)]
+    // O nome do binário vai como `$0`, nunca interpolado no script do shell.
+    if let Ok(output) = crate::process::hidden_command("wsl.exe")
+        .args(["-d", distro, "-e", "sh", "-lc", "command -v \"$0\"", cmd])
+        .output()
     {
-        // O nome do binário vai como `$0`, nunca interpolado no script do shell.
-        if let Ok(output) = crate::process::hidden_command("wsl.exe")
-            .args(["-d", distro, "-e", "sh", "-lc", "command -v \"$0\"", cmd])
-            .output()
-        {
-            return output.status.success() && !output.stdout.is_empty();
-        }
+        return output.status.success() && !output.stdout.is_empty();
     }
-    let _ = (distro, cmd);
     false
 }
 
@@ -398,17 +434,22 @@ pub(crate) struct CliInvocation {
 }
 
 impl CliInvocation {
-    /// Linha equivalente para colar no PowerShell. Cada argumento vai entre
-    /// aspas simples, onde o PowerShell não expande `$`, `` ` `` nem `$(...)`.
+    /// Linha equivalente para colar no terminal (PowerShell no Windows,
+    /// bash/zsh no Linux e macOS). Cada argumento vai entre aspas simples,
+    /// sem expansão de `$`, `` ` `` nem `$(...)`.
     pub(crate) fn display(&self) -> String {
         let mut parts = vec![self.program.clone()];
+        #[cfg(windows)]
         parts.extend(self.args.iter().map(|arg| powershell_quote(arg)));
+        #[cfg(not(windows))]
+        parts.extend(self.args.iter().map(|arg| posix_shell_quote(arg)));
         parts.join(" ")
     }
 }
 
 /// Literal de aspas simples do PowerShell. O PowerShell aceita as aspas
 /// tipográficas (U+2018..U+201B) como aspas simples, então todas são dobradas.
+#[cfg(any(windows, test))]
 fn powershell_quote(value: &str) -> String {
     let mut quoted = String::with_capacity(value.len() + 2);
     quoted.push('\'');
@@ -417,6 +458,23 @@ fn powershell_quote(value: &str) -> String {
             quoted.push(ch);
         }
         quoted.push(ch);
+    }
+    quoted.push('\'');
+    quoted
+}
+
+/// Literal de aspas simples POSIX (sh/bash/zsh): nada é expandido dentro de
+/// `'...'`, e uma aspa simples literal fecha, escapa (`\'`) e reabre.
+#[cfg(not(windows))]
+fn posix_shell_quote(value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('\'');
+    for ch in value.chars() {
+        if ch == '\'' {
+            quoted.push_str("'\\''");
+        } else {
+            quoted.push(ch);
+        }
     }
     quoted.push('\'');
     quoted
@@ -440,48 +498,80 @@ pub(crate) fn sanitize_prompt(prompt: &str) -> String {
 }
 
 pub(crate) fn detect_cli(cmd_name: &str, probe: WslProbe) -> CliDetection {
-    if command_exists_in_windows(cmd_name) {
-        return CliDetection {
-            is_available: true,
-            is_wsl: false,
-            distro: None,
-            environment: "Windows (nativo)".into(),
-        };
-    }
-
-    let distros = match probe {
-        WslProbe::AllowStart => wsl_distros(false),
-        WslProbe::RunningOnly => {
-            // Só nomes que também existem em `wsl -l -q`: o texto de "nenhuma distro
-            // em execução" nunca vira nome de distro passado a `wsl -d`.
-            let installed = wsl_distros(false);
-            wsl_distros(true)
-                .into_iter()
-                .filter(|d| installed.contains(d))
-                .collect()
-        }
-    };
-    for distro in distros {
-        if command_exists_in_wsl(&distro, cmd_name) {
+    #[cfg(windows)]
+    {
+        if command_exists_in_windows(cmd_name) {
             return CliDetection {
                 is_available: true,
-                is_wsl: true,
-                distro: Some(distro.clone()),
-                environment: format!("WSL ({distro})"),
+                is_wsl: false,
+                distro: None,
+                environment: "Windows (nativo)".into(),
             };
+        }
+
+        let distros = match probe {
+            WslProbe::AllowStart => wsl_distros(false),
+            WslProbe::RunningOnly => {
+                // Só nomes que também existem em `wsl -l -q`: o texto de "nenhuma distro
+                // em execução" nunca vira nome de distro passado a `wsl -d`.
+                let installed = wsl_distros(false);
+                wsl_distros(true)
+                    .into_iter()
+                    .filter(|d| installed.contains(d))
+                    .collect()
+            }
+        };
+        for distro in distros {
+            if command_exists_in_wsl(&distro, cmd_name) {
+                return CliDetection {
+                    is_available: true,
+                    is_wsl: true,
+                    distro: Some(distro.clone()),
+                    environment: format!("WSL ({distro})"),
+                };
+            }
+        }
+
+        CliDetection {
+            is_available: false,
+            is_wsl: false,
+            distro: None,
+            environment: match probe {
+                WslProbe::RunningOnly => {
+                    "CLI não detectada no Windows nem no WSL em execução (o Pulse não liga o WSL sozinho)".into()
+                }
+                WslProbe::AllowStart => {
+                    "CLI não detectada no PATH (copie o comando manualmente)".into()
+                }
+            },
         }
     }
 
-    CliDetection {
-        is_available: false,
-        is_wsl: false,
-        distro: None,
-        environment: match probe {
-            WslProbe::RunningOnly => {
-                "CLI não detectada no Windows nem no WSL em execução (o Pulse não liga o WSL sozinho)".into()
-            }
-            WslProbe::AllowStart => "CLI não detectada no PATH (copie o comando manualmente)".into(),
-        },
+    #[cfg(not(windows))]
+    {
+        let _ = probe;
+        if resolve_unix_program(cmd_name).is_some() {
+            let environment = if cfg!(target_os = "linux") {
+                "Linux (nativo)"
+            } else if cfg!(target_os = "macos") {
+                "macOS (nativo)"
+            } else {
+                "Sistema local"
+            };
+            return CliDetection {
+                is_available: true,
+                is_wsl: false,
+                distro: None,
+                environment: environment.into(),
+            };
+        }
+
+        CliDetection {
+            is_available: false,
+            is_wsl: false,
+            distro: None,
+            environment: "CLI não detectada no PATH (copie o comando manualmente)".into(),
+        }
     }
 }
 
@@ -508,8 +598,25 @@ pub fn generate_markdown_report(
         format_bytes(total_candidates_bytes)
     ));
 
+    let os_label = if cfg!(windows) {
+        "o Windows"
+    } else if cfg!(target_os = "linux") {
+        "o Linux"
+    } else if cfg!(target_os = "macos") {
+        "o macOS"
+    } else {
+        "o sistema"
+    };
+    let shell_label = if cfg!(windows) {
+        "PowerShell ou CMD"
+    } else {
+        "terminal (bash/zsh)"
+    };
+
     md.push_str("## 🎯 Objetivo da Análise com IA\n");
-    md.push_str("Avaliar a ocupação de armazenamento, identificar com precisão quais pastas e arquivos são os maiores e apontar de forma segura onde há espaço para limpar o disco e liberar armazenamento no Windows.\n\n");
+    md.push_str(&format!(
+        "Avaliar a ocupação de armazenamento, identificar com precisão quais pastas e arquivos são os maiores e apontar de forma segura onde há espaço para limpar o disco e liberar armazenamento n{os_label}.\n\n"
+    ));
 
     md.push_str("## 📂 Top Maiores Pastas\n");
     md.push_str("| Pasta | Tamanho | Arquivos |\n");
@@ -551,9 +658,13 @@ pub fn generate_markdown_report(
 
     md.push_str("## 📋 Diretrizes para a Resposta da IA\n");
     md.push_str("1. Liste as pastas e arquivos que estão causando o maior consumo desnecessário de disco.\n");
-    md.push_str("2. Indique claramente quais desses itens podem ser apagados com 100% de segurança (sem quebrar programas nem o Windows).\n");
+    md.push_str(&format!(
+        "2. Indique claramente quais desses itens podem ser apagados com 100% de segurança (sem quebrar programas nem {os_label}).\n"
+    ));
     md.push_str("3. Alerte sobre itens que NÃO devem ser removidos sem cautela.\n");
-    md.push_str("4. Forneça comandos práticos e seguros (PowerShell ou CMD) prontos para executar para liberar o espaço identificado.\n");
+    md.push_str(&format!(
+        "4. Forneça comandos práticos e seguros ({shell_label}) prontos para executar para liberar o espaço identificado.\n"
+    ));
     md.push_str(
         "5. Salve a resposta completa em um arquivo Markdown no caminho indicado no prompt.\n",
     );
@@ -561,12 +672,45 @@ pub fn generate_markdown_report(
     md
 }
 
-/// Sufixo de arquivo por unidade (`C:\\` → `C`), comum ao contexto e ao plano.
+/// Sufixo de arquivo por unidade ou raiz (`C:\\` → `C`, `/` → `ROOT`,
+/// `/home/user` → `HOME-USER`), comum ao contexto e ao plano.
 fn drive_file_suffix(drive_path: &str) -> String {
-    drive_path
-        .replace([':', '\\', '/', '.'], "")
-        .trim()
-        .to_uppercase()
+    let trimmed = drive_path.trim();
+    if trimmed == "/" {
+        return "ROOT".to_owned();
+    }
+    let mut chars = trimmed.chars();
+    if let (Some(drive), Some(':')) = (chars.next(), chars.next()) {
+        if drive.is_ascii_alphabetic() {
+            let cleaned = trimmed
+                .replace([':', '\\', '/', '.'], "")
+                .trim()
+                .to_uppercase();
+            if !cleaned.is_empty() {
+                return cleaned;
+            }
+        }
+    }
+    let mut out = String::new();
+    let mut last_dash = true;
+    for ch in trimmed.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_uppercase());
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+        if out.len() >= 48 {
+            break;
+        }
+    }
+    let cleaned = out.trim_matches('-');
+    if cleaned.is_empty() {
+        "DISK".to_owned()
+    } else {
+        cleaned.to_owned()
+    }
 }
 
 fn save_context_file(content: &str, drive_path: &str) -> Result<PathBuf, String> {
@@ -656,8 +800,14 @@ fn build_prompt_and_invocation(
     let file_path_str = path_for_cli(context_file_path, detection);
     let plan_path_str = path_for_cli(&cleanup_plan_path(context_file_path), detection);
 
+    let (shell_cmd, temp_label) = if cfg!(windows) {
+        ("PowerShell ou CMD", "a pasta TEMP")
+    } else {
+        ("terminal (bash/zsh)", "a pasta temporária (/tmp)")
+    };
+
     let default_prompt = format!(
-        "Analise o relatório de armazenamento do Pulse para a unidade {drive_path}. Objetivo: quais pastas e arquivos são maiores e onde tem espaço seguro para limpar o disco e liberar espaço? Relatório detalhado salvo em: '{file_path_str}'. Top pastas: [{dirs_summary}]. Top arquivos: [{files_summary}]. Candidatos a limpeza ({total_candidates}): [{candidates_summary}]. Forneça comandos de PowerShell ou CMD práticos e seguros para liberar espaço. Ao limpar a pasta TEMP, exclua dos comandos as entradas cujo nome começa com 'pulse-' e nunca apague por idade arquivos de dentro de caches de compilação (target do cargo, node_modules, .gradle): remover só parte deles quebra o próximo build; para esses, indique apagar a pasta inteira. Ao final, salve sua resposta completa (maiores consumidores, itens seguros para apagar, alertas do que não remover, comandos e ganho estimado) em Markdown no arquivo '{plan_path_str}', sobrescrevendo se existir, e informe o caminho.",
+        "Analise o relatório de armazenamento do Pulse para a unidade {drive_path}. Objetivo: quais pastas e arquivos são maiores e onde tem espaço seguro para limpar o disco e liberar espaço? Relatório detalhado salvo em: '{file_path_str}'. Top pastas: [{dirs_summary}]. Top arquivos: [{files_summary}]. Candidatos a limpeza ({total_candidates}): [{candidates_summary}]. Forneça comandos de {shell_cmd} práticos e seguros para liberar espaço. Ao limpar {temp_label}, exclua dos comandos as entradas cujo nome começa com 'pulse-' e nunca apague por idade arquivos de dentro de caches de compilação (target do cargo, node_modules, .gradle): remover só parte deles quebra o próximo build; para esses, indique apagar a pasta inteira. Ao final, salve sua resposta completa (maiores consumidores, itens seguros para apagar, alertas do que não remover, comandos e ganho estimado) em Markdown no arquivo '{plan_path_str}', sobrescrevendo se existir, e informe o caminho.",
         total_candidates = format_bytes(total_candidates_bytes)
     );
 
@@ -807,11 +957,7 @@ fn now_unix_secs() -> u64 {
 }
 
 fn provider_cache_file() -> PathBuf {
-    env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(env::temp_dir)
-        .join("Pulse")
-        .join("ai-cli-providers.json")
+    crate::disk_analyzer::pulse_data_dir().join("ai-cli-providers.json")
 }
 
 /// Só aceita ids conhecidos, na ordem da interface (o arquivo pode ter sido editado).
@@ -995,8 +1141,91 @@ fn resolve_windows_program(name: &str) -> Option<PathBuf> {
         .find_map(|ext| candidates.iter().find(|path| has_ext(path, ext)).cloned())
 }
 
+/// Emulador de terminal Linux e os argumentos fixos que antecedem o `argv`
+/// do programa (sem `sh -c`, nunca concatenando string de shell).
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LinuxTerminalSpec {
+    binary: &'static str,
+    prefix_args: &'static [&'static str],
+}
+
+#[cfg(target_os = "linux")]
+const LINUX_TERMINALS: &[LinuxTerminalSpec] = &[
+    LinuxTerminalSpec {
+        binary: "konsole",
+        prefix_args: &["-e"],
+    },
+    LinuxTerminalSpec {
+        binary: "gnome-terminal",
+        prefix_args: &["--"],
+    },
+    LinuxTerminalSpec {
+        binary: "xfce4-terminal",
+        prefix_args: &["-x"],
+    },
+    LinuxTerminalSpec {
+        binary: "kitty",
+        prefix_args: &["--"],
+    },
+    LinuxTerminalSpec {
+        binary: "alacritty",
+        prefix_args: &["-e"],
+    },
+    LinuxTerminalSpec {
+        binary: "wezterm",
+        prefix_args: &["start", "--"],
+    },
+    LinuxTerminalSpec {
+        binary: "x-terminal-emulator",
+        prefix_args: &["-e"],
+    },
+    LinuxTerminalSpec {
+        binary: "xterm",
+        prefix_args: &["-e"],
+    },
+];
+
+/// Ordem de preferência de terminais conforme `XDG_CURRENT_DESKTOP`.
+#[cfg(target_os = "linux")]
+fn select_linux_terminal<F>(
+    desktop: Option<&str>,
+    mut resolver: F,
+) -> Option<(PathBuf, &'static [&'static str])>
+where
+    F: FnMut(&str) -> Option<PathBuf>,
+{
+    let desktop_upper = desktop.unwrap_or_default().to_ascii_uppercase();
+    let preferred: &[&str] = if desktop_upper.contains("KDE") {
+        &["konsole"]
+    } else if desktop_upper.contains("GNOME") || desktop_upper.contains("CINNAMON") {
+        &["gnome-terminal"]
+    } else if desktop_upper.contains("XFCE") {
+        &["xfce4-terminal"]
+    } else {
+        &[]
+    };
+
+    for &name in preferred {
+        if let Some(spec) = LINUX_TERMINALS.iter().find(|s| s.binary == name) {
+            if let Some(path) = resolver(spec.binary) {
+                return Some((path, spec.prefix_args));
+            }
+        }
+    }
+    for spec in LINUX_TERMINALS {
+        if preferred.contains(&spec.binary) {
+            continue;
+        }
+        if let Some(path) = resolver(spec.binary) {
+            return Some((path, spec.prefix_args));
+        }
+    }
+    None
+}
+
 /// Abre o CLI num console novo com o argv pronto. `Ok(true)` = terminal aberto;
-/// `Ok(false)` = fora do Windows (dev/testes), onde só o comando é devolvido.
+/// `Ok(false)` = nenhum terminal automático disponível, onde só o comando é devolvido.
 pub(crate) fn spawn_cli_terminal(invocation: &CliInvocation) -> Result<bool, String> {
     #[cfg(windows)]
     {
@@ -1026,9 +1255,47 @@ pub(crate) fn spawn_cli_terminal(invocation: &CliInvocation) -> Result<bool, Str
         Ok(true)
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     {
-        // Fora do Windows não há terminal a abrir: nada passa por `sh -c`.
+        use std::process::Stdio;
+
+        let program = resolve_unix_program(&invocation.program).ok_or_else(|| {
+            format!(
+                "O CLI `{}` não foi encontrado no PATH. Copie o comando e execute-o manualmente.",
+                invocation.program
+            )
+        })?;
+        let desktop = env::var("XDG_CURRENT_DESKTOP").ok();
+        let Some((terminal_bin, prefix_args)) =
+            select_linux_terminal(desktop.as_deref(), resolve_unix_program)
+        else {
+            return Ok(false);
+        };
+
+        // Passa o binário resolvido e o argv direto para o emulador (sem `sh -c`).
+        let mut child = Command::new(&terminal_bin)
+            .args(prefix_args)
+            .arg(&program)
+            .args(&invocation.args)
+            .current_dir(env::temp_dir())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| {
+                format!("Não foi possível abrir o terminal ({error}). Copie o comando e execute-o manualmente.")
+            })?;
+        let _ = std::thread::Builder::new()
+            .name("pulse-ai-terminal-wait".into())
+            .spawn(move || {
+                let _ = child.wait();
+            });
+        Ok(true)
+    }
+
+    // TODO(macos): validar em hardware (Terminal.app / iTerm2 sem shell injection).
+    #[cfg(all(not(windows), not(target_os = "linux")))]
+    {
         let _ = invocation;
         Ok(false)
     }
@@ -1043,23 +1310,40 @@ pub(crate) fn launch_result(
     success_message: &str,
 ) -> AiTerminalLaunchResult {
     if launched {
+        let terminal_type = if cfg!(windows) {
+            "Console do Windows"
+        } else if cfg!(target_os = "linux") {
+            "Terminal do Linux"
+        } else if cfg!(target_os = "macos") {
+            "Terminal do macOS"
+        } else {
+            "Terminal"
+        };
         AiTerminalLaunchResult {
             success: true,
             provider,
             command,
             context_file_path,
-            terminal_type: "Console do Windows".into(),
+            terminal_type: terminal_type.into(),
             message: success_message.into(),
         }
     } else {
+        let fallback_message = if cfg!(windows) {
+            "Abertura automática disponível apenas no Windows. Copie o comando gerado."
+        } else if cfg!(target_os = "linux") {
+            "Nenhum emulador de terminal suportado foi encontrado. Copie o comando gerado."
+        } else if cfg!(target_os = "macos") {
+            "Abertura automática do terminal ainda indisponível no macOS. Copie o comando gerado."
+        } else {
+            "Abertura automática indisponível neste sistema. Copie o comando gerado."
+        };
         AiTerminalLaunchResult {
             success: false,
             provider,
             command,
             context_file_path,
             terminal_type: "Manual".into(),
-            message: "Abertura automática disponível apenas no Windows. Copie o comando gerado."
-                .into(),
+            message: fallback_message.into(),
         }
     }
 }
@@ -1450,5 +1734,118 @@ mod tests {
         assert!(!is_cache_fresh(&cache, 1_000 + PROVIDER_DETECTION_TTL_SECS));
         // Relógio voltou no tempo: detecta de novo
         assert!(!is_cache_fresh(&cache, 999));
+    }
+
+    #[test]
+    fn unix_system_dirs_are_never_cleanup_candidates_but_user_caches_are() {
+        assert!(!is_cleanup_candidate(
+            "/usr/lib/node_modules",
+            "node_modules",
+            true
+        ));
+        assert!(!is_cleanup_candidate(
+            "/var/lib/apt/lists/cache",
+            "cache",
+            true
+        ));
+        assert!(!is_cleanup_candidate("/opt/vendor/app/logs", "logs", true));
+        assert!(!is_cleanup_candidate(
+            "/home/u/.local/share/flatpak/repo/tmp",
+            "tmp",
+            true
+        ));
+        assert!(!is_cleanup_candidate(
+            "/Applications/App.app/Contents/cache",
+            "cache",
+            true
+        ));
+        assert!(is_cleanup_candidate(
+            "/home/u/projetos/app/node_modules",
+            "node_modules",
+            true
+        ));
+        assert!(is_cleanup_candidate("/home/u/.cache/pip", "pip", true));
+        assert!(is_cleanup_candidate(
+            "/home/u/.npm/_cacache",
+            "_cacache",
+            true
+        ));
+        assert!(is_cleanup_candidate(
+            "/home/u/Downloads/linuxmint.iso",
+            "linuxmint.iso",
+            false
+        ));
+        assert!(is_cleanup_candidate(
+            "/home/u/Downloads/pacote.deb",
+            "pacote.deb",
+            false
+        ));
+    }
+
+    #[test]
+    fn drive_suffix_handles_unix_roots_and_paths_with_spaces() {
+        assert_eq!(drive_file_suffix("/"), "ROOT");
+        assert_eq!(drive_file_suffix("/home/lucas"), "HOME-LUCAS");
+        assert_eq!(
+            drive_file_suffix("/media/user/Meu Pendrive"),
+            "MEDIA-USER-MEU-PENDRIVE"
+        );
+        assert_eq!(drive_file_suffix("///"), "DISK");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn posix_shell_quote_escapes_single_quotes_and_prevents_expansion() {
+        assert_eq!(posix_shell_quote("$(id)"), "'$(id)'");
+        assert_eq!(posix_shell_quote("it's `ok`"), "'it'\\''s `ok`'");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn select_linux_terminal_prefers_desktop_default_and_falls_back() {
+        let has_both = |name: &str| match name {
+            "konsole" | "gnome-terminal" => Some(PathBuf::from(format!("/usr/bin/{name}"))),
+            _ => None,
+        };
+        assert_eq!(
+            select_linux_terminal(Some("KDE"), has_both),
+            Some((PathBuf::from("/usr/bin/konsole"), &["-e"][..]))
+        );
+        assert_eq!(
+            select_linux_terminal(Some("X-Cinnamon"), has_both),
+            Some((PathBuf::from("/usr/bin/gnome-terminal"), &["--"][..]))
+        );
+        let only_xterm = |name: &str| (name == "xterm").then(|| PathBuf::from("/usr/bin/xterm"));
+        assert_eq!(
+            select_linux_terminal(Some("KDE"), only_xterm),
+            Some((PathBuf::from("/usr/bin/xterm"), &["-e"][..]))
+        );
+        assert_eq!(select_linux_terminal(Some("KDE"), |_| None), None);
+    }
+
+    /// Coleta real no Linux: `detect_cli` nunca anuncia "Windows (nativo)",
+    /// o cache fica sob `pulse_data_dir()` e o relatório cita Linux/bash.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn real_linux_cli_detection_and_report_use_linux_context() {
+        let found = detect_cli("sh", WslProbe::RunningOnly);
+        assert!(found.is_available);
+        assert!(!found.is_wsl);
+        assert_eq!(found.environment, "Linux (nativo)");
+
+        let missing = detect_cli("pulse-cli-inexistente-9999", WslProbe::RunningOnly);
+        assert!(!missing.is_available);
+        assert!(!missing.environment.contains("Windows"));
+
+        assert_eq!(
+            provider_cache_file(),
+            crate::disk_analyzer::pulse_data_dir().join("ai-cli-providers.json")
+        );
+
+        let tree = sample_tree();
+        let report = generate_markdown_report(&tree, &[], &[], &[], 0);
+        assert!(report.contains("no Linux"));
+        assert!(report.contains("terminal (bash/zsh)"));
+        assert!(!report.contains("PowerShell"));
     }
 }
