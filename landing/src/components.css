@@ -414,7 +414,7 @@
 
 .app-body {
   display: grid;
-  grid-template-columns: 228px 1fr;
+  grid-template-columns: 228px minmax(0, 1fr);
   min-height: 430px;
 }
 .app-body[hidden] {
@@ -1515,13 +1515,14 @@
 /* ---------- Responsivo ---------- */
 
 @media (max-width: 1020px) {
-  .app-cards { grid-template-columns: repeat(2, 1fr); }
+  .app-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sim-chart-grid,
   .consolidation-grid,
   .ai-showcase,
   .privacy,
   .tray-sim-layout {
-    grid-template-columns: 1fr;
+    /* minmax(0,1fr): `1fr` mantem min-width:auto e o filho estica a pagina */
+    grid-template-columns: minmax(0, 1fr);
     gap: 28px;
   }
   .footer-grid {
@@ -1537,14 +1538,17 @@
 }
 
 @media (max-width: 860px) {
-  .steps, .reqs { grid-template-columns: 1fr; }
-  .app-body { grid-template-columns: 1fr; }
+  .steps, .reqs { grid-template-columns: minmax(0, 1fr); }
+  .app-body { grid-template-columns: minmax(0, 1fr); }
   .app-sidebar {
     border-right: 0;
     border-bottom: var(--border-subtle);
     flex-direction: row;
     overflow-x: auto;
     padding: 10px 12px;
+    /* sem min-width:0 a trilha se estica ate o conteudo e o scroll vaza para o
+       documento em vez de ficar contido na barra */
+    min-width: 0;
   }
   .app-sidebar .side-label { display: none; }
   .app-sidebar .side-item {
@@ -1558,10 +1562,16 @@
   }
   .section { padding: 64px 0; }
   .download-box { padding: 36px 24px; }
-  .sim-quota-grid { grid-template-columns: 1fr; }
+  .sim-quota-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 620px) {
+  /* linhas de app: sem isso, o conjunto nowrap dos 6 spans empurra a pagina
+     para 916px de largura em viewport de 390px */
+  .app-row { flex-wrap: wrap; row-gap: 6px; }
+  .app-row .name { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+  .app-row .val { margin-left: auto; }
+
   .site-header .container {
     gap: 10px;
     padding: 0 16px;
@@ -1589,3 +1599,14 @@
   .hero { padding: 52px 0 32px; }
   .footer-grid { grid-template-columns: 1fr; }
 }
+
+
+.lagrimante-slot { position: relative; z-index: 40; min-height: 42px; }
+.lagrimante-slot .llr__row { width: min(1200px, calc(100% - 3rem)); margin-inline: auto; padding-inline: 0;
+  /* 28px = padding do .brand dentro do container do header (brand x=148, container x=120) */
+  padding-left: 28px; }
+.lagrimante-slot .llr { --llr-accent: #d97706; --llr-h: 40px;
+  /* tema claro: o dim padrao (64%) fica abaixo de 4.5:1 em texto de 11.5px */
+  --llr-dim: color-mix(in oklab, currentColor 82%, transparent);
+  --llr-faint: color-mix(in oklab, currentColor 22%, transparent); }
+@media (max-width: 640px) { .lagrimante-slot .llr__row { width: calc(100% - 2rem); } }
