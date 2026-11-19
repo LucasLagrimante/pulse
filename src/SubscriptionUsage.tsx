@@ -27,6 +27,7 @@ import type {
   QuotaWindow,
   SubscriptionUsageReport,
 } from "./subscriptionHelpers";
+import { usePlatformCopy } from "./platform";
 // Re-exporta os helpers puros para compatibilidade com importadores
 // existentes (testes e módulos que ainda referenciam este arquivo).
 export {
@@ -407,6 +408,7 @@ function QuotaLoading() {
 }
 
 export function SubscriptionUsage() {
+  const pc = usePlatformCopy();
   const [report, setReport] = useState<SubscriptionUsageReport | null>(() => {
     try {
       const cached = localStorage.getItem("pulse-subscription-report");
@@ -755,7 +757,7 @@ export function SubscriptionUsage() {
               </button>
             </header>
             <div className="quota-modal-body">
-              <p>A chave fica armazenada com criptografia no <strong>Credential Manager do Windows</strong>. O Pulse consulta apenas a cota oficial sem persistir o texto da chave na interface.</p>
+              <p>A chave fica armazenada com criptografia no <strong>{pc.credentialStore}</strong>. O Pulse consulta apenas a cota oficial sem persistir o texto da chave na interface.</p>
 
               <div className="quota-key-form">
                 <label>
@@ -784,7 +786,7 @@ export function SubscriptionUsage() {
                     onClick={() => void saveKey()}
                     disabled={settingsBusy || (keyModalTarget === "openrouter" ? !openrouterKey.trim() : !opencodeGoKey.trim())}
                   >
-                    {settingsBusy ? "GUARDANDO…" : "SALVAR NO WINDOWS"}
+                    {settingsBusy ? "GUARDANDO…" : pc.credentialSaveButton}
                   </button>
                   {((keyModalTarget === "openrouter" && settings?.openrouterConfigured) || (keyModalTarget === "opencode-go" && settings?.opencodeGoConfigured)) && (
                     <button

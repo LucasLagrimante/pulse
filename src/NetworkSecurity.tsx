@@ -12,6 +12,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePlatformCopy } from "./platform";
 import "./NetworkSecurity.css";
 
 /* ------------------------------------------------------------------ */
@@ -107,6 +108,7 @@ const SEVERITY_LABEL: Record<SignalSeverity, string> = {
 /* ------------------------------------------------------------------ */
 
 export function NetworkSecurity() {
+  const pc = usePlatformCopy();
   const [network, setNetwork] = useState<NetworkSnapshot | null>(null);
   const [posture, setPosture] = useState<SecurityPosture | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -217,7 +219,7 @@ export function NetworkSecurity() {
         </h3>
         <div className="ns-head-actions">
           {posture && !posture.elevated ? (
-            <span className="ns-hint-pill" title="Alguns sinais exigem privilégio administrativo">
+            <span className="ns-hint-pill" title={pc.networkElevationHint}>
               <ShieldAlert size={12} aria-hidden="true" /> sem privilégio elevado
             </span>
           ) : null}
@@ -386,10 +388,7 @@ export function NetworkSecurity() {
                     {process.executablePath ? (
                       <p className="ns-detail-path">{process.executablePath}</p>
                     ) : (
-                      <p className="ns-detail-path ns-detail-muted">
-                        Caminho indisponível: processo protegido pelo Windows ou Pulse sem
-                        privilégio elevado.
-                      </p>
+                      <p className="ns-detail-path ns-detail-muted">{pc.networkPathUnavailable}</p>
                     )}
                     {process.destinations.length > 0 ? (
                       <ul className="ns-endpoints">
@@ -419,10 +418,7 @@ export function NetworkSecurity() {
         </div>
       )}
 
-      <p className="ns-disclaimer">
-        O Pulse mostra o que foi medido por APIs do próprio Windows. Ele não classifica programas
-        como malware e não substitui o Microsoft Defender.
-      </p>
+      <p className="ns-disclaimer">{pc.networkDisclaimer}</p>
     </section>
   );
 }

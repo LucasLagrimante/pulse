@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { currentPlatform } from "./platform";
 
 export type DriveInfo = {
   path: string;
@@ -56,9 +57,16 @@ export type DiskAnalyzerSharedState = {
 
 export const DEFAULT_DISK_PATH = "C:\\";
 
+/** Unidade usada quando o backend não lista nenhuma: `C:\` no Windows, `/` no Linux/macOS. */
+function fallbackDrive(): DriveInfo {
+  return currentPlatform().os === "windows"
+    ? { path: DEFAULT_DISK_PATH, label: "Disco Local (C:)" }
+    : { path: "/", label: "Sistema de arquivos raiz (/)" };
+}
+
 const createInitialState = (): DiskAnalyzerSharedState => ({
   drives: [],
-  selectedPath: DEFAULT_DISK_PATH,
+  selectedPath: fallbackDrive().path,
   scanResult: null,
   cachedScan: null,
   isScanning: false,
@@ -176,7 +184,7 @@ async function loadSystemDrives() {
     const drives =
       Array.isArray(result) && result.length > 0
         ? result
-        : [{ path: DEFAULT_DISK_PATH, label: "Disco Local (C:)" }];
+        : [fallbackDrive()];
     const normalize = (path: string) => path.replace(/[\\/]+$/, "").toLowerCase();
     const selectedStillAvailable = drives.some(
       drive => normalize(drive.path) === normalize(state.selectedPath),
@@ -196,8 +204,8 @@ async function loadSystemDrives() {
     patch({ drives, selectedPath: desiredPath });
   } catch {
     patch({
-      drives: [{ path: DEFAULT_DISK_PATH, label: "Disco Local (C:)" }],
-      selectedPath: DEFAULT_DISK_PATH,
+      drives: [fallbackDrive()],
+      selectedPath: fallbackDrive().path,
     });
   }
 }

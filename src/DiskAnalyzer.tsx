@@ -16,6 +16,7 @@ import {
 import { FileIcon, ModuleIcon } from "./Identity";
 import { AI_PROVIDERS, AiDiskAdvisorModal, type SupportedAiProvider } from "./AiDiskAdvisorModal";
 import { AiProviderCycleButton } from "./AiProviderCycleButton";
+import { currentPlatformCopy } from "./platform";
 
 export type {
   CachedDiskScan,
@@ -30,7 +31,7 @@ function describeScanStop(cache: CachedDiskScan): string | null {
   if (cache.stopReason === "itemLimit") return "limite protetivo de 2.500 itens atingido";
   if (cache.stopReason === "timeout") return "limite protetivo de 1,5 s atingido";
   if (cache.stopReason === "cancelled") return "interrompida pelo usuário";
-  return "amostra limitada para proteger a responsividade do Windows";
+  return currentPlatformCopy().scanResponsiveness;
 }
 
 type ViewMode = "split" | "tree" | "treemap";
@@ -580,7 +581,7 @@ export function DiskAnalyzer({
                 {!isAggregate && <button
                   type="button"
                   className="tree-action-btn"
-                  title="Abrir no Explorador de Arquivos do Windows"
+                  title={currentPlatformCopy().fileManager}
                   onClick={e => {
                     e.stopPropagation();
                     void handleOpenFile(node.path, true);

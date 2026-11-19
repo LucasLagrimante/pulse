@@ -16,6 +16,7 @@ import {
 
 import "./DataTable.css";
 import "./UninstallHub.css";
+import { usePlatformCopy } from "./platform";
 
 export type InstalledApp = {
   id: string;
@@ -163,7 +164,7 @@ type Stage = "restore" | "running" | "registry" | "folders" | "done";
 const UNAVAILABLE = "Indisponível";
 
 const SORT_COLUMNS: { id: AppSortColumn; label: string; name: string; hint: string; start?: boolean }[] = [
-  { id: "name", label: "Programa", name: "nome", hint: "Ordem alfabética do nome exibido pelo Windows.", start: true },
+  { id: "name", label: "Programa", name: "nome", hint: "", start: true },
   { id: "installed", label: "Instalado em", name: "data de instalação", hint: "Data gravada pelo instalador (InstallDate)." },
   {
     id: "size",
@@ -376,6 +377,7 @@ export function canCleanRegistry(keys: RegistryKeyRef[], selected: Set<string>):
 }
 
 export function UninstallHub() {
+  const pc = usePlatformCopy();
   // Inventário e medição vivem fora do componente: seguem ao trocar de módulo e vêm do cache na reabertura.
   const { snapshot, loadState, error, footprints, measuring, fullMeasuringId, cachedAt, settledCount } =
     useUninstallScan();
@@ -681,7 +683,7 @@ export function UninstallHub() {
                   className={`dt-sort${start ? " is-start" : ""}${isActive ? " is-active" : ""}`}
                   aria-label={`Ordenar por ${name}${isActive ? (sortDirection === "desc" ? ", decrescente" : ", crescente") : ""}`}
                   aria-pressed={isActive}
-                  title={hint}
+                  title={id === "name" ? pc.uninstallSortHint : hint}
                   onClick={() => handleSort(id)}
                 >
                   {label}
@@ -698,7 +700,7 @@ export function UninstallHub() {
 
           {loadState === "loading" && !snapshot ? (
             <div className="dt-empty" role="status">
-              <p>Lendo o registro de programas instalados…</p>
+              <p>{pc.uninstallReading}</p>
             </div>
           ) : apps.length === 0 ? (
             <div className="dt-empty" role="status">
@@ -870,7 +872,7 @@ export function UninstallHub() {
                     : "Abrindo o desinstalador do fabricante…"}
                 </p>
                 <p className="un-hint">
-                  O Pulse só avança quando o Windows confirmar que o programa saiu do registro.
+                  {pc.uninstallWaitHint}
                 </p>
               </div>
             )}
@@ -884,7 +886,7 @@ export function UninstallHub() {
                 )}
                 {outcome && !outcome.entryRemoved && (
                   <p className="un-alert" role="alert">
-                    {outcome.detectionNote ?? "O Windows ainda lista este programa."}
+                    {outcome.detectionNote ?? pc.uninstallStillListed}
                   </p>
                 )}
                 {outcome?.restorePoint && (
@@ -896,9 +898,9 @@ export function UninstallHub() {
                       : (outcome.restorePoint.unavailableReason ?? `Ponto de restauração ${UNAVAILABLE.toLowerCase()}`)}
                   </p>
                 )}
-                <h4>Chaves de registro do aplicativo</h4>
+                <h4>{pc.uninstallRegistryTitle}</h4>
                 {registryCandidates.length === 0 ? (
-                  <p className="un-hint">Nenhuma chave de registro sobrou para este programa.</p>
+                  <p className="un-hint">{pc.uninstallRegistryEmpty}</p>
                 ) : (
                   <>
                     <div className="un-bulk">

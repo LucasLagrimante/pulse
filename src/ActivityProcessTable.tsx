@@ -2,6 +2,7 @@ import { Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ProcessSortColumn, ProcessSortDirection, TopProcess } from "./App";
 import { ProcessFallbackIcon } from "./Identity";
+import { usePlatformCopy } from "./platform";
 import "./DataTable.css";
 import "./ActivityProcessTable.css";
 
@@ -13,7 +14,7 @@ const SORT_COLUMNS: { id: ProcessSortColumn; label: string; name: string; hint: 
     name: "CPU",
     hint: "CPU agregada do grupo, normalizada pela máquina (100% = todos os processadores lógicos).",
   },
-  { id: "gpu", label: "GPU", name: "GPU", hint: "GPU agregada do grupo, somando as engines reportadas pelo Windows." },
+  { id: "gpu", label: "GPU", name: "GPU", hint: "" },
 ];
 
 const GPU_UNAVAILABLE = "Indisponível: o driver não expôs contadores de engine gráfico (PDH).";
@@ -83,6 +84,7 @@ export function ActivityProcessTable({
   sortDirection: ProcessSortDirection;
   onSortChange: (column: ProcessSortColumn) => void;
 }) {
+  const pc = usePlatformCopy();
   const [query, setQuery] = useState("");
   const gpuAvailable = processes.some(process => process.gpuPercent != null);
   const memoryTotalMb = typeof memoryTotalGb === "number" && memoryTotalGb > 0 ? memoryTotalGb * 1024 : null;
@@ -147,7 +149,7 @@ export function ActivityProcessTable({
                 aria-label={`Ordenar por ${name}${isActive ? (sortDirection === "desc" ? ", decrescente" : ", crescente") : ""}`}
                 aria-pressed={isActive}
                 disabled={unavailable}
-                title={unavailable ? GPU_UNAVAILABLE : hint}
+                title={unavailable ? GPU_UNAVAILABLE : id === "gpu" ? pc.activityGpuSortHint : hint}
                 onClick={() => onSortChange(id)}
               >
                 {unavailable ? "GPU —" : label}

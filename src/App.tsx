@@ -28,6 +28,7 @@ import { ensureDiskAnalyzerLoaded } from "./diskScanStore";
 import { formatCountdown, formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, type ProviderUsage } from "./subscriptionHelpers";
 import { ProviderIcon } from "./ProviderIcon";
 import { PrivilegeIndicator } from "./PrivilegeIndicator";
+import { currentPlatformCopy, type PlatformCopy, usePlatformCopy } from "./platform";
 
 /** Colunas ordenáveis da Inicialização; clicar de novo volta à ordem recomendada. */
 const STARTUP_SORT_COLUMNS: { id: "name" | "slowest" | "status"; label: string; hint: string; start?: boolean }[] = [
@@ -386,7 +387,9 @@ export type SelfUpdateStatus = {
   error: string | null;
 };
 
-const copy: Record<string, { eyebrow: string; title: string; intro: string }> = {
+type ModuleCopy = { eyebrow: string; title: string; intro: string };
+
+const copy: Record<string, ModuleCopy> = {
   "Visão geral": {
     eyebrow: "VISÃO GERAL",
     title: "Estado da máquina.",
@@ -443,6 +446,15 @@ const copy: Record<string, { eyebrow: string; title: string; intro: string }> = 
     intro: "Identidade, autoria e canais oficiais deste aplicativo local para Windows.",
   },
 };
+
+/** Ajusta as introduções que citam o SO; no Windows devolve o texto original. */
+function moduleCopyFor(area: string, pc: PlatformCopy): ModuleCopy {
+  const base = copy[area] || copy["Visão geral"];
+  if (area === "Inicialização e segurança") return { ...base, intro: pc.startupIntro };
+  if (area === "Serviços e atualizações") return { ...base, intro: pc.servicesIntro };
+  if (area === "Informações") return { ...base, intro: pc.aboutIntro };
+  return base;
+}
 
 export const metric = (v: number | undefined | null, suffix = ""): string => {
   if (v === undefined || v === null || typeof v !== "number" || Number.isNaN(v)) {
@@ -787,6 +799,7 @@ export function ScanFoldersBar({
   onRemoveFolder: (path: string) => void;
 }) {
   const [showConfig, setShowConfig] = useState(true);
+  const pc = usePlatformCopy();
 
   return (
     <section className="panel scan-folders-panel" aria-labelledby="scan-folders-title">
@@ -808,7 +821,7 @@ export function ScanFoldersBar({
       {showConfig && (
         <div className="scan-folders-body">
           <div className="scan-folders-list">
-            <div className="scan-folder-chip default-chip" title="Pastas padrão do perfil Windows">
+            <div className="scan-folder-chip default-chip" title={pc.defaultFoldersTitle}>
               <FileIcon folder />
               <span className="folder-name">Padrão do Usuário (Downloads, Documentos, Desktop, Imagens, Vídeos, Músicas)</span>
               <span className="folder-badge">PADRÃO</span>
@@ -843,7 +856,7 @@ export function ScanFoldersBar({
             <input
               type="text"
               aria-label="Caminho da nova pasta para vasculhar"
-              placeholder="Ex: D:\Images\Screenshots ou D:\Projetos"
+              placeholder={pc.folderPlaceholder}
               value={newFolderPath}
               onChange={e => onNewFolderPathChange(e.target.value)}
               className="add-folder-input font-mono"
@@ -1164,6 +1177,7 @@ export function TrayFlyout({
   isForeground?: boolean | null;
 }) {
   const [theme, toggleTheme] = useNeumorphicTheme();
+  const pc = usePlatformCopy();
   const [overview, setOverview] = useState<SystemOverview>();
   const [processToClose, setProcessToClose] = useState<TopProcess | null>(null);
   const [terminatingId, setTerminatingId] = useState<number | null>(null);
@@ -1312,7 +1326,7 @@ export function TrayFlyout({
           : {
               input: [],
               output: [],
-              unavailableReason: "O Windows não retornou a lista de dispositivos de áudio.",
+              unavailableReason: `${currentPlatformCopy().osSubject} não retornou a lista de dispositivos de áudio.`,
             });
       })
       .catch(error => {
@@ -1339,10 +1353,10 @@ export function TrayFlyout({
       if (result && Array.isArray(result.input) && Array.isArray(result.output)) {
         setAudioDevices(result);
       } else {
-        setAudioError("O Windows não confirmou a alteração do dispositivo.");
+        setAudioError(`${currentPlatformCopy().osSubject} não confirmou a alteração do dispositivo.`);
       }
     } catch (error) {
-      setAudioError(typeof error === "string" ? error : "O Windows não permitiu alterar o dispositivo padrão.");
+      setAudioError(typeof error === "string" ? error : `${currentPlatformCopy().osSubject} não permitiu alterar o dispositivo padrão.`);
     } finally {
       setAudioBusy(null);
     }
@@ -1366,7 +1380,7 @@ export function TrayFlyout({
         setMixer(result);
         if (!silent) setMixerError("");
       } else if (!silent) {
-        setMixerError("O Windows não retornou as sessões de áudio.");
+        setMixerError(`${currentPlatformCopy().osSubject} não retornou as sessões de áudio.`);
       }
     } catch (error) {
       if (!silent) {
@@ -1546,7 +1560,7 @@ export function TrayFlyout({
           setMixerError("");
         }
       }).catch(error => {
-        setMixerError(typeof error === "string" ? error : "O Windows não permitiu ajustar o volume.");
+        setMixerError(typeof error === "string" ? error : `${currentPlatformCopy().osSubject} não permitiu ajustar o volume.`);
         void loadMixer(mixerOutputId, true);
       }).finally(() => setMixerBusy(null));
     });
@@ -1569,7 +1583,7 @@ export function TrayFlyout({
         setMixerError("");
       }
     }).catch(error => {
-      setMixerError(typeof error === "string" ? error : "O Windows não permitiu silenciar o app.");
+      setMixerError(typeof error === "string" ? error : `${currentPlatformCopy().osSubject} não permitiu silenciar o app.`);
       void loadMixer(mixerOutputId, true);
     }).finally(() => setMixerBusy(null));
   };
@@ -1590,7 +1604,7 @@ export function TrayFlyout({
           setMixerError("");
         }
       }).catch(error => {
-        setMixerError(typeof error === "string" ? error : "O Windows não permitiu ajustar o volume geral.");
+        setMixerError(typeof error === "string" ? error : `${currentPlatformCopy().osSubject} não permitiu ajustar o volume geral.`);
         void loadMixer(mixerOutputId, true);
       }).finally(() => setMixerBusy(null));
     });
@@ -1609,7 +1623,7 @@ export function TrayFlyout({
         setMixerError("");
       }
     }).catch(error => {
-      setMixerError(typeof error === "string" ? error : "O Windows não permitiu ajustar o volume geral.");
+      setMixerError(typeof error === "string" ? error : `${currentPlatformCopy().osSubject} não permitiu ajustar o volume geral.`);
       void loadMixer(mixerOutputId, true);
     }).finally(() => setMixerBusy(null));
   };
@@ -1768,7 +1782,7 @@ export function TrayFlyout({
       setProcessToClose(null);
       void loadData();
     } catch (error) {
-      setProcessError(typeof error === "string" ? error : "O Windows não permitiu fechar este aplicativo.");
+      setProcessError(typeof error === "string" ? error : `${currentPlatformCopy().osSubject} não permitiu fechar este aplicativo.`);
     } finally {
       setTerminatingId(null);
     }
@@ -1868,11 +1882,11 @@ export function TrayFlyout({
           <div
             className={`flyout-metric-card disk-health-card disk-health-${diskHealth} is-clickable`}
             style={showFlyoutGpuCard ? undefined : { gridColumn: "1 / -1" }}
-            {...metricCardLink("Armazenamento", "Abrir Armazenamento — Disco C:")}
+            {...metricCardLink("Armazenamento", `Abrir Armazenamento — ${pc.systemDisk}`)}
           >
             <div className="flyout-metric-head">
               <div className="disk-metric-label">
-                <span>DISCO C:</span>
+                <span>{pc.systemDiskUpper}</span>
                 {overview && <DiskHealthBadge health={diskHealth} />}
               </div>
               <strong>
@@ -1925,7 +1939,7 @@ export function TrayFlyout({
 
       <section className="flyout-audio" aria-labelledby="flyout-audio-title">
         <div className="flyout-section-title">
-          <span id="flyout-audio-title">ÁUDIO DO WINDOWS</span>
+          <span id="flyout-audio-title">{pc.flyoutAudio}</span>
           <small>PADRÕES</small>
         </div>
         {audioDevices?.unavailableReason ? (
@@ -2375,6 +2389,7 @@ export function TrayFlyout({
 
 function App() {
   const [theme, toggleTheme] = useNeumorphicTheme();
+  const pc = usePlatformCopy();
   const isWindowForeground = useWindowForeground();
   const [windowLabel, setWindowLabel] = useState<string | null>(null);
   const [initialLoadAllowed, setInitialLoadAllowed] = useState(false);
@@ -3058,7 +3073,7 @@ function App() {
       setStartupEnabled(result.enabled);
     } catch {
       setStartupEnabled(!enabled);
-      setError("O Windows não permitiu alterar a inicialização do Pulse.");
+      setError(`${currentPlatformCopy().osSubject} não permitiu alterar a inicialização do Pulse.`);
     }
   };
 
@@ -3138,7 +3153,7 @@ function App() {
       await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
       showToast("success", "Relatório JSON copiado", 2200);
     } catch {
-      showToast("error", "O Windows não permitiu copiar o relatório", 3000);
+      showToast("error", `${currentPlatformCopy().osSubject} não permitiu copiar o relatório`, 3000);
     }
   };
 
@@ -3192,7 +3207,7 @@ function App() {
       setProcessToClose(null);
       window.setTimeout(() => void collect(), 500);
     } catch (error) {
-      showToast("error", typeof error === "string" ? error : "O Windows não permitiu fechar este aplicativo.", 4000);
+      showToast("error", typeof error === "string" ? error : `${currentPlatformCopy().osSubject} não permitiu fechar este aplicativo.`, 4000);
     } finally {
       setTerminatingProcessId(null);
     }
@@ -3258,7 +3273,7 @@ function App() {
     );
   }
 
-  const module = copy[activeArea] || copy["Visão geral"];
+  const module = moduleCopyFor(activeArea, pc);
   const rawVramBytes = performance?.vramBytes?.value;
   const vramBytes =
     typeof rawVramBytes === "number" && Number.isFinite(rawVramBytes)
@@ -3315,7 +3330,7 @@ function App() {
             <PulseMark />
             <div>
               <h1>Pulse</h1>
-              <p>Windows observability</p>
+              <p>{pc.brandSubtitle}</p>
             </div>
           </div>
           <nav aria-label="Navegação principal">
@@ -3371,9 +3386,9 @@ function App() {
             </div>
             <PrivilegeIndicator />
             <label className="header-toggle">
-              <span>INICIAR COM WINDOWS</span>
+              <span>{pc.startWithOs}</span>
               <input
-                aria-label="Iniciar com o Windows"
+                aria-label={pc.startWithOsAria}
                 type="checkbox"
                 checked={startupEnabled}
                 onChange={e => void togglePulse(e.target.checked)}
@@ -3486,7 +3501,7 @@ function App() {
                     onClick={() => setActiveArea("Armazenamento")}
                   >
                     <div className="metric-card-top">
-                      <p>Disco C:</p>
+                      <p>{pc.systemDisk}</p>
                       <DiskHealthBadge health={diskHealth} />
                     </div>
                     <strong>{metric(overview?.diskUsedGb, " GB")}</strong>
@@ -3522,7 +3537,7 @@ function App() {
                         )}
                       </div>
                     </div>
-                    <small>Itens detectados no Windows</small>
+                    <small>{pc.startupDetected}</small>
                   </button>
                 </div>
 
@@ -3981,8 +3996,12 @@ function App() {
                     </dl>
                   </div>
                   <p className="dt-note">
-                    Registro HKCU/HKLM, pasta Inicializar e pacotes do Windows. Ativar e desativar usa o
-                    StartupApproved, o mesmo do Gerenciador de Tarefas; impacto medido pelo log de desempenho de boot.
+                    {pc.startupSources || (
+                      <>
+                        Registro HKCU/HKLM, pasta Inicializar e pacotes do Windows. Ativar e desativar usa o
+                        StartupApproved, o mesmo do Gerenciador de Tarefas; impacto medido pelo log de desempenho de boot.
+                      </>
+                    )}
                   </p>
 
                   {startupStats.slowest > 0 && (
@@ -4029,7 +4048,7 @@ function App() {
                       </div>
                     ) : !startupItemsLoaded ? (
                       <div className="dt-empty" role="status">
-                        <p>Lendo os itens de inicialização do Windows…</p>
+                        <p>{pc.startupReading}</p>
                       </div>
                     ) : filteredStartupItems.length === 0 ? (
                       <div className="dt-empty" role="status">
@@ -4291,13 +4310,13 @@ function App() {
                   <div className="info-identity">
                     <PulseMark />
                     <div>
-                      <p className="eyebrow">PULSE / WINDOWS OBSERVABILITY</p>
+                      <p className="eyebrow">{pc.aboutEyebrow}</p>
                       <h3 id="about-pulse-title">Clareza local sobre o seu sistema.</h3>
                     </div>
                   </div>
                   <p className="info-summary">
-                    Uma central Windows-first feita para observar, explicar e organizar o sistema
-                    sem enviar telemetria para a nuvem.
+                    {pc.aboutTagline}
+                    {" "}sem enviar telemetria para a nuvem.
                   </p>
                   <dl className="info-details">
                     <div>
@@ -4413,7 +4432,7 @@ function App() {
               <p className="modal-desc">
                 {isWslHostProcess(processToClose)
                   ? "O Pulse desligará o WSL, encerrando todas as distribuições e processos Linux em execução. Trabalho não salvo pode ser perdido."
-                  : `O Windows encerrará todos os ${processToClose.processCount ?? 1} processos deste grupo${(processToClose.processCount ?? 1) === 1 ? ` (PID ${processToClose.id})` : " ao mesmo tempo"}. Se necessário, o Pulse usará o encerramento forçado; trabalho não salvo pode ser perdido.`}
+                  : `${pc.osSubject} encerrará todos os ${processToClose.processCount ?? 1} processos deste grupo${(processToClose.processCount ?? 1) === 1 ? ` (PID ${processToClose.id})` : " ao mesmo tempo"}. Se necessário, o Pulse usará o encerramento forçado; trabalho não salvo pode ser perdido.`}
               </p>
               <div className="modal-actions">
                 <button className="button-danger" onClick={() => void handleTerminateProcess()} disabled={terminatingProcessId != null} autoFocus>

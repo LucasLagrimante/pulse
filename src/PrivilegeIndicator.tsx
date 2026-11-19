@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useId, useRef, useState } from "react";
+import { usePlatformCopy } from "./platform";
 
 export type PrivilegeLimitation = { area: string; feature: string; detail: string };
 
@@ -55,6 +56,7 @@ export function useIsStandardUser(): boolean {
 
 export function PrivilegeIndicator() {
   const state = usePrivilegeStatus();
+  const pc = usePlatformCopy();
   const [open, setOpen] = useState(false);
   const [relaunching, setRelaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +98,7 @@ export function PrivilegeIndicator() {
         ? "INDISPONÍVEL"
         : state.status.elevated
           ? "ADMINISTRADOR"
-          : "PADRÃO";
+          : pc.standardPermission;
   const tone = state.kind === "ready" ? (state.status.elevated ? "state-good" : "state-pending") : "";
 
   return (
@@ -121,10 +123,27 @@ export function PrivilegeIndicator() {
           {state.kind === "ready" && state.status.elevated && (
             <>
               <strong>Pulse em modo administrador</strong>
-              <p>Todas as funcionalidades estão liberadas. Ações em pastas do sistema e serviços do Windows passam a valer de fato, então revise antes de confirmar.</p>
+              <p>{pc.privilegeElevatedDetail}</p>
             </>
           )}
-          {state.kind === "ready" && !state.status.elevated && (
+          {state.kind === "ready" && !state.status.elevated && !pc.canRelaunchElevated && (
+            <>
+              <strong>Pulse em modo usuário</strong>
+              <p>O monitoramento e a maior parte das ações funcionam normalmente. Quando uma ação exigir privilégio, o sistema pede a senha de administrador na hora; o Pulse não precisa ser reiniciado.</p>
+              {state.status.limitations.length > 0 && (
+                <ul className="privilege-list">
+                  {state.status.limitations.map(item => (
+                    <li key={`${item.area}-${item.feature}`}>
+                      <span className="privilege-area">{item.area.toUpperCase()}</span>
+                      <b>{item.feature}</b>
+                      <small>{item.detail}</small>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+          {state.kind === "ready" && !state.status.elevated && pc.canRelaunchElevated && (
             <>
               <strong>Pulse em modo padrão</strong>
               <p>O monitoramento e a maior parte das ações funcionam normalmente. Estas dependem de administrador:</p>

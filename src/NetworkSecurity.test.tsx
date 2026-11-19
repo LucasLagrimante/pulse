@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NetworkSecurity, type NetworkSnapshot, type SecurityPosture } from "./NetworkSecurity";
+import { setPlatformForTests } from "./platform";
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
@@ -191,6 +192,10 @@ describe("NetworkSecurity", () => {
     expect(screen.getByText("Atenção")).toBeInTheDocument();
   });
 
+  afterEach(() => {
+    setPlatformForTests(null);
+  });
+
   it("filtra processos em escuta", async () => {
     render(<NetworkSecurity />);
     await screen.findByText("agente.exe");
@@ -201,5 +206,68 @@ describe("NetworkSecurity", () => {
       expect(screen.queryByText("agente.exe")).not.toBeInTheDocument();
     });
     expect(screen.getByText("Processo protegido (PID 5151)")).toBeInTheDocument();
+  });
+
+  it("no Linux usa textos nativos sem citar Windows nem Defender", async () => {
+    setPlatformForTests("linux");
+    invoke.mockImplementation((command: string) => {
+      if (command === "get_network_connections") {
+        return Promise.resolve(
+          snapshot({
+            processes: [
+              {
+                pid: 0,
+                executablePath: null,
+                processName: "Outro usuário (sem permissão para identificar)",
+                establishedCount: 0,
+                udpSocketCount: 1,
+                listeningCount: 1,
+                listensOnAllInterfaces: true,
+                destinations: [],
+                externalTotal: 0,
+              },
+            ],
+            establishedTotal: 0,
+            establishedExternal: 0,
+          }),
+        );
+      }
+      if (command === "get_security_posture") {
+        return Promise.resolve(
+          posture({
+            signals: [
+              {
+                id: "firewall",
+                title: "Firewall do sistema",
+                severity: "ok",
+                summary: "Firewall ativo: ufw",
+                rationale: "Um firewall ativo bloqueia conexões de entrada não solicitadas.",
+                evidence: ["ufw: ativo (ENABLED=yes em /etc/ufw/ufw.conf e serviço active)"],
+              },
+            ],
+            attentionCount: 0,
+            unavailableCount: 0,
+            elevated: false,
+          }),
+        );
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(<NetworkSecurity />);
+
+    expect(await screen.findByText("Firewall ativo: ufw")).toBeInTheDocument();
+    expect(screen.getByText(/\/proc, \/sys e serviços locais/)).toBeInTheDocument();
+    expect(screen.queryByText(/Microsoft Defender/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/APIs do próprio Windows/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Todos" }));
+    const linha = await screen.findByRole("button", { name: /^Outro usuário/ });
+    fireEvent.click(linha);
+
+    expect(
+      await screen.findByText(/processo de outro usuário ou protegido pelo kernel/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/protegido pelo Windows/)).not.toBeInTheDocument();
   });
 });
