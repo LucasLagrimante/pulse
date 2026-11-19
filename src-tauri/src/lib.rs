@@ -8,6 +8,7 @@ pub mod dev_ports;
 pub mod disk_analyzer;
 pub mod disk_cleanup;
 pub mod domain;
+pub mod network_security;
 pub mod performance;
 pub mod performance_devices;
 pub mod privileges;
@@ -156,6 +157,8 @@ pub fn run() {
             disk_cleanup::set_auto_cleanup,
             services::list_windows_services,
             services::set_windows_service_state,
+            network_security::get_network_connections,
+            network_security::get_security_posture,
             app_updates::list_pending_updates,
             app_updates::upgrade_winget_package,
             app_updates::upgrade_all_winget_packages,
