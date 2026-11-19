@@ -28,7 +28,15 @@ pub struct PrivilegeStatus {
     pub limitations: Vec<PrivilegeLimitation>,
 }
 
+/// Fora do Windows não há "modo administrador" do processo: a senha é pedida
+/// por ação (pkexec/polkit), então nada fica limitado por rodar sem root.
+#[cfg(not(windows))]
+fn admin_only_features() -> Vec<PrivilegeLimitation> {
+    Vec::new()
+}
+
 /// Funcionalidades que dependem de administrador, verificadas no código.
+#[cfg(windows)]
 fn admin_only_features() -> Vec<PrivilegeLimitation> {
     vec![
         PrivilegeLimitation {
@@ -96,6 +104,16 @@ pub async fn relaunch_as_admin(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Linux/macOS: interface gráfica rodando como root é antipadrão (quebra o
+/// acesso ao display, ao keyring e grava arquivos de root no perfil do
+/// usuário). Ações privilegiadas pedem senha no momento da ação (polkit no
+/// Linux, autorização do sistema no macOS), então não há reinício elevado.
+#[cfg(not(windows))]
+fn launch_elevated() -> Result<(), String> {
+    Err("Neste sistema o Pulse não reinicia como administrador: cada ação que exige privilégio pede a senha no momento em que é executada.".into())
+}
+
+#[cfg(windows)]
 fn launch_elevated() -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
@@ -142,6 +160,7 @@ mod tests {
     use super::build_status;
 
     #[test]
+    #[cfg(windows)]
     fn elevated_has_no_limitations_and_standard_lists_each_area() {
         assert!(build_status(true).limitations.is_empty());
         let standard = build_status(false);
@@ -152,5 +171,13 @@ mod tests {
                 "{area} deveria aparecer"
             );
         }
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn non_windows_has_no_process_level_limitations() {
+        let status = build_status(false);
+        assert!(!status.elevated);
+        assert!(status.limitations.is_empty());
     }
 }

@@ -132,3 +132,106 @@ jobs:
             gh release create $tag $file --title "Pulse ${{ steps.meta.outputs.version }}" --notes $notes
           }
           if ($LASTEXITCODE -ne 0) { throw "Falha ao publicar na Release $tag" }
+
+  # Linux e macOS: rodam depois do job Windows (que cria a Release) e só anexam
+  # os próprios artefatos, sem tocar no instalador NSIS nem nas notas.
+  # Linux: .deb + .AppImage (x86_64), sem assinatura GPG.
+  build-linux:
+    needs: build-sign-publish
+    runs-on: ubuntu-22.04
+    env:
+      # O linuxdeploy é um AppImage; no runner sem FUSE ele precisa se extrair.
+      APPIMAGE_EXTRACT_AND_RUN: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependências de sistema do Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            libssl-dev libxdo-dev patchelf build-essential file xdg-utils
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Build deb + AppImage
+        run: npx tauri build --bundles deb,appimage -- --locked
+
+      - name: Coletar artefatos e SHA-256
+        id: files
+        run: |
+          mkdir -p out
+          cp src-tauri/target/release/bundle/deb/*.deb out/
+          cp src-tauri/target/release/bundle/appimage/*.AppImage out/
+          (cd out && sha256sum *.deb *.AppImage > SHA256SUMS-linux.txt)
+          { echo '```'; cat out/SHA256SUMS-linux.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pulse-linux
+          path: out/*
+          if-no-files-found: error
+
+      - name: Anexar à GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" out/* --clobber
+
+  # macOS (experimental): .dmg para Apple Silicon (runner macos-latest = arm64).
+  # SEM assinatura Developer ID e SEM notarização: o Gatekeeper bloqueia na
+  # primeira abertura (abrir com botão direito → Abrir, ou
+  # `xattr -dr com.apple.quarantine /Applications/Pulse.app`).
+  build-macos:
+    needs: build-sign-publish
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Build app + dmg
+        run: npx tauri build --bundles app,dmg -- --locked
+
+      - name: Coletar artefatos e SHA-256
+        run: |
+          mkdir -p out
+          cp src-tauri/target/release/bundle/dmg/*.dmg out/
+          (cd out && shasum -a 256 *.dmg > SHA256SUMS-macos.txt)
+          { echo '```'; cat out/SHA256SUMS-macos.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pulse-macos
+          path: out/*
+          if-no-files-found: error
+
+      - name: Anexar à GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" out/* --clobber

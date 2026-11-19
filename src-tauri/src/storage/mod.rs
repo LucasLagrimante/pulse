@@ -1,3 +1,5 @@
+pub mod paths;
+
 use rusqlite::{Connection, Result};
 
 const INITIAL_SCHEMA_VERSION: i64 = 1;
