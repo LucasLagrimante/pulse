@@ -1,6 +1,6 @@
 # Pulse — seu Windows, em perspectiva
 
-Central nativa de observabilidade, diagnóstico e controle local para Windows 11. O Pulse reúne em um único aplicativo o que antes exigia sete utilitários separados: monitor de recursos, gerenciador de tarefas, analisador de disco (TreeSize), inventário de inicialização, desinstalador com varredura de resíduos, console de serviços/atualizações e mixer de volume por aplicativo, além de monitorar localmente suas assinaturas de IA.
+Central nativa de observabilidade, diagnóstico e controle local para Windows 11. O Pulse reúne em um único aplicativo o que antes exigia vários utilitários separados: monitor de recursos, gerenciador de tarefas, analisador de disco (TreeSize), inventário de inicialização, inspetor de conexões e portas em escuta, desinstalador com varredura de resíduos, console de serviços/atualizações e mixer de volume por aplicativo, além de monitorar localmente suas assinaturas de IA.
 
 - **Gratuito**, código aberto (MIT) e sem cadastro
 - **Local por padrão**: sem conta, sem telemetria e sem servidor do Pulse
@@ -40,7 +40,10 @@ Inspeção nativa de serviços do Windows via Service Control Manager / WMI (cla
 ### 9. Cotas de assinaturas de IA (com histórico SQLite de 30 dias)
 Acompanhe localmente limites de janela (5h, diária, semanal), saldo de créditos e histórico de 30 dias em SQLite (com pico e média diária) para **Claude Code**, **OpenAI Codex**, **Google Antigravity** (cotas separadas por modelo — Gemini, Claude + GPT e Gemini 4 Argon — numa matriz compacta modelo × janela), **OpenRouter** e **OpenCode Go**, protegendo chaves opcionais no Windows Credential Manager (`keyring`).
 
-### 10. Áudio, Bandeja do Sistema (Tray Flyout) e Trilha de Auditoria
+### 10. Rede e segurança
+O que sai da máquina e por qual processo, lido direto da tabela TCP/UDP do kernel (`GetExtendedTcpTable`/`GetExtendedUdpTable`, coleta medida em ~1,1 ms): conexões estabelecidas, sockets UDP e portas em escuta por processo, conexões de loopback separadas das externas, destinos agrupados sem repetição (teto de 24 por processo) e destaque para portas que escutam em `0.0.0.0`/`::` e por isso são alcançáveis pela rede local. Nenhum processo recebe nome inventado: quando o executável é protegido (PPL ou elevado sem o Pulse elevado) o caminho aparece como indisponível, e uma tabela que não pôde ser lida aparece com o motivo, nunca como "nenhuma conexão". Ao lado, sinais de postura verificáveis com cache de 2 minutos: filtros de teclado e mouse (registro), Proxy do sistema, raízes de confiança adicionadas ao store de certificados, estado do Microsoft Defender (WMI) e visibilidade de auditoria do Windows. Cada sinal mostra a evidência e o que ela significa; o Pulse não rotula programa como malware.
+
+### 11. Áudio, Bandeja do Sistema (Tray Flyout) e Trilha de Auditoria
 Flyout compacto na bandeja do sistema com telemetria instantânea, barras duplas de cotas de IA (clique abre direto a aba de Cotas; o hover mostra quanto falta para cada janela renovar, também no tooltip do ícone da bandeja), **Mixer de Volume Core Audio por aplicativo** (`ISimpleAudioVolume`, mute individual e troca de dispositivo de entrada/saída), **Portas & Projetos Dev ativos** (detecta servidores TCP em `LISTEN` no Windows nativo via `GetExtendedTcpTable` e no WSL2 sem acordar a VM parada, identifica projeto/runtime e permite abrir `http://localhost:porta`, copiar URL ou encerrar o processo tanto no painel rápido quanto no submenu do botão direito do tray) e módulo dinâmico de Debug/Auditoria local exportável (falhas com etapa, erro técnico e trecho do dado; com o modo Debug ligado, eventos gravados em `%LOCALAPPDATA%\Pulse\logs` por 7 dias, sem sair da máquina).
 
 ## Como funciona

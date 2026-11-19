@@ -11,6 +11,7 @@ Central nativa para Windows 11 que reúne observabilidade, diagnóstico e contro
 - Telemetria e gráficos de desempenho com tratamento explícito de sensores indisponíveis.
 - Análise de armazenamento em árvore e arquivos recentes.
 - Inventário de inicialização e evidências de impacto no boot.
+- Rede e segurança: conexões e portas em escuta por processo e sinais de postura verificáveis.
 - Diagnóstico local e painel compacto na bandeja do sistema.
 - Dados locais por padrão e ações operacionais não destrutivas.
 
