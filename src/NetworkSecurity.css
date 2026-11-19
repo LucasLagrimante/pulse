@@ -1,0 +1,518 @@
+/* Rede e Segurança — prefixo `ns-`.
+   Usa os tokens do Design System (identity.css) para responder a
+   [data-theme="light"] e [data-theme="dark"] sem cor hardcoded. */
+
+.ns-hub {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* ---------------- Banners ---------------- */
+
+.ns-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: .74rem;
+  line-height: 1.45;
+  flex-shrink: 0;
+}
+
+.ns-banner-error {
+  border: 1px solid var(--neu-danger, #b4453c);
+  background: var(--neu-danger-soft, rgba(180, 69, 60, .12));
+  color: var(--neu-text-title);
+}
+
+.ns-banner-warn {
+  border: 1px solid var(--neu-warning, #b8862b);
+  background: var(--neu-warning-soft, rgba(184, 134, 43, .12));
+  color: var(--neu-text-title);
+}
+
+/* ---------------- Resumo ---------------- */
+
+.ns-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ns-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--neu-divider);
+  border-radius: 8px;
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-raised-xs);
+  min-width: 0;
+}
+
+.ns-metric-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .6rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--neu-text-secondary);
+}
+
+.ns-metric-value {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 1.35rem;
+  line-height: 1.1;
+  color: var(--neu-text-title);
+  font-variant-numeric: tabular-nums;
+}
+
+.ns-metric-hint {
+  font-size: .62rem;
+  color: var(--neu-text-secondary);
+}
+
+/* ---------------- Cabeçalhos de seção ---------------- */
+
+.ns-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.ns-section-head h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .76rem;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--neu-text-title);
+}
+
+.ns-head-actions,
+.ns-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ns-hint-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .58rem;
+  padding: 3px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--neu-divider);
+  color: var(--neu-text-secondary);
+  background: var(--neu-surface);
+}
+
+.ns-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--neu-divider);
+  background: var(--neu-surface);
+  color: var(--neu-text-secondary);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.ns-icon-btn:hover:not(:disabled) {
+  border-color: var(--neu-accent);
+  color: var(--neu-text-title);
+  background: var(--neu-surface-hover);
+}
+
+.ns-icon-btn:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.ns-icon-btn:focus-visible {
+  outline: 2px solid var(--neu-accent);
+  outline-offset: 1px;
+}
+
+.ns-spin {
+  animation: ns-spin 900ms linear infinite;
+}
+
+@keyframes ns-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ns-stamp {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .58rem;
+  color: var(--neu-text-secondary);
+}
+
+/* ---------------- Chips ---------------- */
+
+.ns-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .62rem;
+  padding: 4px 9px;
+  border: 1px solid var(--neu-divider);
+  border-radius: 6px;
+  background: var(--neu-surface);
+  color: var(--neu-text-secondary);
+  box-shadow: var(--neu-shadow-raised-xs);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.ns-chip:hover {
+  border-color: var(--neu-accent);
+  color: var(--neu-text-title);
+  background: var(--neu-surface-hover);
+}
+
+.ns-chip.active {
+  border-color: var(--neu-accent);
+  color: var(--neu-accent-text, var(--neu-text-title));
+  background: var(--neu-accent-soft, var(--neu-surface-hover));
+}
+
+.ns-chip:focus-visible {
+  outline: 2px solid var(--neu-accent);
+  outline-offset: 1px;
+}
+
+/* ---------------- Sinais de postura ---------------- */
+
+.ns-signals {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ns-signal {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid var(--neu-divider);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-raised-xs);
+  min-width: 0;
+}
+
+.ns-signal-ok {
+  border-left-color: var(--neu-success, #3f7d52);
+}
+
+.ns-signal-attention {
+  border-left-color: var(--neu-warning, #b8862b);
+}
+
+.ns-signal-unavailable {
+  border-left-color: var(--neu-divider);
+}
+
+.ns-signal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ns-signal-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--neu-text-title);
+}
+
+.ns-severity {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .55rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.ns-severity-ok {
+  color: var(--neu-success, #3f7d52);
+  background: var(--neu-success-soft, rgba(63, 125, 82, .12));
+}
+
+.ns-severity-attention {
+  color: var(--neu-warning, #b8862b);
+  background: var(--neu-warning-soft, rgba(184, 134, 43, .14));
+}
+
+.ns-severity-unavailable {
+  color: var(--neu-text-secondary);
+  background: var(--neu-surface-hover);
+}
+
+.ns-signal-summary {
+  font-size: .72rem;
+  line-height: 1.4;
+  color: var(--neu-text-title);
+}
+
+.ns-signal-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .62rem;
+  line-height: 1.4;
+  color: var(--neu-text-secondary);
+  padding-left: 10px;
+}
+
+.ns-signal-evidence li {
+  position: relative;
+  overflow-wrap: anywhere;
+}
+
+.ns-signal-evidence li::before {
+  content: "·";
+  position: absolute;
+  left: -9px;
+  color: var(--neu-accent);
+}
+
+.ns-signal-rationale {
+  font-size: .62rem;
+  line-height: 1.4;
+  color: var(--neu-text-secondary);
+  opacity: .85;
+}
+
+/* ---------------- Tabela ---------------- */
+
+.ns-table {
+  display: flex;
+  flex-direction: column;
+  /* NAO usar flex:1 aqui: este componente vive dentro de um container com
+     overflow-y:auto. Um filho flex com flex-basis 0 em container rolavel
+     colapsa para altura 0 e a tabela some. Deixe crescer com o conteudo. */
+  flex: 0 0 auto;
+  border: 1px solid var(--neu-divider);
+  border-radius: 8px;
+  background: var(--neu-surface);
+  overflow: hidden;
+}
+
+.ns-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) 56px 64px 52px minmax(0, 2fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  border-bottom: 1px solid var(--neu-divider);
+  background: transparent;
+  text-align: left;
+  font-size: .7rem;
+  color: var(--neu-text-title);
+  cursor: pointer;
+  transition: background 110ms ease;
+}
+
+.ns-row:hover {
+  background: var(--neu-surface-hover);
+}
+
+.ns-row:focus-visible {
+  outline: 2px solid var(--neu-accent);
+  outline-offset: -2px;
+}
+
+.ns-row.expanded {
+  background: var(--neu-surface-hover);
+}
+
+.ns-row-head {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .58rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--neu-text-secondary);
+  background: var(--neu-surface-hover);
+  cursor: default;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.ns-row-head:hover {
+  background: var(--neu-surface-hover);
+}
+
+.ns-row-group:last-child .ns-row {
+  border-bottom: none;
+}
+
+.ns-proc {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ns-proc-name {
+  font-size: .72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ns-proc-pid {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .56rem;
+  color: var(--neu-text-secondary);
+}
+
+.ns-num {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .7rem;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ns-public-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--neu-warning, #b8862b);
+  flex-shrink: 0;
+}
+
+.ns-dest-preview {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .62rem;
+  color: var(--neu-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------- Detalhe ---------------- */
+
+.ns-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 11px 12px;
+  border-bottom: 1px solid var(--neu-divider);
+  background: var(--neu-bg, #141619);
+}
+
+.ns-row-group:last-child .ns-detail {
+  border-bottom: none;
+}
+
+.ns-detail-path {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .62rem;
+  color: var(--neu-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.ns-detail-muted {
+  font-size: .62rem;
+  color: var(--neu-text-secondary);
+  opacity: .8;
+}
+
+.ns-endpoints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.ns-endpoints li {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: .62rem;
+  padding: 2px 7px;
+  border: 1px solid var(--neu-divider);
+  border-radius: 5px;
+  background: var(--neu-surface);
+}
+
+.ns-endpoint-addr {
+  color: var(--neu-text-title);
+}
+
+.ns-endpoint-port {
+  color: var(--neu-text-secondary);
+}
+
+/* ---------------- Utilitários ---------------- */
+
+.ns-empty {
+  padding: 16px 12px;
+  font-size: .72rem;
+  color: var(--neu-text-secondary);
+  text-align: center;
+}
+
+.ns-disclaimer {
+  flex-shrink: 0;
+  padding: 6px 2px 12px;
+  font-size: .6rem;
+  line-height: 1.5;
+  color: var(--neu-text-secondary);
+  opacity: .8;
+}
+
+/* ---------------- Responsivo (janela estreita) ---------------- */
+
+@media (max-width: 900px) {
+  .ns-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ns-row {
+    grid-template-columns: minmax(0, 1.6fr) 44px 56px minmax(0, 1fr);
+  }
+
+  .ns-row > span:nth-child(4) {
+    display: none;
+  }
+
+  .ns-row-head > span:nth-child(4) {
+    display: none;
+  }
+}

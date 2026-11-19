@@ -23,6 +23,7 @@ const DiskCleanup = lazy(() => import("./DiskCleanup").then(module => ({ default
 const SubscriptionUsage = lazy(() => import("./SubscriptionUsage").then(module => ({ default: module.SubscriptionUsage })));
 const ServicesHub = lazy(() => import("./ServicesHub").then(module => ({ default: module.ServicesHub })));
 const UninstallHub = lazy(() => import("./UninstallHub").then(module => ({ default: module.UninstallHub })));
+const NetworkSecurity = lazy(() => import("./NetworkSecurity").then(module => ({ default: module.NetworkSecurity })));
 import { ensureDiskAnalyzerLoaded } from "./diskScanStore";
 import { formatCountdown, formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, type ProviderUsage } from "./subscriptionHelpers";
 import { ProviderIcon } from "./ProviderIcon";
@@ -43,6 +44,7 @@ export const ALL_NAVIGATION_ITEMS = [
   "Desinstalar programas",
   "Inicialização e segurança",
   "Serviços e atualizações",
+  "Rede e segurança",
   "Cotas de IA",
   "Debug",
 ] as const;
@@ -419,6 +421,11 @@ const copy: Record<string, { eyebrow: string; title: string; intro: string }> = 
     eyebrow: "SERVIÇOS E ATUALIZAÇÕES",
     title: "Serviços ativos e aplicativos desatualizados",
     intro: "Serviços do Windows lidos direto do gerenciador do sistema e atualizações pendentes pela fonte oficial do Windows.",
+  },
+  "Rede e segurança": {
+    eyebrow: "REDE E SEGURANÇA",
+    title: "O que sai desta máquina e como ela está postada",
+    intro: "Conexões por processo, portas em escuta e os sinais verificáveis de segurança — sem rotular programas como malware.",
   },
   "Cotas de IA": {
     eyebrow: "COTAS DE IA",
@@ -4113,6 +4120,12 @@ function App() {
                   </div>
                 </div>
               </section>
+            )}
+
+            {activeArea === "Rede e segurança" && (
+              <Suspense fallback={<PulseLoading compact />}>
+                <NetworkSecurity />
+              </Suspense>
             )}
 
             {activeArea === "Serviços e atualizações" && (

@@ -2539,6 +2539,7 @@ describe("Pulse application shell", () => {
       "Desinstalar programas",
       "Inicialização e segurança",
       "Serviços e atualizações",
+      "Rede e segurança",
       "Cotas de IA",
     ]);
     expect(within(nav).queryByRole("button", { name: /Debug/ })).not.toBeInTheDocument();
@@ -2559,6 +2560,7 @@ describe("Pulse application shell", () => {
         "Desinstalar programas",
         "Inicialização e segurança",
         "Serviços e atualizações",
+        "Rede e segurança",
         "Cotas de IA",
         "Debug",
       ]);
