@@ -16,6 +16,10 @@ export const VERSION_FILES = [
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function parseVersion(version) {
   const match = SEMVER.exec(String(version).trim());
   if (!match) throw new Error(`versão fora do padrão MAJOR.MINOR.PATCH: ${version}`);
@@ -148,7 +152,7 @@ export function bumpPackageLock(text, from, to) {
     throw new Error(`package-lock.json: versões ${parsed.version}/${parsed.packages?.[""]?.version}, esperava ${from}`);
   }
   let count = 0;
-  const next = text.replace(new RegExp(`"version": "${from.replace(/\./g, "\\.")}"`, "g"), match => {
+  const next = text.replace(new RegExp(`"version": "${escapeRegExp(from)}"`, "g"), match => {
     count += 1;
     return count <= 2 ? `"version": "${to}"` : match;
   });
@@ -162,7 +166,7 @@ export function bumpPackageLock(text, from, to) {
 export function bumpCargoToml(text, from, to) {
   return replaceExactlyOnce(
     text,
-    new RegExp(`^(\\[package\\][\\s\\S]*?^version = )"${from.replace(/\./g, "\\.")}"`, "m"),
+    new RegExp(`^(\\[package\\][\\s\\S]*?^version = )"${escapeRegExp(from)}"`, "m"),
     `$1"${to}"`,
     "Cargo.toml",
   );
