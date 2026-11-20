@@ -83,8 +83,10 @@ describe("platform", () => {
         : Promise.resolve(undefined),
     );
     setPlatformForTests(null);
-    render(<PlatformProbe />);
-    await act(() => loadPlatformInfo());
+    await act(async () => {
+      render(<PlatformProbe />);
+      await loadPlatformInfo();
+    });
     expect(screen.getByTestId("probe").textContent).toBe("linux|Linux Mint 22.3|KDE|x11");
     await act(() => loadPlatformInfo());
     expect(vi.mocked(invoke).mock.calls.filter(call => call[0] === "get_platform_info")).toHaveLength(1);
