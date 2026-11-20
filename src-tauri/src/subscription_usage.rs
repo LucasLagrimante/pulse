@@ -1267,6 +1267,45 @@ fn http_client() -> Result<Client, String> {
     Ok(client)
 }
 
+const CLAUDE_OAUTH_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+
+fn parse_claude_oauth_windows(body: &Value, now_ms: i64) -> Vec<QuotaWindow> {
+    let mut windows = Vec::new();
+    for (id, label, key, minutes) in [
+        ("session", "Sessão", "five_hour", 300),
+        ("weekly", "Semanal", "seven_day", 10080),
+        ("sonnet", "Sonnet", "seven_day_sonnet", 10080),
+        ("opus", "Opus", "seven_day_opus", 10080),
+    ] {
+        if let Some(value) = body.get(key).and_then(Value::as_object) {
+            if let Some(used) = number(value.get("utilization")) {
+                let resets_at = parse_reset(value.get("resets_at"));
+                let expired = resets_at.is_some_and(|reset| reset * 1000 <= now_ms);
+                let (used, rem, desc) = if expired {
+                    (Some(0.0), Some(100.0), Some("Ciclo renovado".into()))
+                } else {
+                    (
+                        Some(used.clamp(0.0, 100.0)),
+                        Some((100.0 - used).clamp(0.0, 100.0)),
+                        None,
+                    )
+                };
+                windows.push(QuotaWindow {
+                    id: id.into(),
+                    label: label.into(),
+                    used_percent: used,
+                    remaining_percent: rem,
+                    window_minutes: Some(minutes),
+                    resets_at_unix_seconds: resets_at,
+                    reset_description: desc,
+                    unavailable_reason: None,
+                });
+            }
+        }
+    }
+    windows
+}
+
 fn query_claude() -> ProviderUsage {
     if let Some(usage) = query_claude_from_wsl_cli() {
         return usage;
@@ -1296,7 +1335,7 @@ fn query_claude() -> ProviderUsage {
         );
     };
     let response = client
-        .get("https://console.anthropic.com/api/oauth/usage")
+        .get(CLAUDE_OAUTH_USAGE_URL)
         .bearer_auth(&credentials.access_token)
         .header("anthropic-beta", "oauth-2025-04-20")
         .header("Accept", "application/json")
@@ -1329,38 +1368,7 @@ fn query_claude() -> ProviderUsage {
             "Resposta oficial inválida.",
         );
     };
-    let mut windows = Vec::new();
-    for (id, label, key, minutes) in [
-        ("session", "Sessão", "five_hour", 300),
-        ("weekly", "Semanal", "seven_day", 10080),
-        ("sonnet", "Sonnet", "seven_day_sonnet", 10080),
-    ] {
-        if let Some(value) = body.get(key).and_then(Value::as_object) {
-            if let Some(used) = number(value.get("utilization")) {
-                let resets_at = parse_reset(value.get("resets_at"));
-                let expired = resets_at.is_some_and(|reset| reset * 1000 <= now_unix_ms());
-                let (used, rem, desc) = if expired {
-                    (Some(0.0), Some(100.0), Some("Ciclo renovado".into()))
-                } else {
-                    (
-                        Some(used.clamp(0.0, 100.0)),
-                        Some((100.0 - used).clamp(0.0, 100.0)),
-                        None,
-                    )
-                };
-                windows.push(QuotaWindow {
-                    id: id.into(),
-                    label: label.into(),
-                    used_percent: used,
-                    remaining_percent: rem,
-                    window_minutes: Some(minutes),
-                    resets_at_unix_seconds: resets_at,
-                    reset_description: desc,
-                    unavailable_reason: None,
-                });
-            }
-        }
-    }
+    let windows = parse_claude_oauth_windows(&body, now_unix_ms());
     if windows.is_empty() {
         return unavailable_provider(
             "claude",
@@ -2579,9 +2587,10 @@ mod tests {
     use super::{
         codex_from_rate_limits, is_valid_opencode_go_key, mask_key, now_unix_ms,
         parse_antigravity_cli_usage, parse_antigravity_credential, parse_claude_cli_usage,
-        parse_claude_credential, parse_cli_reset_at, quota_from_used, strip_terminal,
+        parse_claude_credential, parse_claude_oauth_windows, parse_cli_reset_at, quota_from_used,
+        strip_terminal, CLAUDE_OAUTH_USAGE_URL,
     };
-    use chrono::TimeZone;
+    use chrono::{DateTime, TimeZone};
     use serde_json::json;
     #[test]
     fn maps_codex_root_and_model_specific_limits() {
@@ -2819,5 +2828,37 @@ mod tests {
         assert!(!is_valid_opencode_go_key("sk-short"));
         assert!(!is_valid_opencode_go_key("oc_sk with space 123456"));
         assert!(!is_valid_opencode_go_key("invalid-prefix-1234567890"));
+    }
+
+    #[test]
+    fn claude_oauth_usage_uses_api_host_and_parses_windows() {
+        assert_eq!(
+            CLAUDE_OAUTH_USAGE_URL,
+            "https://api.anthropic.com/api/oauth/usage"
+        );
+        let body = json!({
+            "five_hour": {
+                "utilization": 2,
+                "resets_at": "2026-11-20T05:10:00.323040+00:00"
+            },
+            "seven_day": {
+                "utilization": 48,
+                "resets_at": "2026-11-25T11:00:00.323060+00:00"
+            },
+            "seven_day_sonnet": null,
+            "seven_day_opus": null
+        });
+        let now_ms = DateTime::parse_from_rfc3339("2026-11-20T01:50:00+00:00")
+            .unwrap()
+            .timestamp_millis();
+        let windows = parse_claude_oauth_windows(&body, now_ms);
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows[0].id, "session");
+        assert_eq!(windows[0].used_percent, Some(2.0));
+        assert_eq!(windows[0].remaining_percent, Some(98.0));
+        assert!(windows[0].resets_at_unix_seconds.is_some());
+        assert_eq!(windows[1].id, "weekly");
+        assert_eq!(windows[1].used_percent, Some(48.0));
+        assert_eq!(windows[1].remaining_percent, Some(52.0));
     }
 }
