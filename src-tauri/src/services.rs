@@ -1328,11 +1328,11 @@ mod tests {
         ] {
             assert!(
                 is_system_account(Some(account)),
-                "{account} deveria ser conta do sistema"
+                "conta deveria ser conta do sistema"
             );
             assert!(
                 !is_user_service(Some(account)),
-                "{account} não é conta de usuário"
+                "conta não é conta de usuário"
             );
         }
         assert!(is_user_service(Some("DEV-PC\\dev")));
