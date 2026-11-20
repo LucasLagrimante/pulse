@@ -22,15 +22,61 @@ CMD_EXE="/mnt/c/Windows/System32/cmd.exe"
 MACHINE_TESTS=(services::tests::real_enumeration_reads_start_name_and_classifies)
 STEPS=()
 FILES=""
+NATIVE_UNIX=0
 while [ $# -gt 0 ]; do
   case "$1" in
     fmt|clippy|test) STEPS+=("$1") ;;
+    --linux|--native) NATIVE_UNIX=1 ;;
     --files) FILES="$2"; shift ;;
     *) echo "argumento desconhecido: $1" >&2; exit 2 ;;
   esac
   shift
 done
 [ ${#STEPS[@]} -eq 0 ] && STEPS=(fmt clippy test)
+
+# Em Linux nativo ou macOS (sem WSL interop), ou com `--linux`, executa o gate
+# diretamente com o cargo nativo da máquina.
+if [ "$NATIVE_UNIX" -eq 1 ] || [ ! -f "$CMD_EXE" ]; then
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "cargo não encontrado no PATH desta máquina." >&2
+    exit 1
+  fi
+  [ -f dist/index.html ] || { mkdir -p dist && echo '<!doctype html>' > dist/index.html; }
+  for step in "${STEPS[@]}"; do
+    case "$step" in
+      fmt)
+        if [ -z "$FILES" ]; then
+          FILES="$( { git diff --name-only HEAD -- 'src-tauri/src/*.rs' 'src-tauri/src/**/*.rs'; git ls-files --others --exclude-standard -- 'src-tauri/src/*.rs' 'src-tauri/src/**/*.rs'; } \
+            | sed 's#^src-tauri/src/##' | sort -u | paste -sd, -)"
+        fi
+        if [ -z "$FILES" ]; then
+          echo "==> fmt: nenhum .rs alterado"
+          continue
+        fi
+        echo "==> rustfmt --check (nativo): $FILES"
+        FMT_FAIL=0
+        for f in $(echo "$FILES" | tr ',' ' '); do
+          OUT="$(rustfmt --check --edition 2021 < "src-tauri/src/$f" 2>&1 || echo "Diff in (rustfmt falhou)")"
+          if [ ! -f "src-tauri/src/$f" ] || grep -q "Diff in" <<< "$OUT"; then
+            echo "    fora do rustfmt: src-tauri/src/$f"
+            FMT_FAIL=1
+          fi
+        done
+        [ "$FMT_FAIL" -eq 0 ] || { echo "rode: rustfmt --edition 2021 nos arquivos acima" >&2; exit 1; }
+        ;;
+      clippy)
+        echo "==> cargo clippy --lib --tests -D warnings (nativo)"
+        (cd src-tauri && cargo clippy --lib --tests -q -- -D warnings)
+        ;;
+      test)
+        echo "==> cargo test --lib (nativo)"
+        (cd src-tauri && cargo test --lib -q)
+        ;;
+    esac
+  done
+  echo "==> rust-check OK (nativo: ${STEPS[*]})"
+  exit 0
+fi
 
 WIN_BUILD_WIN="${PULSE_WIN_BUILD_DIR:-$("$CMD_EXE" /c 'echo %LOCALAPPDATA%\pulse-build' < /dev/null 2>/dev/null | tr -d '\r')}"
 if [ -z "$WIN_BUILD_WIN" ] || [[ "$WIN_BUILD_WIN" == *%* ]]; then

@@ -35,19 +35,37 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Detecta ambiente: em Linux nativo (sem WSL) ou macOS, delega automaticamente
+# para o script da plataforma. No WSL, `--linux` permite gerar .deb/.AppImage.
+UNAME_S="$(uname -s)"
+if [ "$UNAME_S" = "Darwin" ]; then
+  exec bash scripts/build-macos.sh "$@"
+fi
+
+CMD_EXE="/mnt/c/Windows/System32/cmd.exe"
+if [ "$UNAME_S" = "Linux" ] && [ ! -f "$CMD_EXE" ]; then
+  exec bash scripts/build-linux.sh "$@"
+fi
+
 SKIP_FRONTEND=0
 RUN_INSTALLER=0
 SYNC_LANDING=1
+LINUX_ARGS=()
+USE_LINUX=0
 for arg in "$@"; do
   case "$arg" in
-    --rust) SKIP_FRONTEND=1 ;;
-    --install) RUN_INSTALLER=1 ;;
-    --no-landing) SYNC_LANDING=0 ;;
+    --linux) USE_LINUX=1 ;;
+    --rust) SKIP_FRONTEND=1; LINUX_ARGS+=("$arg") ;;
+    --install) RUN_INSTALLER=1; LINUX_ARGS+=("$arg") ;;
+    --no-landing) SYNC_LANDING=0; LINUX_ARGS+=("$arg") ;;
+    --rpm|--all) USE_LINUX=1; LINUX_ARGS+=("$arg") ;;
     *) echo "argumento desconhecido: $arg" >&2; exit 2 ;;
   esac
 done
 
-CMD_EXE="/mnt/c/Windows/System32/cmd.exe"
+if [ "$USE_LINUX" -eq 1 ]; then
+  exec bash scripts/build-linux.sh "${LINUX_ARGS[@]}"
+fi
 
 # Dois builds simultâneos compartilham staging e target: um apaga as fontes do
 # outro no meio da compilação ("couldn't find file build.rs" / Permission denied).
