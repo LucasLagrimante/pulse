@@ -122,7 +122,13 @@ jobs:
           # como leve, então buscamos o objeto da tag explicitamente.
           git fetch --force --depth=1 origin "+refs/tags/${tag}:refs/tags/${tag}" 2>$null
           $changes = (git tag -l --format='%(contents)' $tag | Out-String).Trim()
-          $installer = "Instalador NSIS para Windows 11 x64, ${{ steps.final.outputs.label }}.`n`nSHA-256 (``${{ steps.meta.outputs.asset }}``): ``${{ steps.final.outputs.sha256 }}``"
+          $installer = @(
+            "### Instaladores oficiais",
+            "",
+            "- **Windows 11 x64** (NSIS, ${{ steps.final.outputs.label }}): ``${{ steps.meta.outputs.asset }}`` · SHA-256 ``${{ steps.final.outputs.sha256 }}``",
+            "- **Linux x86_64** (``.deb`` + ``.AppImage``): anexados nos assets abaixo com ``SHA256SUMS-linux.txt``",
+            "- **macOS Apple Silicon (experimental)** (``.dmg``, sem assinatura/notarização): anexado nos assets abaixo com ``SHA256SUMS-macos.txt``"
+          ) -join "`n"
           $notes = if ($changes) { "$changes`n`n---`n`n$installer" } else { $installer }
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {

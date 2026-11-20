@@ -15,9 +15,9 @@ A parte mecânica fica em `scripts/release.mjs` (testado em `scripts/lib/release
 |---|---|
 | 6 arquivos de versão | `package.json`, `package-lock.json`, `landing/package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/tauri.conf.json` — o CI recusa tag ≠ `tauri.conf.json` |
 | Tag anotada `vX.Y.Z` | dispara `.github/workflows/release.yml`; a **mensagem da tag vira as notas** da GitHub Release |
-| GitHub Release | hospeda `Pulse_X.Y.Z_x64-setup.exe` (sem assinatura, ver `memory/release/assinatura-signpath-ci.md`) |
-| `landing/public/release.json` | SHA-256 do asset **do CI**; o auto-update do app instalado (`self_update.rs`) lê esse arquivo em `https://pulse.lagrimante.com.br/release.json` e **recusa** instalador com hash diferente |
-| `../pulse-lp` | único repo que faz deploy da landing (Cloudflare). Push nele só **depois** da Release existir |
+| GitHub Release | hospeda `Pulse_X.Y.Z_x64-setup.exe` (Windows), `Pulse_X.Y.Z_amd64.deb` + `Pulse_X.Y.Z_amd64.AppImage` + `SHA256SUMS-linux.txt` (Linux) e `Pulse_X.Y.Z_aarch64.dmg` + `SHA256SUMS-macos.txt` (macOS experimental), todos sem assinatura |
+| `landing/public/release.json` | SHA-256 dos assets **do CI** (Windows + Linux + macOS quando presente); o auto-update do app (`self_update.rs` / `unix.rs`) lê esse arquivo em `https://pulse.lagrimante.com.br/release.json` e **recusa** binário com hash diferente |
+| `../pulse-lp` | único repo que faz deploy da landing (Cloudflare). Push nele só **depois** da Release existir com os assets de Windows e Linux |
 
 ## 0. A skill decide o tipo — pequena ou grande mudança
 
@@ -105,16 +105,18 @@ Se falhar:
   notas e dê push. A versão não muda.
 - **Release já publicada com asset**: **nunca** reaproveite a versão nem mova a tag. Corrija e lance um **patch**.
 
-## 5. Landing com o SHA-256 do CI
+## 5. Landing com os SHA-256 do CI
+
+Aguarde **todos os jobs** do `release.yml` (`build-sign-publish`, `build-linux` e `build-macos`) concluírem antes deste passo, para que `.deb`, `.AppImage` e `.dmg` já estejam anexados à Release.
 
 ```bash
-npm run lp:sync:release           # baixa o asset publicado, grava SHA/tamanho, builda a landing e espelha em ../pulse-lp
+npm run lp:sync:release           # baixa todos os assets publicados (Windows + Linux + macOS), grava SHA/tamanho, builda a landing e espelha em ../pulse-lp
 ```
 
 Commit pela skill `commit` com **exatamente** `chore(landing): sincronizar release vX.Y.Z com SHA-256 do asset publicado pelo CI`
 (arquivos de `landing/` que o script alterou) e `git push origin main`.
 
-Nunca rode `build:native` entre este passo e o próximo: ele regrava o hash com o do bundle local.
+Nunca rode `build:native` nem `build:linux` (sem `--no-landing`) entre este passo e o próximo: eles regravam o hash com o do bundle local.
 
 ## 6. Publicar o pulse-lp
 
@@ -132,8 +134,8 @@ Commit no `../pulse-lp` (skill `commit`, rodando no diretório dele) com **exata
 node scripts/release.mjs verify X.Y.Z
 ```
 
-Confere: Release publicada com o asset, `landing/public/release.json` com o SHA do asset, e o
-`release.json` **no ar** anunciando X.Y.Z com o mesmo SHA (cache da Cloudflare pode levar alguns
+Confere: Release publicada com os assets (Windows `.exe`, Linux `.deb` + `.AppImage`, e macOS `.dmg` se publicado), `landing/public/release.json` com o SHA-256 exato de cada plataforma, e o
+`release.json` **no ar** anunciando X.Y.Z com os mesmos hashes (cache da Cloudflare pode levar alguns
 minutos; repita antes de declarar falha). Só depois disso o release está concluído.
 
 ## 8. Relatório ao usuário

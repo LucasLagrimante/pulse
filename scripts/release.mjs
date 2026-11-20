@@ -21,13 +21,18 @@ import {
   VERSION_FILES,
   bumpAll,
   bumpVersion,
+  parseVersion,
   readVersions,
   renderReleaseNotes,
   classifyRelease,
 } from "./lib/release-version.mjs";
+import {
+  REPO,
+  matchReleaseAssets,
+  verifyManifestHashes,
+} from "./lib/release-assets.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const REPO = "LucasLagrimante/pulse";
 const LIVE_RELEASE_JSON = "https://pulse.lagrimante.com.br/release.json";
 
 const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
@@ -193,26 +198,51 @@ switch (command) {
   case "verify": {
     const version = arg ?? currentVersion();
     const tag = `v${version}`;
-    const asset = `Pulse_${version}_x64-setup.exe`;
     const problems = [];
+    const [major, minor] = parseVersion(version);
+    const requiresLinux = major > 1 || (major === 1 && minor >= 4);
 
-    const release = JSON.parse(execFileSync("gh", ["release", "view", tag, "--repo", REPO, "--json", "assets,isDraft,isPrerelease,body"], { encoding: "utf8" }));
+    const release = JSON.parse(
+      execFileSync("gh", ["release", "view", tag, "--repo", REPO, "--json", "assets,isDraft,isPrerelease,body"], {
+        encoding: "utf8",
+      }),
+    );
     if (release.isDraft || release.isPrerelease) problems.push(`Release ${tag} está como rascunho/pré-release`);
-    if (!release.assets.some(a => a.name === asset)) problems.push(`Release ${tag} sem o asset ${asset}`);
+
+    const assetNames = (release.assets || []).map(a => a.name);
+    const matched = matchReleaseAssets(assetNames, version);
+    if (!matched.windows) problems.push(`Release ${tag} sem o asset Windows Pulse_${version}_x64-setup.exe`);
+    if (requiresLinux && !matched.linuxDeb) problems.push(`Release ${tag} sem o asset Linux .deb`);
+    if (requiresLinux && !matched.linuxAppImage) problems.push(`Release ${tag} sem o asset Linux .AppImage`);
+
+    const toCheck = [
+      ["windows", matched.windows],
+      ["linuxDeb", matched.linuxDeb],
+      ["linuxAppImage", matched.linuxAppImage],
+      ["macosDmg", matched.macosDmg],
+    ].filter(([, name]) => Boolean(name));
 
     const downloadDir = mkdtempSync(join(tmpdir(), "pulse-verify-"));
-    let assetSha;
+    const expectedHashes = {};
     try {
-      execFileSync("gh", ["release", "download", tag, "--repo", REPO, "--pattern", asset, "--dir", downloadDir], { stdio: "ignore" });
-      assetSha = createHash("sha256").update(readFileSync(join(downloadDir, asset))).digest("hex");
+      for (const [key, assetName] of toCheck) {
+        execFileSync(
+          "gh",
+          ["release", "download", tag, "--repo", REPO, "--pattern", assetName, "--dir", downloadDir],
+          { stdio: "ignore" },
+        );
+        expectedHashes[key] = createHash("sha256")
+          .update(readFileSync(join(downloadDir, assetName)))
+          .digest("hex");
+      }
     } finally {
       rmSync(downloadDir, { recursive: true, force: true });
     }
 
     const local = JSON.parse(readFileSync(join(root, "landing", "public", "release.json"), "utf8"));
-    const localSha = JSON.stringify(local).match(/[a-f0-9]{64}/)?.[0];
-    if (!JSON.stringify(local).includes(version)) problems.push(`landing/public/release.json não está na versão ${version}`);
-    if (localSha !== assetSha) problems.push(`SHA-256 da landing (${localSha}) difere do asset publicado (${assetSha}); rode npm run lp:sync:release`);
+    for (const issue of verifyManifestHashes(local, version, expectedHashes, "landing/public/release.json")) {
+      problems.push(`${issue}; rode npm run lp:sync:release`);
+    }
 
     let live = null;
     try {
@@ -222,12 +252,17 @@ switch (command) {
       problems.push(`não foi possível ler ${LIVE_RELEASE_JSON}: ${error.message}`);
     }
     if (live) {
-      const liveText = JSON.stringify(live);
-      if (!liveText.includes(version)) problems.push(`${LIVE_RELEASE_JSON} ainda não anuncia ${version} (deploy do pulse-lp pendente?)`);
-      if (!liveText.includes(assetSha)) problems.push(`${LIVE_RELEASE_JSON} com SHA-256 diferente do asset: o auto-update vai recusar o instalador`);
+      for (const issue of verifyManifestHashes(live, version, expectedHashes, LIVE_RELEASE_JSON)) {
+        problems.push(`${issue} (deploy do pulse-lp pendente?)`);
+      }
     }
 
-    console.log(`Release ${tag}: asset ${asset} · SHA-256 ${assetSha}`);
+    for (const [key, assetName] of toCheck) {
+      console.log(`Release ${tag} [${key}]: ${assetName} · SHA-256 ${expectedHashes[key]}`);
+    }
+    if (!matched.macosDmg) {
+      console.log(`Aviso: Release ${tag} sem .dmg macOS (build experimental opcional).`);
+    }
     if (problems.length) fail(problems.join("\n"));
     console.log("Verificação OK: Release, landing local e release.json no ar consistentes.");
     break;
