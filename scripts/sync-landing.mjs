@@ -188,12 +188,21 @@ const hasMacosPublished = Boolean(dmgEntry);
 // 1. Atualiza landing/public/release.json para consulta programática e auto-update
 writeFileSync(releaseJsonPath, `${JSON.stringify(releaseManifest, null, 2)}\n`, "utf8");
 
-// 2. Sincroniza versão no package.json da landing
+// 2. Sincroniza versão no package.json e package-lock.json da landing
 const landingPkgPath = join(landingDir, "package.json");
 if (existsSync(landingPkgPath)) {
   const landingPkg = JSON.parse(readFileSync(landingPkgPath, "utf8"));
   landingPkg.version = version;
   writeFileSync(landingPkgPath, `${JSON.stringify(landingPkg, null, 2)}\n`, "utf8");
+}
+const landingLockPath = join(landingDir, "package-lock.json");
+if (existsSync(landingLockPath)) {
+  const landingLock = JSON.parse(readFileSync(landingLockPath, "utf8"));
+  if (landingLock.version !== version || landingLock.packages?.[""]?.version !== version) {
+    landingLock.version = version;
+    if (landingLock.packages?.[""]) landingLock.packages[""].version = version;
+    writeFileSync(landingLockPath, `${JSON.stringify(landingLock, null, 2)}\n`, "utf8");
+  }
 }
 
 function replaceTagText(html, attrName, value) {
@@ -303,6 +312,7 @@ if (existsSync(siblingLpDir)) {
   for (const item of [
     "index.html",
     "package.json",
+    "package-lock.json",
     "vite.config.js",
     "worker.js",
     "wrangler.jsonc",
