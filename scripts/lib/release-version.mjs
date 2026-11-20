@@ -175,7 +175,7 @@ export function bumpCargoToml(text, from, to) {
 export function bumpCargoLock(text, from, to, crate = "pulse-windows") {
   return replaceExactlyOnce(
     text,
-    new RegExp(`(name = "${crate}"\\r?\\nversion = )"${from.replace(/\./g, "\\.")}"`),
+    new RegExp(`(name = "${crate}"\\r?\\nversion = )"${escapeRegExp(from)}"`),
     `$1"${to}"`,
     "Cargo.lock",
   );
