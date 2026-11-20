@@ -16,7 +16,7 @@ import {
 
 import "./DataTable.css";
 import "./UninstallHub.css";
-import { usePlatformCopy } from "./platform";
+import { currentPlatformCopy, usePlatformCopy } from "./platform";
 
 export type InstalledApp = {
   id: string;
@@ -1036,7 +1036,7 @@ export function stageLabel(stage: Stage): string {
     case "running":
       return "Desinstalando";
     case "registry":
-      return "Registro";
+      return currentPlatformCopy().uninstallRegistryStage;
     case "folders":
       return "Pastas";
     default:
