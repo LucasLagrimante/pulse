@@ -4356,8 +4356,8 @@ function App() {
                     <div>
                       <dt>Site</dt>
                       <dd>
-                        <button type="button" onClick={() => void openUrl("https://lucaslagrimante.github.io/")}>
-                          lucaslagrimante.github.io
+                        <button type="button" onClick={() => void openUrl("https://lagrimante.com.br/")}>
+                          lagrimante.com.br
                           <span aria-hidden="true">↗</span>
                         </button>
                       </dd>

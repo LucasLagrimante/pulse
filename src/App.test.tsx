@@ -1560,11 +1560,11 @@ describe("Pulse application shell", () => {
     expect(screen.getByText("Lucas Lagrimante")).toBeInTheDocument();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /lucaslagrimante\.github\.io/ }));
+      fireEvent.click(screen.getByRole("button", { name: /lagrimante\.com\.br/ }));
       fireEvent.click(screen.getByRole("button", { name: /llagrimante@gmail\.com/ }));
     });
 
-    expect(openUrl).toHaveBeenCalledWith("https://lucaslagrimante.github.io/");
+    expect(openUrl).toHaveBeenCalledWith("https://lagrimante.com.br/");
     expect(openUrl).toHaveBeenCalledWith("mailto:llagrimante@gmail.com");
 
     // Verifica atualização manual na tela Sobre o Pulse
