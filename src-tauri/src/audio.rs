@@ -48,6 +48,9 @@ pub struct AudioMixerInventory {
     pub unavailable_reason: Option<String>,
 }
 
+#[cfg(target_os = "linux")]
+mod linux;
+
 #[cfg(windows)]
 mod windows_impl {
     use super::{AudioDevice, AudioDeviceInventory, AudioMixerApp, AudioMixerInventory};
@@ -56,12 +59,12 @@ mod windows_impl {
     use windows::core::{Interface, GUID, HRESULT, PCWSTR, PWSTR};
     use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
     use windows::Win32::Foundation::{CloseHandle, HANDLE, S_OK};
-    use windows::Win32::Media::Audio::{
-        eCapture, eCommunications, eConsole, eMultimedia, eRender, EDataFlow, IMMDevice,
-        IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE, IAudioSessionControl,
-        IAudioSessionControl2, IAudioSessionManager2, ISimpleAudioVolume,
-    };
     use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+    use windows::Win32::Media::Audio::{
+        eCapture, eCommunications, eConsole, eMultimedia, eRender, EDataFlow, IAudioSessionControl,
+        IAudioSessionControl2, IAudioSessionManager2, IMMDevice, IMMDeviceEnumerator,
+        ISimpleAudioVolume, MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
+    };
     use windows::Win32::System::Com::StructuredStorage::PropVariantToStringAlloc;
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_ALL,
@@ -374,7 +377,11 @@ mod windows_impl {
             (
                 exe.to_lowercase(),
                 exe,
-                if display.is_empty() { fallback } else { display },
+                if display.is_empty() {
+                    fallback
+                } else {
+                    display
+                },
             )
         } else if pid != 0 {
             (
@@ -461,10 +468,9 @@ mod windows_impl {
                         format!("Não foi possível abrir o dispositivo de saída: {error}")
                     })?
             }
-            None => unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eConsole) }
-                .map_err(|error| {
-                    format!("Nenhum dispositivo de saída padrão no Windows: {error}")
-                })?,
+            None => unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eConsole) }.map_err(
+                |error| format!("Nenhum dispositivo de saída padrão no Windows: {error}"),
+            )?,
         };
         let id = endpoint_id(&device)?;
         let name = friendly_name(&device).unwrap_or_else(|_| "Dispositivo de saída".into());
@@ -473,9 +479,10 @@ mod windows_impl {
 
     fn create_enumerator() -> Result<(ComGuard, IMMDeviceEnumerator), String> {
         let guard = ComGuard::initialize()?;
-        let enumerator =
-            unsafe { CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) }
-                .map_err(|error| format!("O Core Audio não está disponível: {error}"))?;
+        let enumerator = unsafe {
+            CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL)
+        }
+        .map_err(|error| format!("O Core Audio não está disponível: {error}"))?;
         Ok((guard, enumerator))
     }
 
@@ -529,7 +536,9 @@ mod windows_impl {
                 unsafe { endpoint.GetMasterVolumeLevelScalar() }
                     .ok()
                     .map(clamp_level),
-                unsafe { endpoint.GetMute() }.ok().map(|mute| mute.as_bool()),
+                unsafe { endpoint.GetMute() }
+                    .ok()
+                    .map(|mute| mute.as_bool()),
             ),
             Err(_) => (None, None),
         };
@@ -570,15 +579,16 @@ mod windows_impl {
         app_name: &str,
         mut apply: impl FnMut(&ISimpleAudioVolume) -> windows::core::Result<()>,
     ) -> Result<u32, String> {
-        let (_guard, enumerator) =
-            create_enumerator().map_err(|reason: String| reason)?;
+        let (_guard, enumerator) = create_enumerator().map_err(|reason: String| reason)?;
         let (device, _, _) = resolve_render_device(&enumerator, device_id)?;
         let manager: IAudioSessionManager2 = unsafe { device.Activate(CLSCTX_ALL, None) }
             .map_err(|error| format!("O Windows não permitiu ler as sessões de áudio: {error}"))?;
-        let session_list = unsafe { manager.GetSessionEnumerator() }
-            .map_err(|error| format!("O Windows não permitiu enumerar as sessões de áudio: {error}"))?;
-        let count = unsafe { session_list.GetCount() }
-            .map_err(|error| format!("O Windows não permitiu contar as sessões de áudio: {error}"))?;
+        let session_list = unsafe { manager.GetSessionEnumerator() }.map_err(|error| {
+            format!("O Windows não permitiu enumerar as sessões de áudio: {error}")
+        })?;
+        let count = unsafe { session_list.GetCount() }.map_err(|error| {
+            format!("O Windows não permitiu contar as sessões de áudio: {error}")
+        })?;
         let wanted = app_name.to_lowercase();
         let mut matched = 0u32;
         for index in 0..count {
@@ -601,7 +611,8 @@ mod windows_impl {
         }
         if matched == 0 {
             return Err(
-                "Nenhuma sessão de áudio encontrada para esse app. Ele pode ter sido fechado.".into(),
+                "Nenhuma sessão de áudio encontrada para esse app. Ele pode ter sido fechado."
+                    .into(),
             );
         }
         Ok(matched)
@@ -638,22 +649,29 @@ mod windows_impl {
         if volume.is_none() && muted.is_none() {
             return Err("Nada para ajustar no volume geral.".into());
         }
-        let (_guard, enumerator) =
-            create_enumerator().map_err(|reason: String| reason)?;
+        let (_guard, enumerator) = create_enumerator().map_err(|reason: String| reason)?;
         let (device, _, _) = resolve_render_device(&enumerator, device_id)?;
         let endpoint: IAudioEndpointVolume = unsafe { device.Activate(CLSCTX_ALL, None) }
             .map_err(|error| format!("O Windows não permitiu ajustar o volume geral: {error}"))?;
         if let Some(level) = volume {
             unsafe { endpoint.SetMasterVolumeLevelScalar(clamp_level(level), std::ptr::null()) }
-                .map_err(|error| format!("O Windows não permitiu ajustar o volume geral: {error}"))?;
+                .map_err(|error| {
+                    format!("O Windows não permitiu ajustar o volume geral: {error}")
+                })?;
         }
         if let Some(mute) = muted {
-            unsafe { endpoint.SetMute(mute, std::ptr::null()) }
-                .map_err(|error| format!("O Windows não permitiu ajustar o volume geral: {error}"))?;
+            unsafe { endpoint.SetMute(mute, std::ptr::null()) }.map_err(|error| {
+                format!("O Windows não permitiu ajustar o volume geral: {error}")
+            })?;
         }
         Ok(mixer(device_id))
     }
 }
+
+/// Motivo exibido fora do Windows e do Linux (macOS: Core Audio fica para depois).
+#[cfg(not(any(windows, target_os = "linux")))]
+const UNSUPPORTED_REASON: &str =
+    "Indisponível no macOS por enquanto: o controle de áudio via Core Audio ainda não foi implementado.";
 
 #[tauri::command]
 pub fn get_audio_devices() -> AudioDeviceInventory {
@@ -661,11 +679,14 @@ pub fn get_audio_devices() -> AudioDeviceInventory {
     {
         windows_impl::list()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::list()
+    }
+    // TODO(macos): implementar com Core Audio e validar em hardware.
+    #[cfg(not(any(windows, target_os = "linux")))]
     AudioDeviceInventory {
-        unavailable_reason: Some(
-            "A troca de dispositivos de áudio exige o Windows Core Audio.".into(),
-        ),
+        unavailable_reason: Some(UNSUPPORTED_REASON.into()),
         ..Default::default()
     }
 }
@@ -678,10 +699,14 @@ pub fn set_default_audio_device_sync(
     {
         windows_impl::set_default(direction, device_id)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::set_default(direction, device_id)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = (direction, device_id);
-        Err("A troca de dispositivos de áudio exige o Windows Core Audio.".into())
+        Err(UNSUPPORTED_REASON.into())
     }
 }
 
@@ -696,16 +721,6 @@ pub fn set_default_audio_device(
     Ok(result)
 }
 
-#[allow(dead_code)]
-fn mixer_unavailable() -> AudioMixerInventory {
-    AudioMixerInventory {
-        unavailable_reason: Some(
-            "O mixer de volume por app exige o Windows Core Audio.".into(),
-        ),
-        ..Default::default()
-    }
-}
-
 /// Sessões de áudio da saída atual (ou do `device_id` pedido), agrupadas por
 /// app, mais o volume geral do endpoint. Recolhido por padrão no flyout.
 #[tauri::command]
@@ -714,10 +729,17 @@ pub fn get_audio_mixer(device_id: Option<String>) -> AudioMixerInventory {
     {
         windows_impl::mixer(device_id.as_deref())
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::mixer(device_id.as_deref())
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = device_id;
-        mixer_unavailable()
+        AudioMixerInventory {
+            unavailable_reason: Some(UNSUPPORTED_REASON.into()),
+            ..Default::default()
+        }
     }
 }
 
@@ -731,10 +753,14 @@ pub fn set_audio_mixer_app_volume(
     {
         windows_impl::set_mixer_app_volume(device_id.as_deref(), &app_name, volume)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::set_mixer_app_volume(device_id.as_deref(), &app_name, volume)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = (device_id, app_name, volume);
-        Err("O mixer de volume por app exige o Windows Core Audio.".into())
+        Err(UNSUPPORTED_REASON.into())
     }
 }
 
@@ -748,10 +774,14 @@ pub fn set_audio_mixer_app_muted(
     {
         windows_impl::set_mixer_app_muted(device_id.as_deref(), &app_name, muted)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::set_mixer_app_muted(device_id.as_deref(), &app_name, muted)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = (device_id, app_name, muted);
-        Err("O mixer de volume por app exige o Windows Core Audio.".into())
+        Err(UNSUPPORTED_REASON.into())
     }
 }
 
@@ -765,10 +795,14 @@ pub fn set_audio_mixer_master(
     {
         windows_impl::set_mixer_master(device_id.as_deref(), volume, muted)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::set_mixer_master(device_id.as_deref(), volume, muted)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = (device_id, volume, muted);
-        Err("O mixer de volume por app exige o Windows Core Audio.".into())
+        Err(UNSUPPORTED_REASON.into())
     }
 }
 

@@ -25,12 +25,14 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-use super::installed::{collect_cached, parse_app_id, InstalledApp};
+#[cfg(windows)]
+use super::installed::parse_app_id;
+use super::installed::{collect_cached, InstalledApp};
+#[cfg(windows)]
 use super::registry::RegHandle;
-use super::residue::{
-    candidate_names, folder_deletion_veto, is_reparse_point, named_folder_candidates, normalize,
-    shell_folder_patterns,
-};
+#[cfg(windows)]
+use super::residue::{candidate_names, folder_deletion_veto, named_folder_candidates};
+use super::residue::{is_reparse_point, normalize, normalize_windows, shell_folder_patterns};
 
 /// Entradas lidas por pasta antes de desistir no modo rápido (cobre apps
 /// grandes comuns; jogos com centenas de milhares de arquivos viram mínimo).
@@ -188,7 +190,7 @@ pub fn program_dir_from_exe(raw: &str) -> Option<String> {
             text = head.trim().trim_matches('"').to_string();
         }
     }
-    let normalized = normalize(Path::new(&text));
+    let normalized = normalize_windows(Path::new(&text));
     let (dir, file) = normalized.rsplit_once('\\')?;
     let file = file.to_lowercase();
     if !file.ends_with(".exe") || file.starts_with("unins") || file.starts_with("uninst") {
@@ -224,7 +226,10 @@ enum Mode {
 
 /// Mede uma pasta respeitando o modo. `None` = sem tempo neste lote.
 fn measure_dir(path: &Path, mode: Mode) -> Option<CachedMeasure> {
+    #[cfg(windows)]
     let key = normalize(path).to_lowercase();
+    #[cfg(unix)]
+    let key = normalize(path);
     match mode {
         Mode::Quick { batch_deadline } => {
             if let Some(hit) = cache_get(&key) {
@@ -265,6 +270,8 @@ struct Context {
     shell_patterns: Vec<String>,
     /// `(app_id, pasta normalizada)` de quem declarou `InstallLocation`.
     declared: Vec<(String, String)>,
+    #[cfg(unix)]
+    home: Option<PathBuf>,
 }
 
 impl Context {
@@ -281,6 +288,8 @@ impl Context {
             apps,
             shell_patterns: shell_folder_patterns(),
             declared,
+            #[cfg(unix)]
+            home: dirs::home_dir(),
         }
     }
 
@@ -293,6 +302,7 @@ impl Context {
     }
 }
 
+#[cfg(windows)]
 fn display_icon(app: &InstalledApp) -> Option<String> {
     let (hive, view, subkey) = parse_app_id(&app.id)?;
     RegHandle::open(hive, &subkey, view)
@@ -302,6 +312,7 @@ fn display_icon(app: &InstalledApp) -> Option<String> {
 
 /// Pasta deduzida aceitável: existe, não é link, não é vetada e não é a
 /// pasta de outro programa.
+#[cfg(windows)]
 fn usable_dir(dir: &str, ctx: &Context, others: &[String]) -> bool {
     let path = Path::new(dir);
     path.is_dir()
@@ -313,6 +324,7 @@ fn usable_dir(dir: &str, ctx: &Context, others: &[String]) -> bool {
             .any(|(_, other)| other.eq_ignore_ascii_case(dir))
 }
 
+#[cfg(windows)]
 fn deduce_program_dir(app: &InstalledApp, ctx: &Context, others: &[String]) -> Option<String> {
     if let Some(dir) = display_icon(app).as_deref().and_then(program_dir_from_exe) {
         if usable_dir(&dir, ctx, others) {
@@ -419,6 +431,306 @@ fn unavailable(app_id: &str, location: Option<String>, reason: &str) -> AppFootp
 }
 
 fn measure_one(ctx: &Context, app_id: &str, mode: Mode) -> AppFootprint {
+    #[cfg(windows)]
+    {
+        measure_one_windows(ctx, app_id, mode)
+    }
+    #[cfg(unix)]
+    {
+        measure_one_unix(ctx, app_id, mode)
+    }
+}
+
+/// Soma o tamanho real de uma lista de caminhos absolutos (ex.: `.list` do
+/// dpkg), contando apenas arquivos regulares (ignora diretórios e symlinks).
+#[cfg(unix)]
+pub fn measure_file_list<'a, I>(paths: I, max_entries: usize, deadline: Instant) -> (u64, u64, bool)
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let mut total = 0u64;
+    let mut files = 0u64;
+    let mut visited = 0usize;
+    for raw in paths {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() || !trimmed.starts_with('/') {
+            continue;
+        }
+        visited += 1;
+        if visited.is_multiple_of(YIELD_EVERY) {
+            std::thread::yield_now();
+            if Instant::now() >= deadline {
+                return (total, files, false);
+            }
+        }
+        if visited > max_entries {
+            return (total, files, false);
+        }
+        let Ok(meta) = fs::symlink_metadata(trimmed) else {
+            continue;
+        };
+        if meta.file_type().is_file() {
+            total = total.saturating_add(meta.len());
+            files += 1;
+        }
+    }
+    (total, files, true)
+}
+
+#[cfg(target_os = "linux")]
+fn measure_deb_package(binary_name: &str, mode: Mode) -> Option<Result<CachedMeasure, String>> {
+    const MAX_LIST_BYTES: u64 = 16 * 1024 * 1024;
+    let key = format!("deb-list:{binary_name}");
+    if matches!(mode, Mode::Quick { .. }) {
+        if let Some(hit) = cache_get(&key) {
+            return Some(Ok(hit));
+        }
+    }
+    let Some(list_path) = super::packages_linux::dpkg_list_file(binary_name) else {
+        return Some(Err(
+            "Lista de arquivos do pacote não encontrada em /var/lib/dpkg/info".to_string(),
+        ));
+    };
+    let (max_entries, deadline) = match mode {
+        Mode::Quick { batch_deadline } => {
+            let now = Instant::now();
+            if now >= batch_deadline {
+                return None;
+            }
+            (
+                PER_APP_MAX_ENTRIES,
+                (now + PER_APP_DEADLINE).min(batch_deadline),
+            )
+        }
+        Mode::Full => (FULL_MAX_ENTRIES, Instant::now() + FULL_DEADLINE),
+    };
+    let Ok(meta) = fs::metadata(&list_path) else {
+        return Some(Err(
+            "Não foi possível ler a lista de arquivos do pacote".to_string()
+        ));
+    };
+    if meta.len() > MAX_LIST_BYTES {
+        return Some(Err(
+            "Lista de arquivos do pacote excede o limite de leitura".to_string(),
+        ));
+    }
+    let Ok(bytes) = fs::read(&list_path) else {
+        return Some(Err(
+            "Não foi possível ler a lista de arquivos do pacote".to_string()
+        ));
+    };
+    let content = String::from_utf8_lossy(&bytes);
+    let (total, files, complete) = measure_file_list(content.lines(), max_entries, deadline);
+    let value = CachedMeasure {
+        bytes: total,
+        files,
+        complete,
+        at: Instant::now(),
+    };
+    cache_put(key, value.clone());
+    Some(Ok(value))
+}
+
+#[cfg(target_os = "linux")]
+fn is_valid_flatpak_dir(path: &Path, home: Option<&Path>) -> bool {
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    let mut allowed = vec![PathBuf::from("/var/lib/flatpak/app")];
+    if let Some(home) = home {
+        allowed.push(home.join(".local/share/flatpak/app"));
+    }
+    allowed.iter().any(|root| root == parent) && path.is_dir() && !is_reparse_point(path)
+}
+
+#[cfg(target_os = "linux")]
+fn is_valid_snap_dir(path: &Path) -> bool {
+    path.parent() == Some(Path::new("/snap")) && path.is_dir() && !is_reparse_point(path)
+}
+
+#[cfg(unix)]
+fn measure_one_unix(ctx: &Context, app_id: &str, mode: Mode) -> AppFootprint {
+    use super::installed_unix::{
+        parse_id, SOURCE_APPIMAGE, SOURCE_DEB, SOURCE_FLATPAK, SOURCE_MAC_APP, SOURCE_SNAP,
+    };
+
+    let Some(app) = ctx.apps.iter().find(|app| app.id == app_id) else {
+        return unavailable(app_id, None, "Programa não está mais no inventário");
+    };
+    let mut result = blank(app_id);
+    let parsed = parse_id(&app.id);
+
+    // 1. Instalação do programa conforme a origem.
+    match parsed.as_ref().map(|id| id.source.as_str()) {
+        #[cfg(target_os = "linux")]
+        Some(SOURCE_DEB) => {
+            let key = &parsed.as_ref().unwrap().key;
+            match measure_deb_package(key, mode) {
+                Some(Ok(measure)) => {
+                    result.measured_bytes = Some(measure.bytes);
+                    result.complete = measure.complete;
+                    result.file_count = measure.files;
+                    result.location_source = Some(LocationSource::Declared);
+                }
+                Some(Err(reason)) => result.unavailable_reason = Some(reason),
+                None => return unavailable(app_id, None, DEFERRED),
+            }
+        }
+        #[cfg(target_os = "linux")]
+        Some(SOURCE_APPIMAGE) => {
+            let key = &parsed.as_ref().unwrap().key;
+            let path = Path::new(key);
+            result.install_location = Some(key.clone());
+            match fs::symlink_metadata(path) {
+                Ok(meta) if meta.file_type().is_file() => {
+                    result.measured_bytes = Some(meta.len());
+                    result.complete = true;
+                    result.file_count = 1;
+                    result.location_source = Some(LocationSource::Declared);
+                }
+                _ => {
+                    result.unavailable_reason =
+                        Some("O arquivo AppImage não existe mais ou virou um link".to_string());
+                }
+            }
+        }
+        #[cfg(target_os = "linux")]
+        Some(SOURCE_FLATPAK) => {
+            if let Some(dir) = app.install_location.as_deref() {
+                let normalized = normalize(Path::new(dir));
+                let path = Path::new(&normalized);
+                result.install_location = Some(normalized.clone());
+                let shared = ctx
+                    .declared
+                    .iter()
+                    .any(|(id, other)| id != app_id && other == &normalized);
+                if shared {
+                    result.unavailable_reason =
+                        Some("Pasta compartilhada com outro programa".to_string());
+                } else if !is_valid_flatpak_dir(path, ctx.home.as_deref()) {
+                    result.unavailable_reason = Some(
+                        "Pasta de implantação do Flatpak não encontrada ou inválida".to_string(),
+                    );
+                } else {
+                    match measure_dir(path, mode) {
+                        Some(measure) => {
+                            result.measured_bytes = Some(measure.bytes);
+                            result.complete = measure.complete;
+                            result.file_count = measure.files;
+                            result.location_source = Some(LocationSource::Declared);
+                        }
+                        None => return unavailable(app_id, result.install_location, DEFERRED),
+                    }
+                }
+            } else {
+                result.unavailable_reason =
+                    Some("Pasta de implantação do Flatpak não encontrada".to_string());
+            }
+        }
+        #[cfg(target_os = "linux")]
+        Some(SOURCE_SNAP) => {
+            if let Some(dir) = app.install_location.as_deref() {
+                let normalized = normalize(Path::new(dir));
+                let path = Path::new(&normalized);
+                result.install_location = Some(normalized.clone());
+                if !is_valid_snap_dir(path) {
+                    result.unavailable_reason =
+                        Some("Pasta de montagem do Snap não encontrada ou inválida".to_string());
+                } else {
+                    match measure_dir(path, mode) {
+                        Some(measure) => {
+                            result.measured_bytes = Some(measure.bytes);
+                            result.complete = measure.complete;
+                            result.file_count = measure.files;
+                            result.location_source = Some(LocationSource::Declared);
+                        }
+                        None => return unavailable(app_id, result.install_location, DEFERRED),
+                    }
+                }
+            } else {
+                result.unavailable_reason =
+                    Some("Pasta de montagem do Snap não encontrada".to_string());
+            }
+        }
+        Some(SOURCE_MAC_APP) => {
+            // TODO(macos): validar em hardware.
+            let key = &parsed.as_ref().unwrap().key;
+            let path = Path::new(key);
+            result.install_location = Some(key.clone());
+            let roots: Vec<PathBuf> = super::apps_macos::app_roots(ctx.home.as_deref())
+                .into_iter()
+                .map(|(root, _)| root)
+                .collect();
+            match super::uninstall_unix::validate_mac_app_path(path, &roots) {
+                Ok(()) => match measure_dir(path, mode) {
+                    Some(measure) => {
+                        result.measured_bytes = Some(measure.bytes);
+                        result.complete = measure.complete;
+                        result.file_count = measure.files;
+                        result.location_source = Some(LocationSource::Declared);
+                    }
+                    None => return unavailable(app_id, result.install_location, DEFERRED),
+                },
+                Err(reason) => result.unavailable_reason = Some(reason),
+            }
+        }
+        _ => {
+            result.unavailable_reason =
+                Some("Origem de instalação sem medição de disco suportada".to_string());
+        }
+    }
+
+    // 2. Pastas de dados do usuário com o nome exato (mesma regra dos resíduos).
+    if let Some(home) = &ctx.home {
+        let others = ctx.others(app_id);
+        let other_names = super::residue::unix::other_app_names(app_id, &ctx.apps);
+        let mut seen: Vec<String> = Vec::new();
+        let mut data_total = 0u64;
+        let mut data_complete = true;
+        for folder in super::residue::unix::data_folder_candidates(
+            app,
+            home,
+            &ctx.shell_patterns,
+            &others,
+            &other_names,
+        ) {
+            if folder.blocked.is_some() {
+                continue;
+            }
+            let dir = normalize(&folder.path);
+            let inside_program = result
+                .install_location
+                .as_deref()
+                .is_some_and(|loc| super::residue::unix::is_inside_tree(loc, &dir));
+            if inside_program || seen.contains(&dir) {
+                continue;
+            }
+            let path = Path::new(&dir);
+            if !path.is_dir() || is_reparse_point(path) {
+                continue;
+            }
+            match measure_dir(path, mode) {
+                Some(measure) => {
+                    data_total = data_total.saturating_add(measure.bytes);
+                    data_complete &= measure.complete;
+                }
+                None => return unavailable(app_id, result.install_location, DEFERRED),
+            }
+            seen.push(dir.clone());
+            result.data_folders.push(dir);
+        }
+        if !result.data_folders.is_empty() {
+            result.data_bytes = Some(data_total);
+            result.data_complete = data_complete;
+        }
+    }
+
+    result.full_scan = matches!(mode, Mode::Full);
+    result
+}
+
+#[cfg(windows)]
+fn measure_one_windows(ctx: &Context, app_id: &str, mode: Mode) -> AppFootprint {
     let Some(app) = ctx.apps.iter().find(|app| app.id == app_id) else {
         return unavailable(app_id, None, "Programa não está mais no inventário");
     };
@@ -673,5 +985,64 @@ mod tests {
 
         assert!(!complete);
         assert!(bytes <= 30);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn measure_file_list_ignora_diretorios_e_symlinks() {
+        let root =
+            std::env::temp_dir().join(format!("pulse-footprint-list-{}", std::process::id()));
+        let sub = root.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        let file_a = root.join("a.bin");
+        let file_b = sub.join("b.bin");
+        let link = root.join("link.bin");
+        fs::write(&file_a, vec![0u8; 40]).unwrap();
+        fs::write(&file_b, vec![0u8; 25]).unwrap();
+        std::os::unix::fs::symlink(&file_a, &link).unwrap();
+
+        let paths = [
+            root.to_string_lossy().to_string(),
+            sub.to_string_lossy().to_string(),
+            file_a.to_string_lossy().to_string(),
+            file_b.to_string_lossy().to_string(),
+            link.to_string_lossy().to_string(),
+            "/caminho/que/nao/existe/pulse".to_string(),
+        ];
+        let refs: Vec<&str> = paths.iter().map(String::as_str).collect();
+        let (bytes, files, complete) =
+            measure_file_list(refs, 100, Instant::now() + Duration::from_secs(5));
+        fs::remove_dir_all(&root).ok();
+
+        assert_eq!(bytes, 65);
+        assert_eq!(files, 2);
+        assert!(complete);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn medicao_real_de_pacote_deb_e_do_inventario() {
+        if super::super::packages_linux::dpkg_list_file("dpkg").is_some() {
+            let measured = measure_deb_package(
+                "dpkg",
+                Mode::Quick {
+                    batch_deadline: Instant::now() + Duration::from_secs(5),
+                },
+            )
+            .expect("dentro do prazo")
+            .expect("dpkg.list deve ser legível");
+            assert!(measured.bytes > 0);
+            assert!(measured.files > 0);
+        }
+        let snapshot = collect_cached();
+        if let Some(first) = snapshot.apps.first() {
+            let results = measure_apps(std::slice::from_ref(&first.id));
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0].app_id, first.id);
+            assert!(
+                results[0].measured_bytes.is_some() || results[0].unavailable_reason.is_some(),
+                "ou mede ou explica o motivo"
+            );
+        }
     }
 }

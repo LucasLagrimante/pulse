@@ -43,6 +43,19 @@ pub struct InstalledApp {
     pub is_msi: bool,
     /// Data URI em PNG com o ícone do aplicativo extraído do DisplayIcon ou executável.
     pub icon: Option<String>,
+    /// Origem da instalação fora do Windows (`deb`, `flatpak`, `snap`,
+    /// `appimage`, `macapp`). `None` no Windows (registro).
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Preenchido quando o Pulse **não** desinstala este item (pacote
+    /// essencial do sistema, dependência de meta-pacote do desktop, app da
+    /// Apple). O backend recusa a sessão; a UI pode desabilitar o botão.
+    #[serde(default)]
+    pub protected_reason: Option<String>,
+    /// Nomes técnicos exatos (pacote, id do atalho, id Flatpak/Snap, bundle
+    /// id) usados só pela busca de resíduos. Interno: não vai para a UI.
+    #[serde(skip)]
+    pub match_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -125,9 +138,22 @@ pub fn parse_app_id(id: &str) -> Option<(Hive, RegistryView, String)> {
     Some((hive, view, subkey))
 }
 
+/// Inventário da plataforma atual: registro no Windows, gerenciadores de
+/// pacote/pastas de aplicativos no Linux e no macOS (`installed_unix`).
+pub fn collect() -> InstalledAppsSnapshot {
+    #[cfg(windows)]
+    {
+        collect_windows()
+    }
+    #[cfg(unix)]
+    {
+        super::installed_unix::collect()
+    }
+}
+
 /// Percorre as raízes de desinstalação e monta a lista. Raias ilegíveis não
 /// derrubam o resultado: cada uma vira uma linha em `partial_reason`.
-pub fn collect() -> InstalledAppsSnapshot {
+pub fn collect_windows() -> InstalledAppsSnapshot {
     let mut apps: Vec<InstalledApp> = Vec::new();
     let mut problems: Vec<String> = Vec::new();
     let mut scanned_roots = 0usize;
@@ -177,7 +203,8 @@ pub fn collect() -> InstalledAppsSnapshot {
                 scanned_roots += 1;
                 for name in names {
                     let subkey = format!("{}\\{}", UNINSTALL_SUBKEY, name);
-                    if let Some(app) = read_app(Hive::CurrentUser, RegistryView::Native64, &subkey) {
+                    if let Some(app) = read_app(Hive::CurrentUser, RegistryView::Native64, &subkey)
+                    {
                         apps.push(app);
                     }
                 }
@@ -259,12 +286,19 @@ fn collect_user_hives(apps: &mut Vec<InstalledApp>, problems: &mut Vec<String>) 
         let names = match handle.enum_keys() {
             Ok(names) => names,
             Err(code) => {
-                problems.push(format!("Perfil {} não pôde ser enumerado (código {})", sid, code));
+                problems.push(format!(
+                    "Perfil {} não pôde ser enumerado (código {})",
+                    sid, code
+                ));
                 continue;
             }
         };
         for name in names {
-            if let Some(app) = read_app(Hive::Users, RegistryView::Native64, &format!("{}\\{}", path, name)) {
+            if let Some(app) = read_app(
+                Hive::Users,
+                RegistryView::Native64,
+                &format!("{}\\{}", path, name),
+            ) {
                 apps.push(app);
             }
         }
@@ -367,6 +401,9 @@ fn read_app(hive: Hive, view: RegistryView, subkey: &str) -> Option<InstalledApp
         is_msi: detect_msi(uninstall_string.as_deref()),
         uninstall_string,
         icon,
+        source: None,
+        protected_reason: None,
+        match_names: Vec::new(),
     })
 }
 
@@ -569,19 +606,25 @@ mod tests {
 
     #[test]
     fn msi_detectado_pelo_comando_do_instalador() {
+        assert!(detect_msi(Some("MsiExec.exe /X{1234-5678} /quiet")));
         assert!(detect_msi(Some(
-            "MsiExec.exe /X{1234-5678} /quiet"
+            "C:\\Windows\\System32\\msiexec.exe /I{GUID}"
         )));
-        assert!(detect_msi(Some("C:\\Windows\\System32\\msiexec.exe /I{GUID}")));
         assert!(!detect_msi(Some("C:\\Program Files\\App\\unins000.exe")));
         assert!(!detect_msi(None));
     }
 
+    // Lê o registro real: só faz sentido no Windows (no unix ver
+    // `installed_unix::tests`).
+    #[cfg(windows)]
     #[test]
     fn inventario_real_respeita_invariantes() {
         let snapshot = collect();
         assert_eq!(snapshot.total_count, snapshot.apps.len());
-        assert!(snapshot.scanned_roots >= 2, "as raízes principais precisam ser lidas");
+        assert!(
+            snapshot.scanned_roots >= 2,
+            "as raízes principais precisam ser lidas"
+        );
         assert!(
             snapshot
                 .apps
@@ -590,11 +633,17 @@ mod tests {
             "nenhum app pode ter nome vazio"
         );
         assert!(
-            snapshot.apps.iter().all(|app| parse_app_id(&app.id).is_some()),
+            snapshot
+                .apps
+                .iter()
+                .all(|app| parse_app_id(&app.id).is_some()),
             "todo app precisa ter id de registro utilizável"
         );
     }
 
+    // Lê o registro real: só faz sentido no Windows (no unix ver
+    // `installed_unix::tests`).
+    #[cfg(windows)]
     #[test]
     fn inventario_real_nao_traz_componente_de_sistema() {
         let snapshot = collect();
@@ -623,6 +672,9 @@ mod tests {
                 uninstall_string: Some("C:\\Users\\Update.exe --uninstall".to_string()),
                 is_msi: false,
                 icon: None,
+                source: None,
+                protected_reason: None,
+                match_names: Vec::new(),
             },
             InstalledApp {
                 id: "HKU|S-1-5-21-...|32".to_string(),
@@ -638,6 +690,9 @@ mod tests {
                 uninstall_string: Some("C:\\Users\\Update.exe --uninstall".to_string()),
                 is_msi: false,
                 icon: None,
+                source: None,
+                protected_reason: None,
+                match_names: Vec::new(),
             },
         ];
 
@@ -663,6 +718,9 @@ mod tests {
                 uninstall_string: None,
                 is_msi: false,
                 icon: None,
+                source: None,
+                protected_reason: None,
+                match_names: Vec::new(),
             },
             InstalledApp {
                 id: "HKLM|SOFTWARE\\...\\Chrome|64".to_string(),
@@ -678,6 +736,9 @@ mod tests {
                 uninstall_string: Some("setup.exe --uninstall".to_string()),
                 is_msi: false,
                 icon: None,
+                source: None,
+                protected_reason: None,
+                match_names: Vec::new(),
             },
         ];
 

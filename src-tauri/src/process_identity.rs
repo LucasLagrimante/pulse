@@ -9,6 +9,10 @@
 //! Pseudo-processos sem executável (Memory Compression, vmmemWSL, System…)
 //! recebem um nome descritivo e uma categoria (`system_kind`) para o
 //! frontend exibir um glifo semântico — nunca um ícone de outro aplicativo.
+//!
+//! No Linux o caminho vem de `/proc/<pid>/exe`, o nome do aplicativo da
+//! entrada `.desktop` correspondente e o "editor" da origem do pacote
+//! (Flatpak, Snap ou o pacote `dpkg` dono do executável).
 
 use crate::system_overview::TopProcess;
 
@@ -98,7 +102,13 @@ fn lacks_display_name(process: &TopProcess) -> bool {
 
 fn candidate_pids(process: &TopProcess) -> Vec<u32> {
     let mut pids = vec![process.id];
-    pids.extend(process.process_ids.iter().copied().filter(|pid| *pid != process.id));
+    pids.extend(
+        process
+            .process_ids
+            .iter()
+            .copied()
+            .filter(|pid| *pid != process.id),
+    );
     pids
 }
 
@@ -108,12 +118,12 @@ pub fn enrich(processes: &mut [TopProcess]) {
         if process.path.is_none() {
             process.path = candidate_pids(process)
                 .into_iter()
-                .find_map(win32::image_path);
+                .find_map(native::image_path);
         }
 
         if let Some(path) = process.path.clone() {
             if lacks_display_name(process) || process.publisher.is_none() {
-                let (description, company) = win32::version_strings(&path);
+                let (description, company) = native::version_strings(&path);
                 if lacks_display_name(process) {
                     if let Some(description) = description {
                         process.display_name = Some(description);
@@ -125,6 +135,7 @@ pub fn enrich(processes: &mut [TopProcess]) {
             }
         }
 
+        #[cfg(any(windows, test))]
         if let Some(known) = known_process(&process.name) {
             if lacks_display_name(process) {
                 process.display_name = Some(known.display_name.to_owned());
@@ -137,7 +148,16 @@ pub fn enrich(processes: &mut [TopProcess]) {
             }
         }
     }
+
+    #[cfg(target_os = "linux")]
+    linux::enrich(processes);
 }
+
+#[cfg(windows)]
+use win32 as native;
+
+#[cfg(target_os = "linux")]
+mod linux;
 
 #[cfg(windows)]
 mod win32 {
@@ -226,7 +246,8 @@ mod win32 {
                 && !pointer.is_null()
                 && length >= 4
             {
-                let pairs = std::slice::from_raw_parts(pointer as *const u16, (length / 2) as usize);
+                let pairs =
+                    std::slice::from_raw_parts(pointer as *const u16, (length / 2) as usize);
                 for &[language, codepage] in pairs.as_chunks::<2>().0 {
                     translations.push((language, codepage));
                 }
@@ -264,11 +285,57 @@ mod win32 {
 }
 
 #[cfg(not(windows))]
-mod win32 {
+mod native {
+    /// Extrai o executável de `argv[0]` em `/proc/<pid>/cmdline` quando ele é
+    /// um caminho absoluto válido. Rejeita nomes relativos e strings alteradas
+    /// (ex.: `sshd: user@pts/0`, `-bash`).
+    #[cfg(target_os = "linux")]
+    pub(super) fn parse_cmdline_exe(bytes: &[u8]) -> Option<String> {
+        let first = bytes.split(|&byte| byte == 0).next()?;
+        let raw = std::str::from_utf8(first).ok()?.trim();
+        if !raw.starts_with('/') {
+            return None;
+        }
+        // Alguns daemons colocam a linha inteira no argv[0] separada por espaço.
+        let candidate = if std::path::Path::new(raw).is_file() {
+            raw
+        } else {
+            let head = raw.split_whitespace().next()?;
+            if head.starts_with('/') && std::path::Path::new(head).is_file() {
+                head
+            } else {
+                return None;
+            }
+        };
+        Some(candidate.to_owned())
+    }
+
+    /// Caminho do executável por `/proc/<pid>/exe` (Linux). Para processos de
+    /// outro usuário onde `exe` exige ptrace (EACCES), recorre ao `argv[0]` de
+    /// `/proc/<pid>/cmdline` somente se apontar para um arquivo existente.
+    #[cfg(target_os = "linux")]
+    pub fn image_path(pid: u32) -> Option<String> {
+        if pid == 0 {
+            return None;
+        }
+        if let Ok(target) = std::fs::read_link(format!("/proc/{pid}/exe")) {
+            let text = target.to_string_lossy();
+            let cleaned = text.trim_end_matches(" (deleted)").trim();
+            if !cleaned.is_empty() {
+                return Some(cleaned.to_owned());
+            }
+        }
+        let bytes = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+        parse_cmdline_exe(&bytes)
+    }
+
+    /// No macOS o `sysinfo` já entrega o caminho na coleta.
+    #[cfg(not(target_os = "linux"))]
     pub fn image_path(_pid: u32) -> Option<String> {
         None
     }
 
+    /// Executáveis ELF/Mach-O não têm recurso de versão como o PE.
     pub fn version_strings(_path: &str) -> (Option<String>, Option<String>) {
         (None, None)
     }
@@ -292,14 +359,24 @@ mod tests {
             icon: None,
             path: None,
             system_kind: None,
+            user: None,
         }
     }
 
     #[test]
     fn reconhece_pseudo_processos_sem_diferenciar_caixa() {
-        assert_eq!(known_process("Memory Compression").map(|k| k.kind), Some("memory"));
-        assert_eq!(known_process("vmmemWSL").map(|k| k.kind), Some("virtualization"));
-        assert_eq!(known_process("MsMpEng.exe").map(|k| k.kind), Some("security"));
+        assert_eq!(
+            known_process("Memory Compression").map(|k| k.kind),
+            Some("memory")
+        );
+        assert_eq!(
+            known_process("vmmemWSL").map(|k| k.kind),
+            Some("virtualization")
+        );
+        assert_eq!(
+            known_process("MsMpEng.exe").map(|k| k.kind),
+            Some("security")
+        );
         assert!(known_process("chrome").is_none());
     }
 
@@ -307,7 +384,10 @@ mod tests {
     fn pseudo_processo_sem_caminho_recebe_nome_e_categoria() {
         let mut list = vec![process("Memory Compression")];
         enrich(&mut list);
-        assert_eq!(list[0].display_name.as_deref(), Some("Compressão de memória"));
+        assert_eq!(
+            list[0].display_name.as_deref(),
+            Some("Compressão de memória")
+        );
         assert_eq!(list[0].publisher.as_deref(), Some("Microsoft Windows"));
         assert_eq!(list[0].system_kind.as_deref(), Some("memory"));
     }
@@ -319,7 +399,10 @@ mod tests {
         item.path = Some("C:\\ProgramData\\Microsoft\\Windows Defender\\MsMpEng.exe".to_owned());
         let mut list = vec![item];
         enrich(&mut list);
-        assert_eq!(list[0].display_name.as_deref(), Some("Antimalware Service Executable"));
+        assert_eq!(
+            list[0].display_name.as_deref(),
+            Some("Antimalware Service Executable")
+        );
         assert!(list[0].system_kind.is_none());
     }
 
@@ -329,5 +412,17 @@ mod tests {
         enrich(&mut list);
         assert_eq!(list[0].display_name.as_deref(), Some("algo-raro"));
         assert!(list[0].system_kind.is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn extrai_executavel_valido_do_cmdline() {
+        assert_eq!(
+            native::parse_cmdline_exe(b"/bin/sh\0-c\0true\0").as_deref(),
+            Some("/bin/sh")
+        );
+        assert_eq!(native::parse_cmdline_exe(b"-bash\0"), None);
+        assert_eq!(native::parse_cmdline_exe(b"sshd: user@pts/0\0"), None);
+        assert_eq!(native::parse_cmdline_exe(b"/nao/existe/binario\0"), None);
     }
 }

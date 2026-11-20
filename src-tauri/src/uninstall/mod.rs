@@ -2,11 +2,14 @@
 //!
 //! Fluxo em quatro etapas, cada uma com um comando próprio:
 //!
-//! 1. `list_installed_apps` — inventário vindo do registro;
+//! 1. `list_installed_apps` — inventário vindo do registro (Windows) ou dos
+//!    gerenciadores de pacote/pastas de aplicativos (Linux/macOS);
 //! 2. `start_uninstall_session` + `create_restore_point` — restauração
 //!    opcional e o **snapshot** do que existe agora;
-//! 3. `run_app_uninstaller` — desinstalador padrão do fabricante, aguardado de
-//!    verdade (a chave de desinstalação precisa sumir);
+//! 3. `run_app_uninstaller` — desinstalador padrão do fabricante (ou
+//!    `apt-get`/`flatpak`/`snap`/Lixeira fora do Windows), aguardado de
+//!    verdade (a chave de desinstalação precisa sumir; no unix, o item
+//!    precisa sair do inventário);
 //! 4. `cleanup_uninstall_residue` — remoção apenas do que o usuário marcou
 //!    **e** do que ainda bate com o snapshot.
 //!
@@ -28,11 +31,25 @@ pub mod registry;
 pub mod residue;
 pub mod session;
 
+// Fora do Windows: inventário por origem (deb/Flatpak/Snap/AppImage no Linux,
+// `.app` no macOS) e remoção pelo gerenciador de cada origem. Os parsers do
+// macOS são puros e compilam em qualquer unix, para os testes rodarem aqui.
+#[cfg(unix)]
+pub mod apps_macos;
+#[cfg(target_os = "linux")]
+pub mod desktop_linux;
+#[cfg(unix)]
+pub mod installed_unix;
+#[cfg(target_os = "linux")]
+pub mod packages_linux;
+#[cfg(unix)]
+pub mod uninstall_unix;
+
 pub use installed::{list_installed_apps, InstalledApp, InstalledAppsSnapshot};
 pub use platform::UninstallCapabilities;
 pub use session::{
-    cancel_uninstall_session, cleanup_uninstall_residue, run_app_uninstaller, start_uninstall_session,
-    CleanupReport, UninstallSession, UninstallerOutcome,
+    cancel_uninstall_session, cleanup_uninstall_residue, run_app_uninstaller,
+    start_uninstall_session, CleanupReport, UninstallSession, UninstallerOutcome,
 };
 
 /// Usado pelo modal para desabilitar o checkbox de restauração com o motivo na

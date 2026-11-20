@@ -1,23 +1,34 @@
-//! Atualizações pendentes de aplicativos via Gerenciador de Pacotes do Windows.
+//! Atualizações pendentes de aplicativos.
 //!
-//! O `winget list --upgrade-available` devolve uma tabela cujas colunas são
-//! **localizadas** e cujas larguras variam com o conteúdo, então a leitura é
-//! feita pelas posições dos cabeçalhos da própria saída — nunca por índice
-//! fixo de coluna nem por posição de caractere presumida.
+//! - **Windows**: Gerenciador de Pacotes do Windows (`winget`). A saída de
+//!   `winget list --upgrade-available` é uma tabela com colunas localizadas e
+//!   larguras variáveis, lida pelas posições dos cabeçalhos em caracteres.
+//! - **Linux**: Flatpak (usuário e sistema), `apt` e `snap` (quando instalados),
+//!   com atualização via `flatpak update` e `pkexec`.
+//! - **macOS**: leitura via `brew outdated --json=v2` quando o Homebrew está
+//!   instalado; atualização ainda não validada em hardware.
 //!
-//! O comando leva ~5 s e consulta a fonte remota, então:
+//! A consulta leva vários segundos e usa rede, então:
 //! - roda em `spawn_blocking` (nunca bloqueia a thread de UI);
 //! - usa subprocesso sem janela (`crate::process::hidden_command`);
 //! - só é acionado sob demanda, nunca no ciclo de polling da Visão geral;
 //! - mantém cache longo (30 min) — atualização de app não muda por minuto.
 
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
+
 use serde::{Deserialize, Serialize};
+#[cfg(any(windows, target_os = "linux"))]
 use std::io::BufRead;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
+#[cfg(any(windows, target_os = "linux"))]
+use tauri::Emitter;
 
-/// Evento emitido durante a instalação, uma vez por linha de saída do winget.
+/// Evento emitido durante a instalação, uma vez por linha de saída do gerenciador.
 pub const UPGRADE_PROGRESS_EVENT: &str = "winget-upgrade-progress";
 
 /// Id reservado para a atualização em lote (`winget upgrade --all`): o
@@ -25,7 +36,7 @@ pub const UPGRADE_PROGRESS_EVENT: &str = "winget-upgrade-progress";
 pub const ALL_PACKAGES_ID: &str = "*";
 
 /// Progresso de uma atualização. `phase` é `started`, `log`, `finished`,
-/// `failed` ou `timeout`; `line` traz o texto literal do winget.
+/// `failed` ou `timeout`; `line` traz o texto literal do gerenciador.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct UpgradeProgress {
@@ -34,10 +45,11 @@ pub struct UpgradeProgress {
     pub line: String,
 }
 
-/// TTL generoso: `winget` consome rede e ~5 s de CPU.
+/// TTL generoso: a consulta consome rede e vários segundos de CPU.
 const UPDATES_CACHE_TTL: Duration = Duration::from_secs(30 * 60);
 /// Tempo máximo para o `winget` responder. Acima disso a lista é declarada
 /// indisponível em vez de deixar a UI esperando para sempre.
+#[cfg(windows)]
 const WINGET_TIMEOUT: Duration = Duration::from_secs(90);
 /// Colunas da tabela do winget: Nome, ID, Versão, Disponível, Origem.
 const EXPECTED_COLUMNS: usize = 5;
@@ -95,6 +107,7 @@ fn unavailable(reason: impl Into<String>) -> UpdatesSnapshot {
 /// A instalação moderna usa o alias em `%LOCALAPPDATA%\Microsoft\WindowsApps`, que
 /// é um **App Execution Alias**: existe como link, mas o arquivo real é
 /// `winget.exe` dentro do pacote. Verificamos os dois caminhos.
+#[cfg(windows)]
 fn winget_path() -> Option<std::path::PathBuf> {
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(path) = std::env::var("LOCALAPPDATA") {
@@ -287,11 +300,14 @@ pub fn parse_footer_total(output: &str) -> Option<usize> {
 
 /// Tempo máximo de um upgrade real. Um pacote grande (SDK, driver, jogo)
 /// baixa e instala em minutos, então o limite é bem acima do de `list`.
+#[cfg(any(windows, target_os = "linux"))]
 const UPGRADE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 /// Teto de caracteres devolvidos ao front. A saída do `winget upgrade` é
 /// curta; truncar evita inflar o JSON do Tauri sem perder informação útil.
+#[cfg(any(windows, target_os = "linux", test))]
 const UPGRADE_OUTPUT_LIMIT: usize = 4000;
 /// Comprimento máximo aceitável para o ID de pacote.
+#[cfg(any(windows, test))]
 const MAX_PACKAGE_ID_LEN: usize = 200;
 
 /// Valida o identificador do pacote antes de virá-lo argumento de subprocesso.
@@ -300,6 +316,7 @@ const MAX_PACKAGE_ID_LEN: usize = 200;
 /// porque é repassado como argumento do `winget`: aspas ou aspas duplas
 /// permitiriam reescrever a linha de comando. Números também são aceitos
 /// porque pacotes do Microsoft Store são referenciados por ProductId.
+#[cfg(any(windows, test))]
 fn validate_package_id(id: &str) -> Result<(), String> {
     let trimmed = id.trim();
     if trimmed.is_empty() {
@@ -347,6 +364,7 @@ impl UpgradeFailure {
         }
     }
 
+    #[cfg(any(windows, test))]
     fn from_exit_code(code: Option<i32>, output: &str) -> Self {
         let detail = relevant_output_detail(output);
         match code {
@@ -470,23 +488,48 @@ pub fn relevant_output_detail(output: &str) -> Option<String> {
     Some(useful[start..].join("\n"))
 }
 
-/// Instala/atualiza um pacote via `winget upgrade`.
+/// Instala/atualiza um pacote (`winget` no Windows; `apt`/`flatpak`/`snap` no Linux).
 ///
 /// Diferente da listagem, isto é uma ação do usuário: roda sob demanda, sem
 /// cache, com timeout longo (upgrade é lento) e propaga a causa da falha —
 /// como "exige administrador" — para a UI, em vez de engoli-la.
 #[tauri::command]
 pub async fn upgrade_winget_package(id: String, app: AppHandle) -> Result<String, UpgradeFailure> {
-    validate_package_id(&id).map_err(UpgradeFailure::plain)?;
-    let package_id = id.trim().to_string();
+    #[cfg(windows)]
+    {
+        validate_package_id(&id).map_err(UpgradeFailure::plain)?;
+        let package_id = id.trim().to_string();
 
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        run_winget_upgrade(package_upgrade_args(&package_id), (app, package_id))
-    })
-    .await
-    .map_err(|_| UpgradeFailure::plain("A atualização foi interrompida"))?;
-    invalidate_updates_cache();
-    result
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            run_winget_upgrade(package_upgrade_args(&package_id), (app, package_id))
+        })
+        .await
+        .map_err(|_| UpgradeFailure::plain("A atualização foi interrompida"))?;
+        invalidate_updates_cache();
+        result
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let package_id = id.trim().to_string();
+        let result =
+            tauri::async_runtime::spawn_blocking(move || linux::upgrade(&package_id, &app, false))
+                .await
+                .map_err(|_| UpgradeFailure::plain("A atualização foi interrompida"))?;
+        invalidate_updates_cache();
+        result
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = (id, app);
+        macos::upgrade()
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    {
+        let _ = (id, app);
+        Err(UpgradeFailure::plain(
+            "Atualização de pacotes não é suportada nesta plataforma",
+        ))
+    }
 }
 
 fn package_upgrade_args(id: &str) -> Vec<String> {
@@ -517,24 +560,52 @@ pub struct BatchUpgradeReport {
     pub failed: Vec<BatchFailure>,
 }
 
-/// Atualiza **todos** os pacotes pendentes, um `winget upgrade --id` por vez.
+/// Atualiza **todos** os pacotes pendentes.
 ///
-/// Não usamos `winget upgrade --all`: ele devolve um único código
-/// (`0x8A15002C`, "concluído com falhas") e uma saída localizada sem dizer
-/// qual pacote falhou nem por quê. Pacote a pacote, cada um tem código de
-/// saída próprio, a linha correspondente mostra o próprio progresso e o
-/// relatório final lista as falhas com a causa traduzida.
+/// No Windows roda um `winget upgrade --id` por vez (para reportar causa por
+/// pacote). No Linux agrupa por gerenciador (`apt` e `snap` numa chamada só
+/// cada, para pedir senha uma única vez, e `flatpak` por instalação).
 #[tauri::command]
 pub async fn upgrade_all_winget_packages(
     app: AppHandle,
 ) -> Result<BatchUpgradeReport, UpgradeFailure> {
-    let result = tauri::async_runtime::spawn_blocking(move || run_upgrade_all(&app))
+    #[cfg(windows)]
+    {
+        let result = tauri::async_runtime::spawn_blocking(move || run_upgrade_all(&app))
+            .await
+            .map_err(|_| UpgradeFailure::plain("A atualização foi interrompida"))?;
+        invalidate_updates_cache();
+        result
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            let snapshot = cached_or_fresh_snapshot(false);
+            if let Some(reason) = snapshot.unavailable_reason {
+                return Err(UpgradeFailure::plain(reason));
+            }
+            linux::upgrade_all(&snapshot.updates, &app)
+        })
         .await
         .map_err(|_| UpgradeFailure::plain("A atualização foi interrompida"))?;
-    invalidate_updates_cache();
-    result
+        invalidate_updates_cache();
+        result
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        macos::upgrade_all()
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    {
+        let _ = app;
+        Err(UpgradeFailure::plain(
+            "Atualização de pacotes não é suportada nesta plataforma",
+        ))
+    }
 }
 
+#[cfg(windows)]
 fn run_upgrade_all(app: &AppHandle) -> Result<BatchUpgradeReport, UpgradeFailure> {
     let snapshot = cached_or_fresh_snapshot(false);
     if let Some(reason) = snapshot.unavailable_reason {
@@ -589,25 +660,48 @@ fn run_upgrade_all(app: &AppHandle) -> Result<BatchUpgradeReport, UpgradeFailure
 
 /// Repete a atualização de um pacote **como administrador**.
 ///
-/// O Pulse roda sem elevação; pacotes MSIX que registram serviço (Claude,
-/// WSL, Codex) falham com `0x80073D28`. Aqui o winget é relançado via
-/// `Start-Process -Verb RunAs`, o que mostra o aviso do UAC — o usuário decide.
-/// Um processo elevado não pode ter a saída redirecionada para um processo
-/// comum, então o progresso é só o código de saída final.
+/// No Windows relança o winget via `Start-Process -Verb RunAs` (UAC).
+/// No Linux aciona `pkexec` (polkit) inclusive para instalações Flatpak de
+/// sistema.
 #[tauri::command]
 pub async fn upgrade_winget_package_elevated(
     id: String,
     app: AppHandle,
 ) -> Result<String, UpgradeFailure> {
-    validate_package_id(&id).map_err(UpgradeFailure::plain)?;
-    let package_id = id.trim().to_string();
+    #[cfg(windows)]
+    {
+        validate_package_id(&id).map_err(UpgradeFailure::plain)?;
+        let package_id = id.trim().to_string();
 
-    let result =
-        tauri::async_runtime::spawn_blocking(move || run_elevated_upgrade(package_id, app))
-            .await
-            .map_err(|_| UpgradeFailure::plain("A atualização foi interrompida"))?;
-    invalidate_updates_cache();
-    result
+        let result =
+            tauri::async_runtime::spawn_blocking(move || run_elevated_upgrade(package_id, app))
+                .await
+                .map_err(|_| UpgradeFailure::plain("A atualização foi interrompida"))?;
+        invalidate_updates_cache();
+        result
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let package_id = id.trim().to_string();
+        let result =
+            tauri::async_runtime::spawn_blocking(move || linux::upgrade(&package_id, &app, true))
+                .await
+                .map_err(|_| UpgradeFailure::plain("A atualização foi interrompida"))?;
+        invalidate_updates_cache();
+        result
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = (id, app);
+        macos::upgrade()
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    {
+        let _ = (id, app);
+        Err(UpgradeFailure::plain(
+            "Atualização de pacotes não é suportada nesta plataforma",
+        ))
+    }
 }
 
 /// Script PowerShell de uma linha que relança o winget elevado e devolve o
@@ -634,6 +728,7 @@ pub fn elevated_upgrade_script(winget: &str, id: &str) -> String {
     )
 }
 
+#[cfg(windows)]
 fn run_elevated_upgrade(id: String, app: AppHandle) -> Result<String, UpgradeFailure> {
     use base64::Engine;
 
@@ -696,6 +791,7 @@ fn run_elevated_upgrade(id: String, app: AppHandle) -> Result<String, UpgradeFai
 /// upgrades podem ficar em paralelo. O `winget` **não expõe porcentagem** de
 /// progresso, então a barra é indeterminada e o texto da saída é o feedback
 /// honesto disponível — nada de porcentagem fictícia.
+#[cfg(windows)]
 fn run_winget_upgrade(
     mut args: Vec<String>,
     progress: (AppHandle, String),
@@ -751,6 +847,7 @@ fn run_winget_upgrade(
 /// Espera o processo com o teto de `UPGRADE_TIMEOUT`. No timeout o processo é
 /// encerrado e a falha devolvida; as threads de leitura terminam sozinhas
 /// quando o pipe fecha.
+#[cfg(any(windows, target_os = "linux"))]
 fn wait_for_upgrade(
     child: &mut std::process::Child,
     app: &AppHandle,
@@ -772,14 +869,17 @@ fn wait_for_upgrade(
                 std::thread::sleep(Duration::from_millis(120));
             }
             Err(error) => {
-                return Err(UpgradeFailure::plain(format!(
-                    "Falha ao acompanhar o processo do winget: {error}"
-                )));
+                #[cfg(windows)]
+                let message = format!("Falha ao acompanhar o processo do winget: {error}");
+                #[cfg(not(windows))]
+                let message = format!("Falha ao acompanhar o processo de atualização: {error}");
+                return Err(UpgradeFailure::plain(message));
             }
         }
     }
 }
 
+#[cfg(any(windows, target_os = "linux"))]
 fn join_readers(readers: Vec<std::thread::JoinHandle<String>>) -> String {
     let mut output = String::new();
     for reader in readers {
@@ -792,10 +892,11 @@ fn join_readers(readers: Vec<std::thread::JoinHandle<String>>) -> String {
 
 /// Lê a saída de um pipe linha a linha, emitindo cada linha e devolvendo o
 /// texto completo. `Read::read` bloqueia até haver dado, então a linha só é
-/// emitida quando o winget a escreve de fato — nada de progresso inventado.
+/// emitida quando o processo a escreve de fato — nada de progresso inventado.
 ///
 /// O winget redesenha a barra de progresso com `\r` na mesma linha; só o
 /// último quadro de cada linha é aproveitado.
+#[cfg(any(windows, target_os = "linux"))]
 fn spawn_output_reader<R: std::io::Read + Send + 'static>(
     pipe: R,
     app: AppHandle,
@@ -820,12 +921,14 @@ fn spawn_output_reader<R: std::io::Read + Send + 'static>(
 }
 
 /// Último quadro não vazio de uma linha redesenhada com `\r`.
+#[cfg(any(windows, target_os = "linux", test))]
 fn last_frame(line: &str) -> Option<&str> {
     line.split('\r')
         .map(str::trim)
         .rfind(|frame| !frame.is_empty())
 }
 
+#[cfg(any(windows, target_os = "linux"))]
 fn emit_progress(app: &AppHandle, id: &str, phase: &str, line: &str) {
     let _ = app.emit(
         UPGRADE_PROGRESS_EVENT,
@@ -839,6 +942,7 @@ fn emit_progress(app: &AppHandle, id: &str, phase: &str, line: &str) {
 
 /// Corta por caracteres (nunca por byte), para não quebrar um caractere UTF-8
 /// no meio e produzir uma `String` inválida.
+#[cfg(any(windows, target_os = "linux", test))]
 fn truncate_chars(text: &str, limit: usize) -> String {
     if text.chars().count() <= limit {
         return text.to_string();
@@ -857,8 +961,8 @@ pub async fn list_pending_updates(force_refresh: Option<bool>) -> UpdatesSnapsho
     }
 }
 
-/// Lista do cache (TTL de 30 min) ou recém-consultada no winget. Bloqueante:
-/// chamar só de dentro de `spawn_blocking`.
+/// Lista do cache (TTL de 30 min) ou recém-consultada no gerenciador do sistema.
+/// Bloqueante: chamar só de dentro de `spawn_blocking`.
 fn cached_or_fresh_snapshot(force_refresh: bool) -> UpdatesSnapshot {
     if !force_refresh {
         if let Ok(guard) = UPDATES_CACHE.lock() {
@@ -881,12 +985,14 @@ fn cached_or_fresh_snapshot(force_refresh: bool) -> UpdatesSnapshot {
 }
 
 /// Depois de instalar algo a lista em cache está defasada.
+#[cfg(any(windows, target_os = "linux"))]
 fn invalidate_updates_cache() {
     if let Ok(mut guard) = UPDATES_CACHE.lock() {
         *guard = None;
     }
 }
 
+#[cfg(windows)]
 fn collect_updates() -> UpdatesSnapshot {
     let Some(path) = winget_path() else {
         return unavailable(
@@ -964,6 +1070,21 @@ fn collect_updates() -> UpdatesSnapshot {
         unavailable_reason: None,
         collected_at_unix_ms: now_unix_ms(),
     }
+}
+
+#[cfg(target_os = "linux")]
+fn collect_updates() -> UpdatesSnapshot {
+    linux::collect()
+}
+
+#[cfg(target_os = "macos")]
+fn collect_updates() -> UpdatesSnapshot {
+    macos::collect()
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+fn collect_updates() -> UpdatesSnapshot {
+    unavailable("Atualizações de pacotes não são suportadas nesta plataforma")
 }
 
 #[cfg(test)]

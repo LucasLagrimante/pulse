@@ -9,6 +9,8 @@
 //!   de engines distintas, que passaria de 100%. Mesma semântica do Gerenciador
 //!   de Tarefas. Quando o driver não expõe os contadores, a indisponibilidade é
 //!   propagada como `None` em vez de fabricar zero.
+//! - Linux/macOS: CPU via `sysinfo` (`process_usage/unix.rs`); GPU no Linux
+//!   via DRM fdinfo + `nvidia-smi pmon` (`process_usage/linux_gpu.rs`).
 
 use std::collections::HashMap;
 
@@ -321,12 +323,29 @@ mod windows_impl {
 #[cfg(windows)]
 pub use windows_impl::{cpu_percent_by_pid, gpu_usage};
 
-#[cfg(not(windows))]
+#[cfg(unix)]
+mod unix;
+#[cfg(unix)]
+pub use unix::cpu_percent_by_pid;
+
+#[cfg(target_os = "linux")]
+pub mod linux_gpu;
+#[cfg(target_os = "linux")]
+pub use linux_gpu::gpu_usage;
+
+/// GPU por processo no macOS exigiria IOKit/Metal privados.
+// TODO(macos): validar em hardware se `ioreg -c IOAccelerator` expõe uso.
+#[cfg(target_os = "macos")]
+pub fn gpu_usage() -> Option<GpuUsage> {
+    None
+}
+
+#[cfg(not(any(windows, unix)))]
 pub fn cpu_percent_by_pid(_pids: &[u32]) -> HashMap<u32, f64> {
     HashMap::new()
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn gpu_usage() -> Option<GpuUsage> {
     None
 }

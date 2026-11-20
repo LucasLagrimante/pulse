@@ -6,7 +6,7 @@ Este documento define os padrões técnicos, restrições arquiteturais e diretr
 
 ## 1. Visão do Produto e Identidade Unificada
 
-O **Pulse** é uma central nativa Windows-first para observabilidade, diagnóstico e controle local do sistema operacional Windows 11. O objetivo do Pulse é substituir a fragmentação de ferramentas isoladas (Gerenciador de Tarefas, Monitor de Recursos, TreeSize, Sysinternals Autoruns e Visualizador de Eventos) por uma **experiência fluida, unificada, contextualizada e orientada a explicar o sistema**.
+O **Pulse** é uma central nativa Windows-first para observabilidade, diagnóstico e controle local do sistema operacional Windows 11, com port para **Linux** (deb/AppImage) e macOS experimental. O objetivo do Pulse é substituir a fragmentação de ferramentas isoladas (Gerenciador de Tarefas, Monitor de Recursos, TreeSize, Sysinternals Autoruns e Visualizador de Eventos) por uma **experiência fluida, unificada, contextualizada e orientada a explicar o sistema**.
 
 ### Princípios Fundamentais (Invioláveis)
 1. **Dados 100% Locais e Privados**: Sem telemetria para nuvem, sem criação de conta e sem dependência de servidores externos.
@@ -180,10 +180,12 @@ pulse/
 │   ├── ServicesHub.tsx           # Serviços do Windows (SCM) e atualizações Winget
 │   ├── SubscriptionUsage.tsx     # Cotas de assinaturas de IA (5 provedores)
 │   ├── QuotaHistory.tsx          # Histórico de cotas de 30 dias em SQLite
+│   ├── platform.ts               # `usePlatform`/`usePlatformCopy`: SO atual e textos por plataforma
 │   └── main.tsx                  # Ponto de entrada do React
 ├── src-tauri/                    # Backend nativo Rust (Tauri v2 / MSVC)
 │   ├── src/
 │   │   ├── lib.rs                # Registro de plugins, handlers e janelas Tauri
+│   │   ├── platform_info.rs      # `get_platform_info`: SO, distro/versão, desktop, sessão, formato do pacote
 │   │   ├── main.rs               # Entrypoint binário
 │   │   ├── system_overview.rs    # CPU, RAM, disco e top processos com cache
 │   │   ├── performance.rs        # Sensores de hardware, GPU e telemetria
@@ -200,7 +202,9 @@ pulse/
 │   │   ├── tray.rs               # Controle da bandeja e janela flyout
 │   │   └── single_instance.rs    # Prevenção de execução múltipla
 │   ├── Cargo.toml                # Dependências Rust
-│   └── tauri.conf.json           # Configuração de capacidades, janelas e bundles
+│   ├── tauri.conf.json           # Configuração de capacidades, janelas e bundle Windows (NSIS)
+│   ├── tauri.linux.conf.json     # Mesclado só no Linux: deb + AppImage + rpm, dependências
+│   └── tauri.macos.conf.json     # Mesclado só no macOS: app + dmg (experimental, sem assinatura)
 ├── landing/                      # Landing Page Oficial Unificada (pulse.lagrimante.com.br)
 │   ├── index.html                # Página completa com Simulador Interativo, SEO e JSON-LD
 │   ├── src/                      # CSS neumórfico (base.css, components.css) e main.js
@@ -216,6 +220,10 @@ pulse/
 ├── memory/                       # Memória contínua com lições arquiteturais
 └── AGENTS.md                     # Este documento canônico de referência
 ```
+
+### 6.0. Multiplataforma
+- Textos visíveis que citam o SO vêm de `platformCopy()` em `src/platform.ts`; no Windows o texto é idêntico ao histórico. Ação que só existe no Windows (UAC, winget, ponto de restauração) é escondida ou mostrada como indisponível com motivo, nunca simulada.
+- CI: `.github/workflows/ci.yml` (push/PR) roda `npm run verify` + `cargo check`/`cargo test --lib` no Ubuntu 22.04 e `cargo check` no macOS. `release.yml` anexa `.deb`/`.AppImage` e `.dmg` à mesma Release depois do job Windows.
 
 ### 6.1. Fluxo de Build Nativa no WSL e Sincronização com a Landing Page
 Como o repositório reside no WSL (`~/projects/pulse`), mas o backend Rust/Tauri requer o compilador MSVC (`link.exe`, `vcvars64.bat`) e NSIS no Windows:
@@ -241,6 +249,9 @@ Sempre valide as alterações antes de finalizar qualquer intervenção:
 | `npm run build` | Compilação completa do bundle do app (TypeScript + Vite) |
 | `npm run verify` | Execução encadeada: typecheck, lint, testes e build do app |
 | `npm run build:native` | Build completa WSL -> Windows (Frontend + Rust MSVC + NSIS + Sync Landing Page) |
+| `npm run tauri:dev` | App em modo dev nativo (Linux/macOS/Windows) |
+| `npm run build:linux` | Build nativa Linux: `.deb` + `.AppImage` (`build:linux:rpm` para `.rpm`) |
+| `npm run build:macos` | Build nativa macOS: `.app` + `.dmg` (experimental, sem assinatura) |
 | `npm run tauri:build:install` | Executa `build:native` e abre o instalador NSIS no Windows |
 | `npm run lp:sync` | Sincroniza versão, tamanho e SHA-256 do instalador com a Landing Page e valida SEO |
 | `npm run lp:sync:release` | Sincroniza a landing com o SHA-256 do instalador já publicado na Release pelo CI |

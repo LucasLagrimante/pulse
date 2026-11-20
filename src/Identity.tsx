@@ -1,5 +1,6 @@
 import { Cpu, MemoryStick, Server, ShieldCheck } from "lucide-react";
 import type { SystemProcessKind } from "./App";
+import { usePlatformCopy } from "./platform";
 
 /** Pulse: a continuous signal folded into a P. Shared by shell and loading states. */
 export function PulseMark({ animated = false }: { animated?: boolean }) {
@@ -47,11 +48,12 @@ export function FileIcon({ folder = false }: { folder?: boolean }) {
 }
 
 export function PulseLoading({ compact = false }: { compact?: boolean }) {
+  const pc = usePlatformCopy();
   return <div className={compact ? "pulse-loading compact" : "pulse-loading"} role="status">
     <PulseMark animated />
     <div><strong>{compact ? "Lendo o sistema" : "Pulse"}</strong><p>Conectando à telemetria local…</p></div>
     {!compact && <>
-      <span className="boot-caption">SEU WINDOWS, EM PERSPECTIVA.</span>
+      <span className="boot-caption">{pc.bootCaption}</span>
       <span className="boot-author">POR LUCAS LAGRIMANTE</span>
     </>}
   </div>;

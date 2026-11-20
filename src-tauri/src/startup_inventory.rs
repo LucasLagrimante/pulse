@@ -1,31 +1,49 @@
 use serde::{Deserialize, Serialize};
+#[cfg(any(windows, test))]
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+#[cfg(any(windows, test))]
+use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::sync::Mutex;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
+#[cfg(any(windows, test))]
+use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(windows)]
 const HKCU_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+#[cfg(windows)]
 const HKLM_RUN_KEY: &str = r"HKLM\Software\Microsoft\Windows\CurrentVersion\Run";
+#[cfg(windows)]
 const HKLM_RUN32_KEY: &str = r"HKLM\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run";
 
+#[cfg(windows)]
 pub const HKCU_APPROVED_KEY: &str =
     r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+#[cfg(windows)]
 pub const HKLM_APPROVED_KEY: &str =
     r"HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
 
+#[cfg(windows)]
 const HKCU_APPROVED_RUN: &str = HKCU_APPROVED_KEY;
+#[cfg(windows)]
 const HKLM_APPROVED_RUN: &str = HKLM_APPROVED_KEY;
 
+#[cfg(windows)]
 const HKCU_APPROVED_RUN32: &str =
     r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32";
+#[cfg(windows)]
 const HKLM_APPROVED_RUN32: &str =
     r"HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32";
 
+#[cfg(windows)]
 const HKCU_APPROVED_STARTUP_FOLDER: &str =
     r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder";
+#[cfg(windows)]
 const HKLM_APPROVED_STARTUP_FOLDER: &str =
     r"HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder";
 
+#[cfg(windows)]
 const APPMODEL_APPDATA_KEY: &str = r"HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData";
 
 // Cache de itens de inicialização com TTL de 10s para evitar subprocessos repetidos
@@ -57,6 +75,7 @@ fn default_impact() -> String {
     "Não medido".to_string()
 }
 
+#[cfg(any(windows, test))]
 pub fn parse_reg_line(line: &str) -> Option<(String, String)> {
     let reg_types = [
         "REG_SZ",
@@ -77,6 +96,7 @@ pub fn parse_reg_line(line: &str) -> Option<(String, String)> {
     None
 }
 
+#[cfg(any(windows, test))]
 pub fn is_approved_enabled(hex: &str) -> bool {
     let hex = hex.trim();
     if hex.len() >= 2 {
@@ -89,6 +109,7 @@ pub fn is_approved_enabled(hex: &str) -> bool {
     true
 }
 
+#[cfg(any(windows, test))]
 pub fn parse_approved_entries(text: &str) -> HashMap<String, bool> {
     let mut map = HashMap::new();
     for line in text.lines() {
@@ -99,6 +120,7 @@ pub fn parse_approved_entries(text: &str) -> HashMap<String, bool> {
     map
 }
 
+#[cfg(any(windows, test))]
 pub fn determine_impact(
     name: &str,
     command: &str,
@@ -124,6 +146,7 @@ pub fn determine_impact(
     ("Não medido".to_string(), None)
 }
 
+#[cfg(any(windows, test))]
 fn startup_approved_hex(enabled: bool) -> Result<String, String> {
     if enabled {
         return Ok("020000000000000000000000".to_owned());
@@ -143,10 +166,12 @@ fn startup_approved_hex(enabled: bool) -> Result<String, String> {
     Ok(bytes.iter().map(|byte| format!("{byte:02X}")).collect())
 }
 
+#[cfg(any(windows, test))]
 pub fn parse_run_entries(text: &str) -> Vec<StartupItem> {
     parse_run_entries_with_meta(text, "HKCU\\Run", &HashMap::new(), &HashMap::new())
 }
 
+#[cfg(any(windows, test))]
 pub fn parse_run_entries_with_meta(
     text: &str,
     origin: &str,
@@ -180,6 +205,7 @@ pub fn parse_run_entries_with_meta(
         .collect()
 }
 
+#[cfg(any(windows, test))]
 pub fn parse_diagnostics_events(xml: &str, map: &mut HashMap<String, u64>) {
     for event_chunk in xml.split("</Event>") {
         let mut app_name = None;
@@ -213,6 +239,7 @@ pub fn parse_diagnostics_events(xml: &str, map: &mut HashMap<String, u64>) {
     }
 }
 
+#[cfg(windows)]
 fn get_diagnostics_boot_durations() -> HashMap<String, u64> {
     let mut map = HashMap::new();
     let out = crate::process::hidden_command("wevtutil.exe")
@@ -235,6 +262,7 @@ fn get_diagnostics_boot_durations() -> HashMap<String, u64> {
     map
 }
 
+#[cfg(windows)]
 fn get_approved_maps() -> (HashMap<String, bool>, HashMap<String, bool>) {
     let mut hkcu = HashMap::new();
     let mut hklm = HashMap::new();
@@ -262,6 +290,7 @@ fn get_approved_maps() -> (HashMap<String, bool>, HashMap<String, bool>) {
     (hkcu, hklm)
 }
 
+#[cfg(windows)]
 fn get_run32_approved_maps() -> HashMap<String, bool> {
     let mut map = HashMap::new();
 
@@ -289,6 +318,7 @@ fn get_run32_approved_maps() -> HashMap<String, bool> {
     map
 }
 
+#[cfg(windows)]
 fn get_folder_approved_maps() -> HashMap<String, bool> {
     let mut map = HashMap::new();
 
@@ -316,6 +346,7 @@ fn get_folder_approved_maps() -> HashMap<String, bool> {
     map
 }
 
+#[cfg(any(windows, test))]
 pub fn parse_appx_state_output(output: &str) -> Vec<(String, String, bool)> {
     let mut items = Vec::new();
     let mut current_key: Option<String> = None;
@@ -359,6 +390,7 @@ pub fn parse_appx_state_output(output: &str) -> Vec<(String, String, bool)> {
     items
 }
 
+#[cfg(any(windows, test))]
 pub fn parse_appx_values_by_family(output: &str, target_val_name: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     let mut current_key: Option<String> = None;
@@ -389,6 +421,7 @@ pub fn parse_appx_values_by_family(output: &str, target_val_name: &str) -> HashM
     map
 }
 
+#[cfg(any(windows, test))]
 pub fn clean_appx_display_name(
     raw_name: Option<&str>,
     package_family: &str,
@@ -443,6 +476,7 @@ pub fn clean_appx_display_name(
     }
 }
 
+#[cfg(windows)]
 fn search_folder_for_icon(base: &Path) -> Option<String> {
     if !base.is_dir() {
         return None;
@@ -513,6 +547,7 @@ fn search_folder_for_icon(base: &Path) -> Option<String> {
     None
 }
 
+#[cfg(windows)]
 fn find_appx_icon(package_family: &str, package_full_name: Option<&str>) -> Option<String> {
     if let Some(full_name) = package_full_name {
         let win_apps = PathBuf::from(r"C:\Program Files\WindowsApps").join(full_name);
@@ -533,6 +568,7 @@ fn find_appx_icon(package_family: &str, package_full_name: Option<&str>) -> Opti
     None
 }
 
+#[cfg(any(windows, test))]
 pub fn parse_startup_folder(
     dir: &Path,
     origin: &str,
@@ -591,6 +627,7 @@ pub fn parse_startup_folder(
     items
 }
 
+#[cfg(windows)]
 fn resolve_startup_folder_filename(name: &str) -> String {
     let user_folder =
         dirs::data_dir().map(|p| p.join(r"Microsoft\Windows\Start Menu\Programs\Startup"));
@@ -619,6 +656,7 @@ fn resolve_startup_folder_filename(name: &str) -> String {
     }
 }
 
+#[cfg(windows)]
 fn load_appx_startup_items(durations_map: &HashMap<String, u64>) -> Vec<StartupItem> {
     let mut items = Vec::new();
 
@@ -691,6 +729,7 @@ fn load_appx_startup_items(durations_map: &HashMap<String, u64>) -> Vec<StartupI
     items
 }
 
+#[cfg(windows)]
 #[tauri::command]
 pub fn list_startup_items() -> Result<Vec<StartupItem>, String> {
     // Retorna do cache se ainda válido (TTL 10s)
@@ -805,6 +844,7 @@ pub fn list_startup_items() -> Result<Vec<StartupItem>, String> {
     Ok(items)
 }
 
+#[cfg(windows)]
 #[tauri::command]
 pub fn set_startup_item_enabled(
     name: String,
@@ -949,6 +989,99 @@ pub fn set_startup_item_enabled(
         startup_time_ms: None,
         icon: None,
     })
+}
+
+/* ------------------------------------------------------------------ */
+/* Linux / macOS                                                       */
+/* ------------------------------------------------------------------ */
+
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
+
+#[cfg(target_os = "linux")]
+fn collect_items() -> Vec<StartupItem> {
+    linux::collect()
+        .into_iter()
+        .map(|entry| entry.item)
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn collect_items() -> Vec<StartupItem> {
+    macos::collect()
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+fn collect_items() -> Vec<StartupItem> {
+    Vec::new()
+}
+
+#[cfg(target_os = "linux")]
+fn change_item(name: &str, origin: &str, enabled: bool) -> Result<(), String> {
+    linux::set_enabled(name, origin, enabled)
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn change_item(_name: &str, _origin: &str, _enabled: bool) -> Result<(), String> {
+    Err(
+        "Indisponível nesta plataforma por enquanto: os itens de inicialização são só leitura"
+            .into(),
+    )
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn list_startup_items() -> Result<Vec<StartupItem>, String> {
+    if let Ok(guard) = STARTUP_CACHE.lock() {
+        if let Some(ref cached) = *guard {
+            if cached.fetched_at.elapsed() < STARTUP_CACHE_TTL {
+                return Ok(cached.items.clone());
+            }
+        }
+    }
+    let items = collect_items();
+    if let Ok(mut guard) = STARTUP_CACHE.lock() {
+        *guard = Some(StartupCache {
+            items: items.clone(),
+            fetched_at: Instant::now(),
+        });
+    }
+    Ok(items)
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn set_startup_item_enabled(
+    name: String,
+    origin: String,
+    enabled: bool,
+) -> Result<StartupItem, String> {
+    if name.eq_ignore_ascii_case("Pulse") {
+        return Err("O autostart do Pulse é gerenciado pela Visão geral".into());
+    }
+    if name.is_empty() {
+        return Err("Nome de entrada inválido".into());
+    }
+    let started = Instant::now();
+    let result = change_item(&name, &origin, enabled);
+    crate::debug::record_result(
+        "startup_item_toggle",
+        started.elapsed().as_millis(),
+        &result,
+        "Falha ao alterar item de inicialização",
+    );
+    result?;
+
+    if let Ok(mut guard) = STARTUP_CACHE.lock() {
+        *guard = None;
+    }
+    let items = list_startup_items()?;
+    items
+        .into_iter()
+        .find(|item| item.name.eq_ignore_ascii_case(&name) && item.origin == origin)
+        .ok_or_else(|| "O item alterado não foi encontrado na releitura".to_string())
 }
 
 #[cfg(test)]

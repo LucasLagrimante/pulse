@@ -1,10 +1,10 @@
 //! Revisão de segurança dos serviços em execução com um CLI de IA local.
 //!
 //! Mesmo molde do `ai_disk_advisor`: o Pulse **não resolve nada** — grava um
-//! relatório Markdown em `%TEMP%` com os serviços ativos, monta um pré-prompt e
-//! abre o CLI escolhido (Claude, Antigravity ou Codex). O pré-prompt proíbe a IA
-//! de alterar o sistema e de rotular malware sem evidência; o parecer volta num
-//! arquivo `.md` que a interface oferece abrir.
+//! relatório Markdown na pasta temporária do sistema com os serviços ativos,
+//! monta um pré-prompt e abre o CLI escolhido (Claude, Antigravity ou Codex).
+//! O pré-prompt proíbe a IA de alterar o sistema e de rotular malware sem
+//! evidência; o parecer volta num arquivo `.md` que a interface oferece abrir.
 
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -174,6 +174,100 @@ fn or_unavailable(value: Option<&str>) -> String {
         .unwrap_or_else(|| "Indisponível".into())
 }
 
+/// Textos específicos do sistema operacional usados no relatório e no prompt.
+struct PlatformCopy {
+    outside_system_label: &'static str,
+    limits_bullets: &'static [&'static str],
+    review_section_heading: &'static str,
+    review_empty_line: &'static str,
+    other_section_heading: &'static str,
+    other_section_note: &'static str,
+    readonly_guideline: &'static str,
+    typical_signals_guideline: &'static str,
+    prompt_subject: &'static str,
+    prompt_outside_label: &'static str,
+    prompt_readonly_commands: &'static str,
+    prompt_forbid_targets: &'static str,
+}
+
+#[cfg(windows)]
+const PLATFORM_COPY: PlatformCopy = PlatformCopy {
+    outside_system_label: "Fora das pastas do Windows / a revisar",
+    limits_bullets: &[
+        "- **Fabricante** é o `CompanyName` auto-declarado nos recursos de versão do executável. **Não é assinatura digital validada.**\n",
+        "- A categoria **Revisão** só aparece com sinal forte (executável em pasta gravável pelo usuário ou nome imitando componente do Windows). Ausência dela não prova que o serviço é seguro.\n",
+        "- Serviços hospedados no `svchost.exe` aparecem com o executável do Windows; a DLL real (`ServiceDll`) não foi coletada e pode ser lida em `HKLM\\SYSTEM\\CurrentControlSet\\Services\\<nome>\\Parameters`.\n\n",
+    ],
+    review_section_heading: "## 🔍 Serviços a Revisar (fora das pastas do Windows)\n",
+    review_empty_line: "Nenhum serviço em execução fora de `System32`/`SysWOW64`.\n\n",
+    other_section_heading: "## 🪟 Demais Serviços em Execução (executável em System32/SysWOW64)\n",
+    other_section_note: "Verifique nomes que imitam serviços legítimos do Windows ou que não deveriam estar ativos.\n\n",
+    readonly_guideline: "1. **Somente investigação.** Use apenas comandos de leitura (ex.: `Get-AuthenticodeSignature`, `Get-FileHash`, `Get-CimInstance Win32_Service`, `Get-ItemProperty` no registro, `Get-Process`, `Get-NetTCPConnection`). **Não pare, desative, exclua nem altere** serviços, arquivos ou registro.\n",
+    typical_signals_guideline: "3. Procure sinais típicos: assinatura ausente ou inválida, executável em pasta gravável (`AppData`, `Temp`, `ProgramData` fora de fabricante conhecido), nome imitando componente do Windows, conexões de rede inesperadas, ganchos de teclado/captura de tela, ferramentas de acesso remoto não reconhecidas.\n",
+    prompt_subject: "serviços do Windows",
+    prompt_outside_label: "fora das pastas do Windows",
+    prompt_readonly_commands: "Get-AuthenticodeSignature, Get-FileHash, Get-CimInstance Win32_Service, Get-ItemProperty, Get-NetTCPConnection",
+    prompt_forbid_targets: "serviços, arquivos ou registro",
+};
+
+#[cfg(target_os = "linux")]
+const PLATFORM_COPY: PlatformCopy = PlatformCopy {
+    outside_system_label: "Fora das pastas do sistema / a revisar",
+    limits_bullets: &[
+        "- **Fabricante** é o pacote `dpkg` dono do arquivo (`dpkg-query -S`, quando disponível). **Não valida a integridade do binário em disco** (verifique com `dpkg -V` / `debsums` ou `sha256sum`).\n",
+        "- A categoria **Revisão** só aparece com sinal forte (executável em pasta gravável pelo usuário, como `~` ou `/tmp`, ou nome imitando componente do sistema). Ausência dela não prova que o serviço é seguro.\n",
+        "- Units com prefixo `user/` pertencem ao gerenciador `systemd --user` da sessão atual; units sem prefixo pertencem ao `systemd` do sistema. O arquivo da unit pode ser inspecionado com `systemctl cat`.\n\n",
+    ],
+    review_section_heading: "## 🔍 Serviços a Revisar (fora das pastas do sistema)\n",
+    review_empty_line: "Nenhum serviço em execução fora de `/usr`, `/bin`, `/sbin` e `/lib`.\n\n",
+    other_section_heading: "## 🐧 Demais Serviços em Execução (executável em pastas do sistema)\n",
+    other_section_note: "Verifique units inesperadas ou serviços que não deveriam estar ativos neste host.\n\n",
+    readonly_guideline: "1. **Somente investigação.** Use apenas comandos de leitura (ex.: `systemctl status`, `systemctl cat`, `dpkg -S`, `dpkg -V`, `sha256sum`, `readlink -f`, `ps -ef`, `ss -tulpn`). **Não pare, desative, exclua nem altere** serviços, units ou arquivos.\n",
+    typical_signals_guideline: "3. Procure sinais típicos: binário sem pacote dono ou divergente do pacote, executável ou script em pasta gravável (`~`, `/tmp`, `/var/tmp`, `/dev/shm`), unit de usuário inesperada, conexões de rede incomuns, captura de teclado/tela, ferramentas de acesso remoto não reconhecidas.\n",
+    prompt_subject: "serviços do Linux (systemd)",
+    prompt_outside_label: "fora das pastas do sistema",
+    prompt_readonly_commands: "systemctl status, systemctl cat, dpkg -S, dpkg -V, sha256sum, ps -ef, ss -tulpn",
+    prompt_forbid_targets: "serviços, units ou arquivos",
+};
+
+// TODO(macos): validar em hardware.
+#[cfg(target_os = "macos")]
+const PLATFORM_COPY: PlatformCopy = PlatformCopy {
+    outside_system_label: "Fora das pastas do sistema / a revisar",
+    limits_bullets: &[
+        "- A coleta no macOS vem de `launchctl list` (domínio do usuário); detalhes de assinatura e binário podem estar indisponíveis e devem ser verificados em leitura.\n",
+        "- A categoria **Revisão** só aparece com sinal forte (executável em pasta gravável pelo usuário). Ausência dela não prova que o serviço é seguro.\n\n",
+    ],
+    review_section_heading: "## 🔍 Serviços a Revisar (fora das pastas do sistema)\n",
+    review_empty_line: "Nenhum serviço em execução fora das pastas do sistema.\n\n",
+    other_section_heading: "## 🖥️ Demais Serviços em Execução (pastas do sistema)\n",
+    other_section_note: "Verifique jobs do launchd inesperados ou que não deveriam estar ativos.\n\n",
+    readonly_guideline: "1. **Somente investigação.** Use apenas comandos de leitura (ex.: `launchctl print`, `codesign -dv --verbose=4`, `shasum -a 256`, `plutil -p`, `ps -ef`, `lsof -i`). **Não pare, desative, exclua nem altere** serviços, plists ou arquivos.\n",
+    typical_signals_guideline: "3. Procure sinais típicos: assinatura ausente ou inválida, executável em pasta gravável (`~`, `/tmp`), LaunchAgent inesperado, conexões de rede incomuns, ferramentas de acesso remoto não reconhecidas.\n",
+    prompt_subject: "serviços do macOS (launchd)",
+    prompt_outside_label: "fora das pastas do sistema",
+    prompt_readonly_commands: "launchctl print, codesign -dv --verbose=4, shasum -a 256, plutil -p, ps -ef, lsof -i",
+    prompt_forbid_targets: "serviços, plists ou arquivos",
+};
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+const PLATFORM_COPY: PlatformCopy = PlatformCopy {
+    outside_system_label: "Fora das pastas do sistema / a revisar",
+    limits_bullets: &[
+        "- Ausência de sinal forte do Pulse não prova que o serviço é seguro.\n\n",
+    ],
+    review_section_heading: "## 🔍 Serviços a Revisar (fora das pastas do sistema)\n",
+    review_empty_line: "Nenhum serviço em execução fora das pastas do sistema.\n\n",
+    other_section_heading: "## 🖥️ Demais Serviços em Execução (pastas do sistema)\n",
+    other_section_note: "Verifique serviços inesperados ou que não deveriam estar ativos.\n\n",
+    readonly_guideline: "1. **Somente investigação.** Use apenas comandos de leitura. **Não pare, desative, exclua nem altere** serviços ou arquivos.\n",
+    typical_signals_guideline: "3. Procure sinais típicos: executável em pasta gravável, conexões de rede inesperadas, ferramentas de acesso remoto não reconhecidas.\n",
+    prompt_subject: "serviços do sistema",
+    prompt_outside_label: "fora das pastas do sistema",
+    prompt_readonly_commands: "comandos somente leitura do sistema",
+    prompt_forbid_targets: "serviços ou arquivos",
+};
+
 pub fn generate_services_report(
     snapshot: &ServicesSnapshot,
     detailed: &[ServiceSummary],
@@ -187,7 +281,8 @@ pub fn generate_services_report(
         snapshot.total_count
     ));
     md.push_str(&format!(
-        "- **Fora das pastas do Windows / a revisar**: {}\n",
+        "- **{}**: {}\n",
+        PLATFORM_COPY.outside_system_label,
         detailed.len()
     ));
     md.push_str(&format!(
@@ -203,13 +298,13 @@ pub fn generate_services_report(
     md.push_str("Avaliar se algum serviço em execução indica keylogger, spyware, acesso remoto não autorizado, minerador, persistência maliciosa ou outro invasor — e separar isso, com evidência, do software legítimo.\n\n");
 
     md.push_str("## ⚠️ Limites dos Dados Coletados\n");
-    md.push_str("- **Fabricante** é o `CompanyName` auto-declarado nos recursos de versão do executável. **Não é assinatura digital validada.**\n");
-    md.push_str("- A categoria **Revisão** só aparece com sinal forte (executável em pasta gravável pelo usuário ou nome imitando componente do Windows). Ausência dela não prova que o serviço é seguro.\n");
-    md.push_str("- Serviços hospedados no `svchost.exe` aparecem com o executável do Windows; a DLL real (`ServiceDll`) não foi coletada e pode ser lida em `HKLM\\SYSTEM\\CurrentControlSet\\Services\\<nome>\\Parameters`.\n\n");
+    for bullet in PLATFORM_COPY.limits_bullets {
+        md.push_str(bullet);
+    }
 
-    md.push_str("## 🔍 Serviços a Revisar (fora das pastas do Windows)\n");
+    md.push_str(PLATFORM_COPY.review_section_heading);
     if detailed.is_empty() {
-        md.push_str("Nenhum serviço em execução fora de `System32`/`SysWOW64`.\n\n");
+        md.push_str(PLATFORM_COPY.review_empty_line);
     } else {
         md.push_str("| Serviço | Nome de exibição | Executável | Conta | Início | PID | Fabricante declarado | Categoria | Sinais do Pulse |\n");
         md.push_str("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n");
@@ -237,8 +332,8 @@ pub fn generate_services_report(
         md.push('\n');
     }
 
-    md.push_str("## 🪟 Demais Serviços em Execução (executável em System32/SysWOW64)\n");
-    md.push_str("Verifique nomes que imitam serviços legítimos do Windows ou que não deveriam estar ativos.\n\n");
+    md.push_str(PLATFORM_COPY.other_section_heading);
+    md.push_str(PLATFORM_COPY.other_section_note);
     md.push_str("| Serviço | Nome de exibição | Executável | Conta |\n");
     md.push_str("| :--- | :--- | :--- | :--- |\n");
     for service in windows {
@@ -253,9 +348,9 @@ pub fn generate_services_report(
     md.push('\n');
 
     md.push_str("## 📋 Diretrizes para a Resposta da IA\n");
-    md.push_str("1. **Somente investigação.** Use apenas comandos de leitura (ex.: `Get-AuthenticodeSignature`, `Get-FileHash`, `Get-CimInstance Win32_Service`, `Get-ItemProperty` no registro, `Get-Process`, `Get-NetTCPConnection`). **Não pare, desative, exclua nem altere** serviços, arquivos ou registro.\n");
+    md.push_str(PLATFORM_COPY.readonly_guideline);
     md.push_str("2. Classifique cada serviço revisado como **Legítimo**, **Requer investigação** ou **Indício forte**, sempre com a evidência verificável. Nunca rotule como malware sem evidência.\n");
-    md.push_str("3. Procure sinais típicos: assinatura ausente ou inválida, executável em pasta gravável (`AppData`, `Temp`, `ProgramData` fora de fabricante conhecido), nome imitando componente do Windows, conexões de rede inesperadas, ganchos de teclado/captura de tela, ferramentas de acesso remoto não reconhecidas.\n");
+    md.push_str(PLATFORM_COPY.typical_signals_guideline);
     md.push_str("4. Para o que exigir ação, descreva o passo seguro e reversível para o usuário decidir (sem executar).\n");
     md.push_str("5. Salve o parecer completo em Markdown no caminho indicado no prompt.\n");
 
@@ -298,7 +393,11 @@ fn default_prompt(
 ) -> String {
     let review_count = detailed.iter().filter(|s| s.category == "review").count();
     format!(
-        "Faça uma revisão de segurança dos serviços do Windows em execução coletados pelo Pulse. Objetivo: identificar se algum indica keylogger, spyware, acesso remoto não autorizado, minerador, persistência maliciosa ou outro invasor. Relatório completo em: '{context_path}'. Em execução: {running}; fora das pastas do Windows: {analyzed}; com sinal forte do Pulse: {review_count}. Primeiros da fila: [{highlights}]. Regras: apenas investigue, usando somente comandos de leitura (Get-AuthenticodeSignature, Get-FileHash, Get-CimInstance Win32_Service, Get-ItemProperty, Get-NetTCPConnection); NÃO pare, desative, exclua nem altere serviços, arquivos ou registro. Não rotule nada como malware sem evidência; classifique cada serviço revisado como Legítimo, Requer investigação ou Indício forte, com a evidência. Ao final, salve o parecer completo (classificação por serviço, evidências, o que verificar manualmente e passos seguros sugeridos) em Markdown no arquivo '{review_path}', sobrescrevendo se existir, e informe o caminho.",
+        "Faça uma revisão de segurança dos {subject} em execução coletados pelo Pulse. Objetivo: identificar se algum indica keylogger, spyware, acesso remoto não autorizado, minerador, persistência maliciosa ou outro invasor. Relatório completo em: '{context_path}'. Em execução: {running}; {outside}: {analyzed}; com sinal forte do Pulse: {review_count}. Primeiros da fila: [{highlights}]. Regras: apenas investigue, usando somente comandos de leitura ({readonly}); NÃO pare, desative, exclua nem altere {targets}. Não rotule nada como malware sem evidência; classifique cada serviço revisado como Legítimo, Requer investigação ou Indício forte, com a evidência. Ao final, salve o parecer completo (classificação por serviço, evidências, o que verificar manualmente e passos seguros sugeridos) em Markdown no arquivo '{review_path}', sobrescrevendo se existir, e informe o caminho.",
+        subject = PLATFORM_COPY.prompt_subject,
+        outside = PLATFORM_COPY.prompt_outside_label,
+        readonly = PLATFORM_COPY.prompt_readonly_commands,
+        targets = PLATFORM_COPY.prompt_forbid_targets,
         analyzed = detailed.len(),
         highlights = names_summary(detailed),
     )
@@ -507,5 +606,40 @@ mod tests {
         assert!(prompt.contains("NÃO pare, desative, exclua nem altere"));
         assert!(prompt.contains("'review.md'"));
         assert!(prompt.contains("Não rotule nada como malware sem evidência"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_system_services_and_copy_match_platform() {
+        let journald = service(
+            "systemd-journald.service",
+            "/usr/lib/systemd/systemd-journald",
+            "system",
+        );
+        assert!(!needs_detailed_review(&journald));
+        let opt_agent = service("agent.service", "/opt/vendor/agent", "system");
+        assert!(needs_detailed_review(&opt_agent));
+        let user_script = service("user/vigia.service", "/home/dev/bin/vigia.sh", "review");
+        assert!(needs_detailed_review(&user_script));
+
+        let snapshot = ServicesSnapshot {
+            services: vec![journald, opt_agent, user_script],
+            running_count: 3,
+            stopped_count: 0,
+            paused_count: 0,
+            total_count: 3,
+            unavailable_reason: None,
+            collected_at_unix_ms: 1,
+        };
+        let (detailed, system) = partition_running(&snapshot.services);
+        assert_eq!(detailed.len(), 2);
+        assert_eq!(system.len(), 1);
+        let md = generate_services_report(&snapshot, &detailed, &system);
+        assert!(md.contains("systemctl status"));
+        assert!(!md.contains("Get-AuthenticodeSignature"));
+        assert!(!md.contains("HKLM\\SYSTEM"));
+        let prompt = default_prompt("ctx.md", "review.md", &detailed, 3);
+        assert!(prompt.contains("systemd"));
+        assert!(!prompt.contains("Get-CimInstance"));
     }
 }

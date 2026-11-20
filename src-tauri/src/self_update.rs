@@ -21,16 +21,21 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::{
     env, fs,
-    io::Read,
     path::{Path, PathBuf},
-    process::Stdio,
     sync::{
         atomic::{AtomicBool, Ordering},
         Mutex, OnceLock,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Emitter, Manager};
+#[cfg(windows)]
+use std::{io::Read, process::Stdio};
+#[cfg(windows)]
+use tauri::Manager;
+use tauri::{AppHandle, Emitter};
+
+#[cfg(not(windows))]
+mod unix;
 
 pub const SELF_UPDATE_EVENT: &str = "pulse://self-update-status";
 pub const UPDATED_RELAUNCH_ARG: &str = "--updated-relaunch";
@@ -43,8 +48,11 @@ const ALLOWED_URL_PREFIXES: [&str; 2] = [
 const CONFIG_FILE_NAME: &str = "auto-update.json";
 const STARTUP_CHECK_DELAY: Duration = Duration::from_secs(6);
 const MANIFEST_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(windows)]
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(180);
+#[cfg(windows)]
 const MIN_INSTALLER_BYTES: usize = 512 * 1024;
+#[cfg(windows)]
 const MAX_INSTALLER_BYTES: usize = 60 * 1024 * 1024;
 const RETRY_COOLDOWN_MS: u64 = 6 * 60 * 60 * 1000;
 
@@ -115,6 +123,20 @@ pub struct ReleaseManifest {
     pub installer: ReleaseInstaller,
     #[serde(default)]
     pub updated_at: Option<String>,
+    /// Ativos Linux (AppImage/.deb) publicados pelo CI. Opcional: manifestos
+    /// antigos (só Windows) continuam válidos.
+    #[serde(default)]
+    pub linux: Option<LinuxReleaseAssets>,
+}
+
+/// `{"linux": {"appimage": {"assetUrl": …, "sha256": …}, "deb": {…}}}`
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LinuxReleaseAssets {
+    #[serde(default)]
+    pub appimage: Option<ReleaseInstaller>,
+    #[serde(default)]
+    pub deb: Option<ReleaseInstaller>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -130,6 +152,7 @@ pub struct ReleaseInstaller {
     pub size_bytes: Option<u64>,
     #[serde(default)]
     pub size_formatted: Option<String>,
+    #[serde(default)]
     pub sha256: String,
 }
 
@@ -166,10 +189,13 @@ fn config_file_in(base: &Path) -> PathBuf {
 }
 
 fn config_file() -> PathBuf {
+    #[cfg(windows)]
     let base = env::var_os("LOCALAPPDATA")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(env::temp_dir);
+    #[cfg(not(windows))]
+    let base = crate::storage::paths::local_data_base();
     config_file_in(&base)
 }
 
@@ -315,6 +341,7 @@ pub fn validate_sha256_hex(input: &str) -> Result<String, String> {
 }
 
 /// Escolhe e valida a URL de download do instalador, aceitando apenas origens oficiais.
+#[cfg(any(windows, test))]
 pub fn select_and_validate_installer_url(installer: &ReleaseInstaller) -> Result<String, String> {
     let candidate = installer
         .asset_url
@@ -455,6 +482,7 @@ fn fetch_manifest() -> Result<ReleaseManifest, String> {
         .map_err(|error| format!("O manifesto de versão retornado é inválido: {error}"))
 }
 
+#[cfg(windows)]
 fn download_installer_bytes(url: &str) -> Result<Vec<u8>, String> {
     let client = Client::builder()
         .timeout(DOWNLOAD_TIMEOUT)
@@ -493,6 +521,7 @@ fn download_installer_bytes(url: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+#[cfg(windows)]
 fn write_verified_installer(version: &str, bytes: &[u8]) -> Result<PathBuf, String> {
     let sanitized_version: String = version
         .chars()
@@ -514,6 +543,7 @@ fn write_verified_installer(version: &str, bytes: &[u8]) -> Result<PathBuf, Stri
 
 /// Script PowerShell estático: todas as variáveis vêm do ambiente do processo
 /// (`$env:PULSE_UPDATE_*`), sem qualquer interpolação de strings.
+#[cfg(windows)]
 const POWERSHELL_UPDATE_SCRIPT: &str = r#"
 $ErrorActionPreference = 'SilentlyContinue'
 $pidToWait = [int]$env:PULSE_UPDATE_PID
@@ -543,6 +573,7 @@ foreach ($exe in $candidates) {
 }
 "#;
 
+#[cfg(windows)]
 fn spawn_silent_installer_and_exit(app: &AppHandle, installer_path: &Path) -> Result<(), String> {
     let current_exe = env::current_exe()
         .map_err(|error| format!("Não foi possível identificar o executável atual: {error}"))?;
@@ -649,8 +680,15 @@ fn perform_check_and_maybe_install(
     config.last_error = None;
     let _ = save_config(&config);
 
-    let remote_version = manifest.version.trim().trim_start_matches(['v', 'V']).to_string();
+    let remote_version = manifest
+        .version
+        .trim()
+        .trim_start_matches(['v', 'V'])
+        .to_string();
+    #[cfg(windows)]
     let size_formatted = manifest.installer.size_formatted.clone();
+    #[cfg(not(windows))]
+    let size_formatted = unix::release_size_formatted(&manifest);
 
     if !is_newer_version(&curr, &remote_version) {
         crate::debug::record_message(
@@ -724,6 +762,43 @@ fn perform_check_and_maybe_install(
         ));
     }
 
+    #[cfg(windows)]
+    {
+        install_windows(
+            app,
+            &manifest,
+            config,
+            curr,
+            remote_version,
+            size_formatted,
+            started,
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        unix::install_or_notify(
+            app,
+            &manifest,
+            config,
+            curr,
+            remote_version,
+            size_formatted,
+            started,
+        )
+    }
+}
+
+/// Windows: baixa o instalador NSIS, valida o SHA-256 e instala em silêncio.
+#[cfg(windows)]
+fn install_windows(
+    app: &AppHandle,
+    manifest: &ReleaseManifest,
+    mut config: SelfUpdateConfig,
+    curr: String,
+    remote_version: String,
+    size_formatted: Option<String>,
+    started: Instant,
+) -> Result<SelfUpdateStatus, String> {
     // Valida URL e hash do manifesto antes de iniciar o download.
     let download_url = select_and_validate_installer_url(&manifest.installer)?;
     let expected_sha256 = validate_sha256_hex(&manifest.installer.sha256)?;
@@ -1059,7 +1134,10 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
 
         let default_cfg = load_config_from(&path);
-        assert!(default_cfg.enabled, "auto-update deve vir ativado por padrão");
+        assert!(
+            default_cfg.enabled,
+            "auto-update deve vir ativado por padrão"
+        );
 
         let custom = SelfUpdateConfig {
             enabled: false,

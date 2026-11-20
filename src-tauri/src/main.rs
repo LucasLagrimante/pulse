@@ -19,8 +19,36 @@ fn acquire_instance() -> Result<pulse_windows_lib::single_instance::windows::Ins
     result.map_err(|_| ())
 }
 
+/// Linux/macOS: `flock` + socket Unix. Outra instância viva recebe o pedido de
+/// foco e esta sai; falha ao criar a trava (pasta sem permissão etc.) não
+/// impede o Pulse de abrir. `--elevated-relaunch` não existe fora do Windows
+/// (não há reinício elevado), então só o reinício pós-atualização espera.
+#[cfg(unix)]
+fn acquire_instance() -> Result<Option<pulse_windows_lib::single_instance::unix::InstanceGuard>, ()>
+{
+    use pulse_windows_lib::single_instance::unix::{AcquireError, InstanceGuard};
+    const NAME: &str = "pulse-single-instance";
+    let relaunched =
+        std::env::args().any(|arg| arg == pulse_windows_lib::self_update::UPDATED_RELAUNCH_ARG);
+    let result = if relaunched {
+        InstanceGuard::acquire_after_relaunch(NAME, std::time::Duration::from_secs(15))
+    } else {
+        InstanceGuard::acquire(NAME)
+    };
+    match result {
+        Ok(guard) => Ok(Some(guard)),
+        Err(AcquireError::AlreadyRunning) => Err(()),
+        Err(AcquireError::CreationFailed) => {
+            eprintln!(
+                "Pulse: não foi possível criar a trava de instância única; seguindo sem ela."
+            );
+            Ok(None)
+        }
+    }
+}
+
 fn main() {
-    #[cfg(windows)]
+    #[cfg(any(windows, unix))]
     let Ok(_instance_guard) = acquire_instance() else {
         return;
     };

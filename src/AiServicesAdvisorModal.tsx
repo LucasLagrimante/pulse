@@ -8,6 +8,7 @@ import {
   type SupportedAiProvider,
 } from "./AiDiskAdvisorModal";
 import { ProviderIcon } from "./ProviderIcon";
+import { usePlatformCopy } from "./platform";
 
 /** Espelha `ServiceSummary` do Rust (`ai_services_advisor.rs`). */
 export type AiServiceSummary = {
@@ -57,6 +58,7 @@ export function AiServicesAdvisorModal({
   onClose,
   initialProvider = "antigravity",
 }: AiServicesAdvisorModalProps) {
+  const pc = usePlatformCopy();
   const [selectedProvider, setSelectedProvider] = useState<SupportedAiProvider>(initialProvider);
   const [preview, setPreview] = useState<AiServicesAnalysisPreview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -289,7 +291,7 @@ export function AiServicesAdvisorModal({
                   </span>
                 </div>
                 <div className="summary-stat-card highlight">
-                  <span className="stat-label">FORA DAS PASTAS DO WINDOWS</span>
+                  <span className="stat-label">{pc.servicesOutsideSystemDirs}</span>
                   <strong className="stat-value font-mono">{preview.analyzedCount}</strong>
                   <span className="stat-footnote">Revisados um a um pela IA</span>
                 </div>
@@ -315,7 +317,7 @@ export function AiServicesAdvisorModal({
                     </li>
                   ))}
                   {preview.highlighted.length === 0 && (
-                    <li className="empty-item">Todos os serviços ativos rodam das pastas do Windows</li>
+                    <li className="empty-item">{pc.servicesAllInSystemDirs}</li>
                   )}
                 </ul>
               </div>

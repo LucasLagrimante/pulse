@@ -4,13 +4,19 @@
 //! (`SHGetFileInfoW`) e convertido para PNG em data URI, pronto para ser
 //! exibido diretamente no WebView. O resultado é cacheado por caminho de
 //! executável (inclusive falhas) para não repetir trabalho de GDI.
-
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+//!
+//! No Linux o ícone vem da entrada `.desktop` do aplicativo e do tema de
+//! ícones (ver `app_icons/linux.rs`). No macOS ainda não há extração.
 
 #[cfg(windows)]
-use std::sync::Mutex;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+#[cfg(windows)]
+use std::sync::{Mutex, OnceLock};
+
+#[cfg(target_os = "linux")]
+pub mod linux;
 
 #[cfg(windows)]
 static ICON_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
@@ -25,8 +31,39 @@ fn icon_cache() -> &'static Mutex<HashMap<String, Option<String>>> {
 /// `None` significa que o caminho não pôde ser resolvido ou o shell não
 /// forneceu um ícone — nunca um ícone fictício.
 pub fn icon_for_command(command: &str) -> Option<String> {
-    let path = resolve_executable(command)?;
-    icon_for_resolved_path(&path)
+    #[cfg(target_os = "linux")]
+    {
+        // Linha de comando com executável do host; quando o primeiro token é
+        // um lançador (`flatpak run`, `env VAR=1 …`), `.desktop`, id de
+        // aplicativo ou nome de ícone do tema, cai para o resolvedor de comando.
+        resolve_executable(command)
+            .and_then(|path| icon_for_resolved_path(&path))
+            .or_else(|| linux::icon_for_command_token(command))
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let path = resolve_executable(command)?;
+        icon_for_resolved_path(&path)
+    }
+}
+
+/// Ícone de um processo em execução (Linux: Flatpak, `.desktop` e tema).
+/// `None` quando não há ícone confiável — o frontend mostra o glifo.
+#[cfg(unix)]
+pub fn icon_for_process(pid: u32, exe: Option<&str>, name: &str) -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        linux::icon_for_process(pid, exe, name)
+    }
+
+    // TODO(macos): validar em hardware — ler `CFBundleIconFile` do `.app`
+    // exige converter `.icns`, que não tem decodificador nas dependências.
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (pid, exe, name);
+        None
+    }
 }
 
 /// Retorna um data URI PNG com o ícone do executável em `path`.
@@ -60,7 +97,13 @@ fn icon_for_resolved_path(path: &Path) -> Option<String> {
         icon
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        let _ = key;
+        linux::icon_for_executable(path)
+    }
+
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = key;
         None
@@ -350,6 +393,7 @@ unsafe fn read_bitmap_bits(
     }
 }
 
+#[cfg(windows)]
 fn encode_png_data_uri(width: u32, height: u32, rgba: &[u8]) -> Option<String> {
     use base64::engine::general_purpose::STANDARD as BASE64;
     use base64::Engine as _;

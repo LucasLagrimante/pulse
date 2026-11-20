@@ -29,6 +29,10 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "form", "rustls"] }
 keyring = { version = "4.2", default-features = true }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
+
+# APIs Win32 só existem no Windows: declaradas por alvo para que o mesmo
+# código compile no Linux (e futuramente no macOS) com backends próprios.
+[target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [
     "Win32_System_Power",
     "Win32_System_SystemInformation",
@@ -59,6 +63,10 @@ windows = { version = "0.61.3", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 windows-core = "0.61.2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+sysinfo = "0.37"
 
 [profile.release]
 lto = "thin"

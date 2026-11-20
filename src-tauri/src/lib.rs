@@ -3,6 +3,7 @@ pub mod ai_services_advisor;
 pub mod app_icons;
 pub mod app_updates;
 pub mod audio;
+pub mod cleanup_os;
 pub mod debug;
 pub mod dev_ports;
 pub mod disk_analyzer;
@@ -11,6 +12,7 @@ pub mod domain;
 pub mod network_security;
 pub mod performance;
 pub mod performance_devices;
+pub mod platform_info;
 pub mod privileges;
 pub mod process;
 pub mod process_identity;
@@ -87,6 +89,7 @@ pub fn run() {
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
+            platform_info::get_platform_info,
             debug::get_debug_mode,
             debug::set_debug_mode,
             debug::get_debug_log,

@@ -1,9 +1,9 @@
 # Pulse
 
-Central nativa para Windows 11 que reúne observabilidade, diagnóstico e controle local do sistema em uma interface única. O Pulse explica atividade de processos, desempenho, armazenamento, inicialização e sinais de segurança sem conta e sem telemetria. Veja em [Privacidade e rede](#privacidade-e-rede) as únicas funções opcionais que acessam a internet.
+Central nativa para Windows 11 e Linux que reúne observabilidade, diagnóstico e controle local do sistema em uma interface única. O Pulse explica atividade de processos, desempenho, armazenamento, inicialização e sinais de segurança sem conta e sem telemetria. Veja em [Privacidade e rede](#privacidade-e-rede) as únicas funções opcionais que acessam a internet.
 
 > [!IMPORTANT]
-> O backend só compila com o toolchain MSVC do Windows. No PowerShell use `npx tauri build`; no WSL use `npm run build:native`, que compila no Windows a partir do WSL. Veja [Gerar o instalador](#gerar-o-instalador).
+> O instalador Windows só compila com o toolchain MSVC: no PowerShell use `npx tauri build`; no WSL use `npm run build:native`, que compila no Windows a partir do WSL. No Linux o build é nativo (`npm run build:linux`). Veja [Gerar o instalador](#gerar-o-instalador) e [Linux](#linux).
 
 ## Recursos
 
@@ -17,7 +17,7 @@ Central nativa para Windows 11 que reúne observabilidade, diagnóstico e contro
 
 ## Requisitos
 
-- Windows 11 x64.
+- Windows 11 x64 (para Linux, veja [Linux](#linux)).
 - [Node.js 22 ou superior](https://nodejs.org/).
 - [Rust stable com toolchain MSVC](https://www.rust-lang.org/tools/install).
 - Microsoft C++ Build Tools com a carga de trabalho **Desenvolvimento para desktop com C++** e um Windows SDK.
@@ -49,7 +49,7 @@ O primeiro build demora mais porque o Cargo precisa baixar e compilar as depend�
 
 ## Gerar o instalador
 
-O único formato configurado em `src-tauri/tauri.conf.json` é o NSIS (`"targets": "nsis"`), então nenhum comando abaixo precisa de `--bundles`.
+No Windows o formato configurado em `src-tauri/tauri.conf.json` é o NSIS (`"targets": "nsis"`), então nenhum comando abaixo precisa de `--bundles`. Linux e macOS sobrepõem esse alvo em `src-tauri/tauri.linux.conf.json` e `src-tauri/tauri.macos.conf.json`, que o Tauri mescla automaticamente só na plataforma correspondente.
 
 ### No WSL (fluxo do projeto)
 
@@ -90,7 +90,44 @@ src-tauri\target\release\bundle\nsis\Pulse_<versão>_x64-setup.exe
 > Encerre o Pulse antes de compilar (`node scripts/kill-running-app.mjs`; `build:native` já faz isso). O app minimizado no tray trava `src-tauri\target\release\pulse-windows.exe` e o link falha com `Access is denied (os error 5)`. O lock só aparece quando fontes Rust mudam e forçam o relink — builds só-frontend passam mesmo com o app aberto.
 
 > [!WARNING]
-> `npx tauri build` executado **dentro do WSL** falha com `failed to run 'cargo metadata': No such file or directory (os error 2)`: o Tauri procura o `cargo` no Linux. No WSL, use sempre `npm run build:native`.
+> `npx tauri build` executado **dentro do WSL** gera pacotes **Linux** (ou falha com `failed to run 'cargo metadata'` se não houver Rust no WSL), nunca o instalador Windows. Para o `.exe`, no WSL use sempre `npm run build:native`.
+
+## Linux
+
+Suportado em distribuições com WebKitGTK 4.1 (Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Fedora 38+). Testado em Linux Mint 22.3 (KDE Plasma, X11). Funções que só existem no Windows (ponto de restauração, reinício como administrador via UAC, winget) aparecem como indisponíveis com o motivo; ações privilegiadas pedem a senha na hora via `pkexec`.
+
+### Requisitos (Debian/Ubuntu/Mint)
+
+```bash
+sudo apt update
+sudo apt install -y build-essential curl file patchelf \
+  libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # Rust stable
+```
+
+Node.js 22+ também é necessário. Em Fedora, os equivalentes são `webkit2gtk4.1-devel`, `libappindicator-gtk3-devel`, `librsvg2-devel` e `openssl-devel`.
+
+### Desenvolvimento e build
+
+```bash
+npm install
+npm run tauri:dev      # app em modo dev com recarga do frontend
+npm run build:linux    # gera .deb e .AppImage
+npm run build:linux:rpm  # opcional: .rpm (precisa de rpmbuild/rpm instalado)
+```
+
+Saída:
+
+```text
+src-tauri/target/release/bundle/deb/Pulse_<versão>_amd64.deb
+src-tauri/target/release/bundle/appimage/Pulse_<versão>_amd64.AppImage
+```
+
+O `.deb` declara dependência de `libwebkit2gtk-4.1-0` e `libayatana-appindicator3-1` (ícone na bandeja). O AppImage roda sem instalação (`chmod +x` e executar); em sistemas sem FUSE 2, use `--appimage-extract-and-run`.
+
+## macOS (experimental)
+
+`tauri.macos.conf.json` gera `.app` + `.dmg` (macOS 11+) com `npm run build:macos`, e o CI publica um `.dmg` para Apple Silicon. O pacote **não é assinado nem notarizado**: o Gatekeeper bloqueia a primeira abertura (clique com o botão direito → **Abrir**, ou `xattr -dr com.apple.quarantine /Applications/Pulse.app`). Vários módulos ainda aparecem como indisponíveis no macOS e não foram validados em hardware.
 
 ## Verificação
 

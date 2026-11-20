@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 import { AutoCleanupPanel } from "./AutoCleanupPanel";
 import { useIsStandardUser } from "./PrivilegeIndicator";
+import { usePlatformCopy } from "./platform";
 
 function formatCleanupSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
@@ -53,17 +54,18 @@ type CleanupResult = { reclaimedBytes: number; deletedFiles: number; deletedDire
 
 /** Agrupamento visual por natureza do item; ids desconhecidos caem em "Outros". */
 const CLEANUP_GROUPS: { id: string; title: string; hint: string; ids: string[] }[] = [
-  { id: "system", title: "Sistema e temporários", hint: "Recriados pelo Windows e pelos aplicativos", ids: ["user-temp", "windows-temp", "delivery-optimization", "internet-cache"] },
+  { id: "system", title: "Sistema e temporários", hint: "", ids: ["user-temp", "windows-temp", "delivery-optimization", "internet-cache"] },
   { id: "browser", title: "Navegadores", hint: "Sites recarregam o cache na próxima visita", ids: ["browser-cache"] },
   { id: "gpu", title: "Jogos e GPU", hint: "Shaders recompilados na primeira abertura", ids: ["shader-cache", "nvidia-shader-cache", "nvidia-installers"] },
   { id: "dev", title: "Desenvolvimento", hint: "Pacotes baixados de novo sob demanda", ids: ["dev-package-caches"] },
   { id: "review", title: "Revisar antes de limpar", hint: "Podem conter algo que você ainda quer", ids: ["crash-dumps", "recycle-bin"] },
 ];
 
-function groupCategories(categories: CleanupCategory[]) {
+function groupCategories(categories: CleanupCategory[], systemHint: string) {
   const known = new Set(CLEANUP_GROUPS.flatMap(group => group.ids));
   const groups = CLEANUP_GROUPS.map(group => ({
     ...group,
+    hint: group.id === "system" ? systemHint : group.hint,
     categories: categories.filter(category => group.ids.includes(category.id)),
   }));
   const others = categories.filter(category => !known.has(category.id));
@@ -122,6 +124,7 @@ function GuidedInsightCard({ insight }: { insight: GuidedInsight }) {
 }
 
 export function DiskCleanup() {
+  const pc = usePlatformCopy();
   const standardUser = useIsStandardUser();
   const [analysis, setAnalysis] = useState<CleanupAnalysis>();
   const [insights, setInsights] = useState<GuidedInsight[]>([]);
@@ -134,7 +137,10 @@ export function DiskCleanup() {
   const [result, setResult] = useState<CleanupResult>();
 
   const categories = useMemo(() => analysis?.categories ?? [], [analysis]);
-  const groups = useMemo(() => groupCategories(categories), [categories]);
+  const groups = useMemo(
+    () => groupCategories(categories, pc.cleanupSystemGroupHint),
+    [categories, pc.cleanupSystemGroupHint],
+  );
   const totalBytes = useMemo(() => sumBytes(categories), [categories]);
   const largestBytes = useMemo(() => Math.max(0, ...categories.map(category => category.availableBytes || 0)), [categories]);
   const selectedCategories = useMemo(() => categories.filter(category => selected.has(category.id)), [categories, selected]);
@@ -285,7 +291,7 @@ export function DiskCleanup() {
                       {standardUser && category.requiresAdmin === true && (
                         <span
                           className="cleanup-badge is-admin"
-                          title="Pasta do sistema: sem administrador a análise fica parcial e itens protegidos são pulados. Use PERMISSÃO no topo para reiniciar como administrador."
+                          title={pc.adminFolderHint}
                         >
                           EXIGE ADMINISTRADOR
                         </span>

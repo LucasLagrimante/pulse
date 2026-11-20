@@ -1,18 +1,19 @@
 //! Inventário de rede e armazenamento físico do módulo Desempenho.
 //!
-//! - Rede: `GetIfTable2` lê os contadores de octetos por interface sem
-//!   subprocessos e sem PDH (cujos nomes de contador são localizados no
-//!   Windows em português). As taxas por segundo derivam do delta entre
-//!   coletas consecutivas.
-//! - Discos físicos: inventário via `Get-PhysicalDisk` em subprocesso oculto
-//!   com cache de 60 s — modelo, tipo de mídia, barramento e saúde não mudam
-//!   entre os ciclos de telemetria de 5 s.
+//! - Windows: `GetIfTable2` para rede e `Get-PhysicalDisk` em subprocesso
+//!   oculto com cache de 60 s para discos físicos.
+//! - Linux: `/proc/net/dev` + `/sys/class/net` para rede e `/sys/block` +
+//!   hwmon para discos físicos (ver `performance_devices/linux.rs`).
 
 use crate::performance::Capability;
 use serde::Serialize;
-use std::time::{Duration, Instant};
+#[cfg(windows)]
+use std::time::Duration;
+use std::time::Instant;
 
+#[cfg(windows)]
 const DISK_CACHE_TTL: Duration = Duration::from_secs(60);
+#[cfg(any(windows, target_os = "linux"))]
 const MAX_ADAPTERS: usize = 6;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -78,6 +79,7 @@ fn unavailable_capability<T>(reason: &str) -> Capability<T> {
 
 /// Converte um valor medido em `Capability`, arredondado a uma casa decimal.
 /// Valores negativos ou não finitos viram indisponibilidade explícita.
+#[cfg(any(windows, target_os = "linux"))]
 fn measured(value: f64) -> Capability<f64> {
     let rounded = (value * 10.0).round() / 10.0;
     if rounded.is_finite() && rounded >= 0.0 {
@@ -90,6 +92,7 @@ fn measured(value: f64) -> Capability<f64> {
     }
 }
 
+#[cfg(any(windows, target_os = "linux"))]
 fn capability_number<T>(value: Option<T>, reason: &str) -> Capability<T> {
     match value {
         Some(value) => Capability {
@@ -100,6 +103,7 @@ fn capability_number<T>(value: Option<T>, reason: &str) -> Capability<T> {
     }
 }
 
+#[cfg(any(windows, test))]
 fn normalize_enumerated(raw: Option<&str>) -> String {
     match raw.map(str::trim) {
         None | Some("") | Some("Unspecified") | Some("Unknown") => "Não especificado".to_owned(),
@@ -107,6 +111,7 @@ fn normalize_enumerated(raw: Option<&str>) -> String {
     }
 }
 
+#[cfg(any(windows, test))]
 fn health_capability(raw: Option<&str>) -> Capability<String> {
     match raw.map(str::trim) {
         Some("Healthy") => Capability {
@@ -125,6 +130,7 @@ fn health_capability(raw: Option<&str>) -> Capability<String> {
     }
 }
 
+#[cfg(any(windows, target_os = "linux", test))]
 fn temperature_capability(value: Option<f64>) -> Capability<f64> {
     match value.filter(|v| v.is_finite() && (0.0..=150.0).contains(v)) {
         Some(value) => Capability {
@@ -396,14 +402,33 @@ ConvertTo-Json -InputObject @($disks) -Compress
 #[cfg(windows)]
 use windows_impl::{collect_network_adapters, collect_physical_disks};
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+use linux::{collect_network_adapters, collect_physical_disks};
+
+// TODO(macos): validar em hardware (getifaddrs/SCNetworkInterface para rede e IOKit/diskutil para discos).
+#[cfg(target_os = "macos")]
 fn collect_network_adapters() -> Capability<Vec<NetworkAdapter>> {
-    unavailable_capability("Telemetria de rede disponível apenas no Windows")
+    unavailable_capability("Telemetria de rede indisponível no macOS por enquanto")
 }
 
-#[cfg(not(windows))]
+// TODO(macos): validar em hardware.
+#[cfg(target_os = "macos")]
 fn collect_physical_disks() -> Capability<Vec<PhysicalDiskInfo>> {
-    unavailable_capability("Inventário de discos disponível apenas no Windows")
+    unavailable_capability(
+        "Inventário de discos físicos indisponível no macOS por enquanto (exige IOKit/diskutil)",
+    )
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+fn collect_network_adapters() -> Capability<Vec<NetworkAdapter>> {
+    unavailable_capability("Telemetria de rede não suportada neste sistema operacional")
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+fn collect_physical_disks() -> Capability<Vec<PhysicalDiskInfo>> {
+    unavailable_capability("Inventário de discos físicos não suportado neste sistema operacional")
 }
 
 #[cfg(test)]

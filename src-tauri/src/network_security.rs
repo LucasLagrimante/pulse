@@ -23,8 +23,10 @@ const CONNECTIONS_TTL: Duration = Duration::from_secs(2);
 /// Validade dos sinais de postura (caros: WMI/PowerShell/certificados).
 const POSTURE_TTL: Duration = Duration::from_secs(120);
 /// Teto de destinos listados por processo — a tela não é um log.
+#[cfg(any(windows, target_os = "linux"))]
 const MAX_DESTINATIONS_PER_PROCESS: usize = 24;
 /// Um PowerShell travado não pode segurar a coleta para sempre.
+#[cfg(windows)]
 const POSTURE_COMMAND_TIMEOUT: Duration = Duration::from_secs(25);
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -1050,8 +1052,19 @@ $out -join "`n"
     }
 }
 
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+use linux as platform;
+
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+use macos as platform;
+
 /// Linha de evidência padronizada (`Rótulo: valor`), para a interface renderizar
 /// como lista sem precisar parsear.
+#[cfg(any(windows, target_os = "linux"))]
 fn format_evidence_line(label: &str, value: &str) -> String {
     let value = value.trim();
     if value.is_empty() {
@@ -1064,6 +1077,7 @@ fn format_evidence_line(label: &str, value: &str) -> String {
 /// Executa um script PowerShell fixo (nunca interpolado com dado do IPC) sem
 /// janela de console e com timeout. Usa o helper do projeto para manter a regra
 /// de "nenhum subprocesso cria janela".
+#[cfg(windows)]
 fn run_powershell(script: &str) -> Result<String, String> {
     use std::process::Stdio;
 

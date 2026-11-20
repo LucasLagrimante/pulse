@@ -2,7 +2,7 @@
 //!
 //! Toda atualização de cotas que termina com scan `ready` grava um ponto por
 //! janela medida neste arquivo append-only (JSONL, 100% local):
-//! `%LOCALAPPDATA%\Pulse\quota-history.jsonl`.
+//! `%LOCALAPPDATA%\Pulse\quota-history.jsonl` (Linux: `~/.local/share/Pulse/`).
 //!
 //! O app, o painel rápido (tray flyout) e o tray passam pelo mesmo
 //! `get_subscription_usage`, então um único ponto de gravação cobre os três.
@@ -13,7 +13,6 @@ use crate::subscription_usage::ProviderUsage;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    env,
     fs::{self, OpenOptions},
     io::Write,
     path::PathBuf,
@@ -73,11 +72,7 @@ fn sanitize_credits(value: Option<f64>) -> Option<f64> {
 }
 
 pub fn history_file() -> PathBuf {
-    env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(env::temp_dir)
-        .join("Pulse")
-        .join("quota-history.jsonl")
+    crate::storage::paths::pulse_local_dir().join("quota-history.jsonl")
 }
 
 /// Extrai um ponto por janela medida. Ignora provedores desativados,
@@ -249,9 +244,7 @@ fn get_quota_history_sync(
     days: Option<u32>,
     since_unix_ms: Option<i64>,
 ) -> QuotaHistoryResponse {
-    let days = days
-        .unwrap_or(DEFAULT_QUERY_DAYS)
-        .clamp(1, MAX_QUERY_DAYS);
+    let days = days.unwrap_or(DEFAULT_QUERY_DAYS).clamp(1, MAX_QUERY_DAYS);
     let cutoff_by_days = now_unix_ms() - i64::from(days) * 86_400_000;
     let cutoff = since_unix_ms
         .map(|since| since.max(cutoff_by_days))
@@ -264,11 +257,7 @@ fn get_quota_history_sync(
                 .as_deref()
                 .is_none_or(|id| point.provider_id == id)
         })
-        .filter(|point| {
-            window_id
-                .as_deref()
-                .is_none_or(|id| point.window_id == id)
-        })
+        .filter(|point| window_id.as_deref().is_none_or(|id| point.window_id == id))
         .collect();
     points.sort_by_key(|point| point.sampled_at_unix_ms);
     if points.len() > MAX_POINTS {
@@ -319,7 +308,12 @@ mod tests {
         }
     }
 
-    fn provider(id: &str, disabled: bool, status: &str, windows: Vec<QuotaWindow>) -> ProviderUsage {
+    fn provider(
+        id: &str,
+        disabled: bool,
+        status: &str,
+        windows: Vec<QuotaWindow>,
+    ) -> ProviderUsage {
         ProviderUsage {
             id: id.into(),
             provider: id.into(),
@@ -355,9 +349,24 @@ mod tests {
     fn skips_disabled_unavailable_and_unmeasured() {
         let points = points_from_providers(
             &[
-                provider("claude", false, "available", vec![window("weekly", Some(20.0))]),
-                provider("codex", true, "available", vec![window("weekly", Some(10.0))]),
-                provider("agy", false, "unavailable", vec![window("weekly", Some(10.0))]),
+                provider(
+                    "claude",
+                    false,
+                    "available",
+                    vec![window("weekly", Some(20.0))],
+                ),
+                provider(
+                    "codex",
+                    true,
+                    "available",
+                    vec![window("weekly", Some(10.0))],
+                ),
+                provider(
+                    "agy",
+                    false,
+                    "unavailable",
+                    vec![window("weekly", Some(10.0))],
+                ),
                 provider("empty", false, "available", vec![window("weekly", None)]),
             ],
             1_700_000_000_000,
@@ -380,7 +389,12 @@ mod tests {
             unavailable_reason: None,
         };
         let points = points_from_providers(
-            &[provider("opencode-go", false, "available", vec![short_window_300])],
+            &[provider(
+                "opencode-go",
+                false,
+                "available",
+                vec![short_window_300],
+            )],
             1_700_000_000_000,
         );
         assert_eq!(points.len(), 1);
@@ -401,7 +415,12 @@ mod tests {
     #[test]
     fn never_records_fake_zero_for_missing_reading() {
         let points = points_from_providers(
-            &[provider("claude", false, "available", vec![window("weekly", None)])],
+            &[provider(
+                "claude",
+                false,
+                "available",
+                vec![window("weekly", None)],
+            )],
             1_700_000_000_000,
         );
         assert!(points.is_empty());
@@ -433,13 +452,12 @@ mod tests {
 
     #[test]
     fn query_filters_by_series_and_since() {
-        let response = get_quota_history_sync(
-            Some("no-such-provider".into()),
-            None,
-            Some(30),
-            None,
-        );
-        assert!(response.points.iter().all(|point| point.provider_id == "no-such-provider"));
+        let response =
+            get_quota_history_sync(Some("no-such-provider".into()), None, Some(30), None);
+        assert!(response
+            .points
+            .iter()
+            .all(|point| point.provider_id == "no-such-provider"));
         assert_eq!(response.retained_days, super::RETENTION_DAYS as u32);
     }
 }

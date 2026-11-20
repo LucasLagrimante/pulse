@@ -11,7 +11,8 @@ use std::{
 };
 
 const MAX_ENTRIES: usize = 500;
-/// Dias de arquivos `debug-AAAA-MM-DD.jsonl` mantidos em `%LOCALAPPDATA%\Pulse\logs`.
+/// Dias de arquivos `debug-AAAA-MM-DD.jsonl` mantidos em `%LOCALAPPDATA%\Pulse\logs`
+/// (Linux: `~/.local/share/Pulse/logs`).
 const LOG_RETENTION_DAYS: i64 = 7;
 /// Teto por arquivo diário: um laço de erro não pode encher o disco.
 const MAX_LOG_FILE_BYTES: u64 = 10 * 1024 * 1024;
@@ -114,11 +115,10 @@ fn now_unix_ms() -> u64 {
         .as_millis() as u64
 }
 
+/// `%LOCALAPPDATA%\Pulse` no Windows; `~/.local/share/Pulse` no Linux;
+/// `~/Library/Application Support/Pulse` no macOS.
 fn data_dir() -> PathBuf {
-    env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(env::temp_dir)
-        .join("Pulse")
+    crate::storage::paths::pulse_local_dir()
 }
 
 fn mode_file() -> PathBuf {
@@ -130,7 +130,8 @@ pub fn log_dir() -> PathBuf {
 }
 
 /// Remove caracteres de controle, colapsa espaços, troca o perfil do usuário
-/// por `%USERPROFILE%` e corta no limite de caracteres.
+/// por `%USERPROFILE%` (fora do Windows, `$HOME` por `~`) e corta no limite
+/// de caracteres.
 pub fn sanitize_text(raw: &str, max_chars: usize) -> String {
     let mut text: String = raw
         .chars()
@@ -139,10 +140,18 @@ pub fn sanitize_text(raw: &str, max_chars: usize) -> String {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
+    #[cfg(windows)]
     if let Some(profile) = env::var_os("USERPROFILE").and_then(|p| p.into_string().ok()) {
         if profile.len() > 3 {
             text = text.replace(&profile, "%USERPROFILE%");
             text = text.replace(&profile.replace('\\', "\\\\"), "%USERPROFILE%");
+        }
+    }
+    #[cfg(not(windows))]
+    if let Some(home) = env::var_os("HOME").and_then(|p| p.into_string().ok()) {
+        let home = home.trim_end_matches('/');
+        if home.len() > 3 {
+            text = text.replace(home, "~");
         }
     }
     if text.chars().count() > max_chars {
@@ -451,6 +460,19 @@ mod tests {
         category_for, context_window, log_file_for, prune_old_logs, sanitize_text, DebugEntry,
     };
     use chrono::NaiveDate;
+
+    #[cfg(unix)]
+    #[test]
+    fn sanitize_hides_unix_home_and_logs_live_under_pulse_dir() {
+        let home = std::env::var("HOME").expect("HOME definido nos testes");
+        if home.trim_end_matches('/').len() > 3 {
+            let text = sanitize_text(&format!("falhou em {home}/projeto/a.txt"), 200);
+            assert!(!text.contains(&home));
+            assert!(text.contains("~/projeto/a.txt"));
+        }
+        let logs = super::log_dir();
+        assert!(logs.ends_with("Pulse/logs"));
+    }
 
     #[test]
     fn debug_entry_is_structured() {

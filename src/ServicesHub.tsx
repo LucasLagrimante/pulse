@@ -16,6 +16,7 @@ import {
   startUpgradeAll,
   subscribeUpgradeJobs,
 } from "./upgradeJobsStore";
+import { usePlatformCopy } from "./platform";
 
 export type { UpdateJob } from "./upgradeJobsStore";
 
@@ -305,6 +306,7 @@ export function formatElapsed(ms: number): string {
 }
 
 export function ServicesHub() {
+  const pc = usePlatformCopy();
   // Atualizações abre primeiro: é a informação acionável (o que está
   // desatualizado) e não depende de privilégio administrativo para aparecer.
   const [tab, setTab] = useState<HubTab>("updates");
@@ -465,10 +467,10 @@ export function ServicesHub() {
   }, [updates, updatesQuery]);
 
   const updateSourcesLabel = useMemo(() => {
-    if (!updates || updates.updates.length === 0) return "Repositório winget";
+    if (!updates || updates.updates.length === 0) return pc.packageManagerSource;
     const sources = Array.from(new Set(updates.updates.map(u => u.source).filter(Boolean)));
-    return sources.length > 0 ? sources.join(", ") : "winget oficial";
-  }, [updates]);
+    return sources.length > 0 ? sources.join(", ") : pc.packageManagerOfficial;
+  }, [updates, pc]);
 
   const runServiceAction = async (service: WindowsService, action: "start" | "stop") => {
     setBusyService(service.name);
@@ -815,7 +817,7 @@ export function ServicesHub() {
                   className="sh-btn"
                   onClick={() => void loadUpdates(true)}
                   disabled={updatesState === "loading" || busyAll}
-                  title="Reconsultar atualizações disponíveis no winget"
+                  title={`Reconsultar atualizações disponíveis no ${pc.packageManager}`}
                 >
                   <RefreshCw size={13} aria-hidden="true" />
                   {updatesState === "loading" ? "VERIFICANDO…" : "VERIFICAR"}
@@ -867,7 +869,7 @@ export function ServicesHub() {
               >
                 <span className="sh-progress-bar sh-progress-indeterminate" />
               </div>
-              <small className="sh-progress-log">{batchLog || "Aguardando saída do winget…"}</small>
+              <small className="sh-progress-log">{batchLog || `Aguardando saída do ${pc.packageManager}…`}</small>
             </div>
           )}
 
@@ -909,8 +911,8 @@ export function ServicesHub() {
                 <div className="sh-batch-report-actions">
                   <small>
                     {adminFailures.length === 1
-                      ? "1 pacote precisa de privilégios de administrador. O Windows vai pedir confirmação."
-                      : `${formatCount(adminFailures.length)} pacotes precisam de privilégios de administrador. O Windows pede confirmação para cada um.`}
+                      ? `1 pacote precisa de privilégios de administrador. ${pc.elevationConfirmOne}`
+                      : `${formatCount(adminFailures.length)} pacotes precisam de privilégios de administrador. ${pc.elevationConfirmEach}`}
                   </small>
                   <button
                     type="button"
@@ -935,7 +937,7 @@ export function ServicesHub() {
             <div className="sh-loading-banner" role="status" aria-live="polite">
               <span className="sh-loading-spinner" aria-hidden="true" />
               <div className="sh-loading-text">
-                <strong>Consultando repositório oficial do Gerenciador de Pacotes do Windows (winget)…</strong>
+                <strong>{pc.packageManagerQuerying}</strong>
                 <small>Comparando versões instaladas com manifestos recentes do repositório</small>
               </div>
             </div>
@@ -1023,7 +1025,7 @@ export function ServicesHub() {
                               type="button"
                               className="row-action"
                               aria-label={`Atualizar ${update.name} como administrador`}
-                              title={`Repetir a atualização de ${update.name} com privilégios de administrador (o Windows pede confirmação)`}
+                              title={`Repetir a atualização de ${update.name} com privilégios de administrador (${pc.elevationHint})`}
                               onClick={() => void runUpgrade(update, true)}
                             >
                               <ShieldCheck size={13} strokeWidth={2.1} aria-hidden="true" />
@@ -1034,7 +1036,7 @@ export function ServicesHub() {
                               type="button"
                               className="row-action"
                               aria-label={`Atualizar ${update.name}`}
-                              title={`Atualizar ${update.name} para ${update.availableVersion || "a versão disponível"} via winget`}
+                              title={`Atualizar ${update.name} para ${update.availableVersion || "a versão disponível"} via ${pc.packageManager}`}
                               disabled={running}
                               onClick={() => void runUpgrade(update)}
                             >

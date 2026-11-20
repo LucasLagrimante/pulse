@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{env, fs, path::PathBuf, time::Duration};
+use std::{fs, path::PathBuf, time::Duration};
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, WebviewWindow,
@@ -12,11 +12,7 @@ struct TrayPreferences {
 }
 
 fn preferences_file() -> PathBuf {
-    env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(env::temp_dir)
-        .join("Pulse")
-        .join("tray-preferences.json")
+    crate::storage::paths::pulse_local_dir().join("tray-preferences.json")
 }
 
 fn load_preferences() -> TrayPreferences {
@@ -259,7 +255,12 @@ pub fn build_tray_menu<R: tauri::Runtime>(manager: &AppHandle<R>) -> Result<Menu
             )
             .build(manager)?;
 
-            port_submenu = port_submenu.item(&open_item).item(&kill_item);
+            port_submenu = port_submenu.item(&open_item);
+            // PID 0 = dono não identificável (processo de outro usuário no Linux):
+            // não há o que encerrar com segurança.
+            if entry.pid != 0 {
+                port_submenu = port_submenu.item(&kill_item);
+            }
             if let Some(path) = entry.project_path.as_deref() {
                 let path_item = MenuItemBuilder::with_id(
                     format!("dev_port_path:{}:{}", entry.pid, entry.port),
@@ -380,8 +381,17 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
     let handle = app.handle();
     let menu = build_tray_menu(handle)?;
 
+    // Segunda instância aberta pelo usuário (Linux/macOS): foca a janela principal.
+    #[cfg(unix)]
+    {
+        let focus_app = handle.clone();
+        crate::single_instance::unix::set_focus_handler(move || {
+            let _ = show_main_internal(&focus_app);
+        });
+    }
+
     let mut builder = TrayIconBuilder::with_id("main-tray")
-        .tooltip("Pulse — Windows Observability")
+        .tooltip(TRAY_TOOLTIP)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
@@ -471,6 +481,13 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
             }
         })
         .on_tray_icon_event(|tray, event| {
+            // macOS informa o retângulo do ícone na barra de menus: guardado para
+            // abrir o painel logo abaixo dele. No Linux (AppIndicator) o clique não
+            // gera evento e o painel cai na posição padrão.
+            #[cfg(not(windows))]
+            if let TrayIconEvent::Click { rect, .. } = &event {
+                flyout_position::remember_tray_rect(*rect);
+            }
             match event {
                 // Clique esquerdo simples abre o painel rápido
                 TrayIconEvent::Click {
@@ -586,7 +603,11 @@ pub(crate) fn tray_tooltip_for_sensors(sensors: &[crate::performance::ThermalSen
     }
 }
 
+#[cfg(windows)]
 const DEFAULT_TOOLTIP: &str = "Pulse — Windows Observability";
+#[cfg(not(windows))]
+const DEFAULT_TOOLTIP: &str = "Pulse — Observabilidade do sistema";
+const TRAY_TOOLTIP: &str = DEFAULT_TOOLTIP;
 /// `NOTIFYICONDATAW::szTip` comporta 128 unidades UTF-16 com o terminador.
 const TOOLTIP_MAX_UTF16: usize = 127;
 
@@ -774,6 +795,7 @@ fn toggle_flyout_internal(app: &AppHandle) -> Result<(), String> {
             let _ = flyout.hide();
         } else {
             // Posiciona a janela no canto inferior direito próximo à barra de tarefas
+            #[cfg(windows)]
             if let Ok(Some(monitor)) = flyout.current_monitor() {
                 let size = monitor.size();
                 let scale = monitor.scale_factor();
@@ -791,6 +813,8 @@ fn toggle_flyout_internal(app: &AppHandle) -> Result<(), String> {
                     pos_x, pos_y,
                 )));
             }
+            #[cfg(not(windows))]
+            flyout_position::place(&flyout);
             flyout.show().map_err(|e| e.to_string())?;
             flyout.set_focus().map_err(|e| e.to_string())?;
             let _ = flyout.emit("pulse://foreground-changed", true);
@@ -873,6 +897,103 @@ pub fn exit_app(app: AppHandle) {
     app.exit(0);
 }
 
+/// Posição do painel rápido fora do Windows.
+///
+/// - Linux: o ícone de AppIndicator não informa clique nem posição, então o
+///   painel abre no canto superior direito da área de trabalho do monitor onde
+///   está o cursor (no Wayland o compositor ignora a posição pedida e decide).
+/// - macOS: abre centralizado logo abaixo do ícone da barra de menus, usando o
+///   retângulo recebido no último clique. // TODO(macos): validar em hardware.
+#[cfg(not(windows))]
+mod flyout_position {
+    use std::sync::Mutex;
+    use tauri::{Monitor, PhysicalPosition, WebviewWindow};
+
+    const FLYOUT_WIDTH: f64 = 390.0;
+    const FLYOUT_HEIGHT: f64 = 740.0;
+    const MARGIN: f64 = 12.0;
+
+    static LAST_TRAY_RECT: Mutex<Option<tauri::Rect>> = Mutex::new(None);
+
+    /// Retângulo em pixels físicos: (x, y, largura, altura).
+    pub(super) type PhysRect = (f64, f64, f64, f64);
+
+    pub fn remember_tray_rect(rect: tauri::Rect) {
+        if let Ok(mut guard) = LAST_TRAY_RECT.lock() {
+            *guard = Some(rect);
+        }
+    }
+
+    fn pick_monitor(flyout: &WebviewWindow, anchor: Option<PhysRect>) -> Option<Monitor> {
+        let point = anchor
+            .map(|(x, y, w, h)| (x + w / 2.0, y + h / 2.0))
+            .or_else(|| flyout.cursor_position().ok().map(|p| (p.x, p.y)));
+        if let Some((x, y)) = point {
+            if let Ok(Some(monitor)) = flyout.monitor_from_point(x, y) {
+                return Some(monitor);
+            }
+        }
+        flyout
+            .current_monitor()
+            .ok()
+            .flatten()
+            .or_else(|| flyout.primary_monitor().ok().flatten())
+    }
+
+    pub fn place(flyout: &WebviewWindow) {
+        let rect = LAST_TRAY_RECT.lock().ok().and_then(|guard| *guard);
+        // Sem monitor conhecido ainda não há escala; usa 1.0 só para achar o monitor.
+        let rough_anchor = rect.map(|r| to_phys_rect(r, 1.0));
+        let Some(monitor) = pick_monitor(flyout, rough_anchor) else {
+            return;
+        };
+        let scale = monitor.scale_factor();
+        let work_area = monitor.work_area();
+        let area: PhysRect = (
+            f64::from(work_area.position.x),
+            f64::from(work_area.position.y),
+            f64::from(work_area.size.width),
+            f64::from(work_area.size.height),
+        );
+        let anchor = rect.map(|r| to_phys_rect(r, scale));
+        let (x, y) = compute_position(area, scale, anchor);
+        let _ = flyout.set_position(tauri::Position::Physical(PhysicalPosition::new(
+            x.round() as i32,
+            y.round() as i32,
+        )));
+    }
+
+    fn to_phys_rect(rect: tauri::Rect, scale: f64) -> PhysRect {
+        let position = rect.position.to_physical::<f64>(scale);
+        let size = rect.size.to_physical::<f64>(scale);
+        (position.x, position.y, size.width, size.height)
+    }
+
+    /// Calcula o canto superior esquerdo do painel dentro da área de trabalho.
+    pub(super) fn compute_position(
+        area: PhysRect,
+        scale: f64,
+        anchor: Option<PhysRect>,
+    ) -> (f64, f64) {
+        let scale = if scale.is_finite() && scale > 0.0 {
+            scale
+        } else {
+            1.0
+        };
+        let (area_x, area_y, area_w, area_h) = area;
+        let width = FLYOUT_WIDTH * scale;
+        let height = FLYOUT_HEIGHT * scale;
+        let margin = MARGIN * scale;
+        let (x, y) = match anchor {
+            Some((ax, ay, aw, ah)) => (ax + aw / 2.0 - width / 2.0, ay + ah + margin / 2.0),
+            None => (area_x + area_w - width - margin, area_y + margin),
+        };
+        let max_x = (area_x + area_w - width).max(area_x);
+        let max_y = (area_y + area_h - height).max(area_y);
+        (x.clamp(area_x, max_x), y.clamp(area_y, max_y))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -953,7 +1074,7 @@ mod tests {
         assert!(tooltip.encode_utf16().count() <= 127);
         assert!(tooltip.starts_with(&"A".repeat(60)));
         assert!(!tooltip.contains('C'));
-        assert_eq!(compose_tooltip(&[], None), "Pulse — Windows Observability");
+        assert_eq!(compose_tooltip(&[], None), super::DEFAULT_TOOLTIP);
         assert_eq!(compose_tooltip(&[], Some("CPU 50 °C")), "Pulse — CPU 50 °C");
     }
 
@@ -1031,10 +1152,7 @@ mod tests {
             tray_tooltip_for_sensors(&sensors),
             "Pulse — CPU Package 54 °C · RTX 4070 SUPER 67.3 °C"
         );
-        assert_eq!(
-            tray_tooltip_for_sensors(&[]),
-            "Pulse — Windows Observability"
-        );
+        assert_eq!(tray_tooltip_for_sensors(&[]), super::DEFAULT_TOOLTIP);
     }
 
     #[test]
@@ -1063,5 +1181,39 @@ mod tests {
     fn formats_celsius_without_trailing_zero() {
         assert_eq!(format_celsius(67.0), "67 °C");
         assert_eq!(format_celsius(67.25), "67.3 °C");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn flyout_opens_top_right_of_work_area_without_anchor() {
+        use super::flyout_position::compute_position;
+        // Monitor secundário à direita, painel superior de 32 px, escala 1.
+        let (x, y) = compute_position((1920.0, 32.0, 1920.0, 1048.0), 1.0, None);
+        assert_eq!((x, y), (1920.0 + 1920.0 - 390.0 - 12.0, 32.0 + 12.0));
+        // Escala 2: dimensões dobram, continua dentro da área.
+        let (x, y) = compute_position((0.0, 0.0, 3840.0, 2160.0), 2.0, None);
+        assert_eq!((x, y), (3840.0 - 780.0 - 24.0, 24.0));
+        // Tela menor que o painel: nunca sai da área (nem negativo).
+        let (x, y) = compute_position((0.0, 0.0, 300.0, 500.0), 1.0, None);
+        assert_eq!((x, y), (0.0, 0.0));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn flyout_opens_below_menu_bar_icon_when_anchor_is_known() {
+        use super::flyout_position::compute_position;
+        let (x, y) = compute_position(
+            (0.0, 25.0, 1440.0, 875.0),
+            1.0,
+            Some((1000.0, 0.0, 24.0, 24.0)),
+        );
+        assert_eq!((x, y), (1012.0 - 195.0, 24.0 + 6.0));
+        // Ícone colado na borda direita: o painel é empurrado para dentro.
+        let (x, _) = compute_position(
+            (0.0, 25.0, 1440.0, 875.0),
+            1.0,
+            Some((1420.0, 0.0, 20.0, 24.0)),
+        );
+        assert_eq!(x, 1440.0 - 390.0);
     }
 }
