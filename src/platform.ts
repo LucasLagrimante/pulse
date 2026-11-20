@@ -169,6 +169,8 @@ export type PlatformCopy = {
   networkDisclaimer: string;
   activityGpuSortHint: string;
   cleanupSystemGroupHint: string;
+  serviceUnknownSource: string;
+  uninstallRegistryStage: string;
 };
 
 export function platformCopy(os: PlatformOs): PlatformCopy {
@@ -222,6 +224,8 @@ export function platformCopy(os: PlatformOs): PlatformCopy {
         networkDisclaimer: "O Pulse mostra o que foi medido direto no sistema (/proc, /sys e serviços locais). Ele não classifica programas como malware e não substitui ferramentas dedicadas de segurança.",
         activityGpuSortHint: "GPU agregada do grupo, somando os motores reportados pelo driver gráfico.",
         cleanupSystemGroupHint: "Recriados pelo sistema e pelos aplicativos",
+        serviceUnknownSource: "o sistema",
+        uninstallRegistryStage: "Entradas",
       };
     case "macos":
       return {
@@ -272,6 +276,8 @@ export function platformCopy(os: PlatformOs): PlatformCopy {
         networkDisclaimer: "O Pulse mostra o que foi medido por interfaces do próprio macOS. Ele não classifica programas como malware e não substitui as proteções nativas do sistema.",
         activityGpuSortHint: "GPU agregada do grupo, somando os motores reportados pelo sistema.",
         cleanupSystemGroupHint: "Recriados pelo sistema e pelos aplicativos",
+        serviceUnknownSource: "o macOS",
+        uninstallRegistryStage: "Entradas",
       };
     default:
       return {
@@ -322,6 +328,8 @@ export function platformCopy(os: PlatformOs): PlatformCopy {
         networkDisclaimer: "O Pulse mostra o que foi medido por APIs do próprio Windows. Ele não classifica programas como malware e não substitui o Microsoft Defender.",
         activityGpuSortHint: "GPU agregada do grupo, somando as engines reportadas pelo Windows.",
         cleanupSystemGroupHint: "Recriados pelo Windows e pelos aplicativos",
+        serviceUnknownSource: "o Windows",
+        uninstallRegistryStage: "Registro",
       };
   }
 }

@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 // Lê a trilha de auditoria gravada pelo Pulse instalado
-// (`%LOCALAPPDATA%\Pulse\logs\debug-AAAA-MM-DD.jsonl`, só com o modo Debug
-// ligado) e imprime um resumo para diagnóstico. Funciona no WSL e no Windows.
+// (Windows: `%LOCALAPPDATA%\Pulse\logs`, Linux: `~/.local/share/Pulse/logs`,
+// macOS: `~/Library/Application Support/Pulse/logs`, só com o modo Debug
+// ligado) e imprime um resumo para diagnóstico. Funciona em Windows, WSL,
+// Linux nativo e macOS.
 //
 // Uso: node scripts/debug-logs.mjs [--since 24h|7d|ISO] [--op system_overview]
 //                                  [--errors] [--json] [--dir <pasta>]
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseJsonl, parseSince, summarize } from "./lib/debug-log-summary.mjs";
 
@@ -17,13 +20,20 @@ function argValue(name) {
 
 function localAppData() {
   if (process.platform === "win32") return process.env.LOCALAPPDATA;
+  if (process.platform === "darwin") {
+    return join(homedir(), "Library", "Application Support");
+  }
   // WSL: pergunta ao Windows e converte para /mnt/c/...
-  const winPath = execFileSync("/mnt/c/Windows/System32/cmd.exe", ["/c", "echo %LOCALAPPDATA%"], {
-    cwd: "/mnt/c",
-    stdio: ["ignore", "pipe", "ignore"],
-  }).toString().trim();
-  if (!winPath || winPath.includes("%")) throw new Error("não foi possível descobrir %LOCALAPPDATA% do Windows; use --dir");
-  return execFileSync("wslpath", ["-u", winPath]).toString().trim();
+  if (existsSync("/mnt/c/Windows/System32/cmd.exe")) {
+    const winPath = execFileSync("/mnt/c/Windows/System32/cmd.exe", ["/c", "echo %LOCALAPPDATA%"], {
+      cwd: "/mnt/c",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).toString().trim();
+    if (!winPath || winPath.includes("%")) throw new Error("não foi possível descobrir %LOCALAPPDATA% do Windows; use --dir");
+    return execFileSync("wslpath", ["-u", winPath]).toString().trim();
+  }
+  // Linux nativo: mesmo diretório XDG que `debug.rs` usa.
+  return process.env.XDG_DATA_HOME || join(homedir(), ".local", "share");
 }
 
 const pulseDir = argValue("--dir") ? null : join(localAppData(), "Pulse");

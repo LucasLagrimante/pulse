@@ -16,7 +16,7 @@ import {
   startUpgradeAll,
   subscribeUpgradeJobs,
 } from "./upgradeJobsStore";
-import { usePlatformCopy } from "./platform";
+import { currentPlatformCopy, usePlatformCopy } from "./platform";
 
 export type { UpdateJob } from "./upgradeJobsStore";
 
@@ -165,7 +165,7 @@ export function matchesServiceCategory(
 export function categoryTitle(service: WindowsService): string {
   const label = categoryLabel(service.category);
   if (service.category === "unknown") {
-    return `${label}: o Windows não informou a conta de execução nem o executável`;
+    return `${label}: ${currentPlatformCopy().serviceUnknownSource} não informou a conta de execução nem o executável`;
   }
   const parts = [`${label}`];
   if (service.startName) parts.push(`conta: ${service.startName}`);

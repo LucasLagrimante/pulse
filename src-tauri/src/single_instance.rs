@@ -158,7 +158,7 @@ pub mod unix {
         dirs::runtime_dir().unwrap_or_else(crate::storage::paths::pulse_local_dir)
     }
 
-    fn paths(name: &str) -> (PathBuf, PathBuf) {
+    pub(super) fn paths(name: &str) -> (PathBuf, PathBuf) {
         let base = base_dir();
         let name = sanitize(name);
         (
@@ -340,5 +340,9 @@ mod tests {
         let relaunched = InstanceGuard::acquire_after_relaunch(&name, Duration::from_secs(5));
         releaser.join().unwrap();
         assert!(relaunched.is_ok());
+        drop(relaunched);
+        let (lock_path, sock_path) = super::unix::paths(&name);
+        let _ = std::fs::remove_file(lock_path);
+        let _ = std::fs::remove_file(sock_path);
     }
 }

@@ -428,7 +428,8 @@ describe("Formatters and Components", () => {
         expect(invoke).toHaveBeenCalledWith("get_system_overview");
       });
       expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 5000);
-      const pollingTimer = setIntervalSpy.mock.results.at(-1)?.value;
+      const pollingTimer =
+        setIntervalSpy.mock.results[setIntervalSpy.mock.results.length - 1]?.value;
 
       rerender(<TrayFlyout isForeground={false} onOpenMain={vi.fn()} />);
       expect(clearIntervalSpy).toHaveBeenCalledWith(pollingTimer);

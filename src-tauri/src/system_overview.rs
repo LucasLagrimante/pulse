@@ -162,6 +162,9 @@ struct OverviewCache {
 }
 
 static CACHE: Mutex<Option<OverviewCache>> = Mutex::new(None);
+/// Evita que várias chamadas concorrentes no arranque executem a coleta
+/// completa em paralelo antes do primeiro preenchimento do cache.
+static COLLECT_LOCK: Mutex<()> = Mutex::new(());
 static CONSECUTIVE_FAILURES: AtomicU32 = AtomicU32::new(0);
 const CACHE_TTL: Duration = Duration::from_millis(3500);
 
@@ -493,50 +496,69 @@ mod win32 {
     }
 }
 
-pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
-    if let Ok(guard) = CACHE.lock() {
-        if let Some(ref cached) = *guard {
-            if cached.last_fetched.elapsed() < CACHE_TTL {
-                #[cfg(windows)]
-                {
-                    let mut fresh = cached.data.clone();
-                    if let Some(cpu) = win32::read_cpu_percent() {
-                        fresh.cpu_percent = Some(cpu);
-                    }
-                    if let Some((used, total)) = win32::read_memory_gb() {
-                        fresh.memory_used_gb = Some(used);
-                        fresh.memory_total_gb = Some(total);
-                    }
-                    if let Ok(ms) = now_unix_ms() {
-                        fresh.sampled_at_unix_ms = ms;
-                    }
-                    // Uso por processo é uma janela de delta: recalcular a cada
-                    // entrega mantém CPU/GPU atuais mesmo vindo do cache.
-                    fresh.gpu_percent = attach_usage_metrics(&mut fresh.top_processes);
-                    attach_process_icons(&mut fresh.top_processes);
-                    return Ok(fresh);
-                }
-                #[cfg(unix)]
-                {
-                    let mut fresh = cached.data.clone();
-                    if let Some(cpu) = unix::read_cpu_percent() {
-                        fresh.cpu_percent = Some(cpu);
-                    }
-                    if let Some((used, total)) = unix::read_memory_gb() {
-                        fresh.memory_used_gb = Some(used);
-                        fresh.memory_total_gb = Some(total);
-                    }
-                    if let Ok(ms) = now_unix_ms() {
-                        fresh.sampled_at_unix_ms = ms;
-                    }
-                    fresh.gpu_percent = attach_usage_metrics(&mut fresh.top_processes);
-                    attach_process_icons(&mut fresh.top_processes);
-                    return Ok(fresh);
-                }
-                #[cfg(not(any(windows, unix)))]
-                return Ok(cached.data.clone());
-            }
+fn fresh_from_cache() -> Option<SystemOverview> {
+    let cached_data = {
+        let guard = CACHE.lock().ok()?;
+        let cached = guard.as_ref()?;
+        if cached.last_fetched.elapsed() >= CACHE_TTL {
+            return None;
         }
+        cached.data.clone()
+    };
+
+    #[cfg(windows)]
+    {
+        let mut fresh = cached_data;
+        if let Some(cpu) = win32::read_cpu_percent() {
+            fresh.cpu_percent = Some(cpu);
+        }
+        if let Some((used, total)) = win32::read_memory_gb() {
+            fresh.memory_used_gb = Some(used);
+            fresh.memory_total_gb = Some(total);
+        }
+        if let Ok(ms) = now_unix_ms() {
+            fresh.sampled_at_unix_ms = ms;
+        }
+        // Uso por processo é uma janela de delta: recalcular a cada
+        // entrega mantém CPU/GPU atuais mesmo vindo do cache.
+        fresh.gpu_percent = attach_usage_metrics(&mut fresh.top_processes);
+        attach_process_icons(&mut fresh.top_processes);
+        Some(fresh)
+    }
+    #[cfg(unix)]
+    {
+        let mut fresh = cached_data;
+        if let Some(cpu) = unix::read_cpu_percent() {
+            fresh.cpu_percent = Some(cpu);
+        }
+        if let Some((used, total)) = unix::read_memory_gb() {
+            fresh.memory_used_gb = Some(used);
+            fresh.memory_total_gb = Some(total);
+        }
+        if let Ok(ms) = now_unix_ms() {
+            fresh.sampled_at_unix_ms = ms;
+        }
+        fresh.gpu_percent = attach_usage_metrics(&mut fresh.top_processes);
+        attach_process_icons(&mut fresh.top_processes);
+        Some(fresh)
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        Some(cached_data)
+    }
+}
+
+pub fn get_system_overview_sync() -> Result<SystemOverview, String> {
+    if let Some(fresh) = fresh_from_cache() {
+        return Ok(fresh);
+    }
+
+    // Serializa coletas frias/expiradas para que chamadas simultâneas no
+    // arranque reaproveitem o resultado da primeira em vez de multiplicar
+    // o trabalho de subprocessos e varredura de processos.
+    let _collect_guard = COLLECT_LOCK.lock().ok();
+    if let Some(fresh) = fresh_from_cache() {
+        return Ok(fresh);
     }
 
     let started = Instant::now();

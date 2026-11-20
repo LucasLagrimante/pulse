@@ -263,6 +263,102 @@ pub fn is_valid_snap_name(name: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
+/// Pacotes listados sob `The following packages have unmet dependencies:`.
+/// Retorna `(nome_do_pacote, linha_completa)` preservando a ordem da saída.
+pub fn parse_apt_unmet_dependencies(text: &str) -> Vec<(String, String)> {
+    let mut in_section = false;
+    let mut entries = Vec::new();
+    for raw in text.lines() {
+        let trimmed = raw.trim();
+        if !in_section {
+            if trimmed == "The following packages have unmet dependencies:" {
+                in_section = true;
+            }
+            continue;
+        }
+        if trimmed.is_empty()
+            || (!raw.starts_with(' ') && !raw.starts_with('\t'))
+            || trimmed.starts_with("E:")
+        {
+            break;
+        }
+        if let Some((pkg, _)) = trimmed.split_once(':') {
+            let name = pkg.trim();
+            if !name.is_empty() {
+                entries.push((name.to_string(), trimmed.to_string()));
+            }
+        }
+    }
+    entries
+}
+
+/// Traduz uma recusa do `apt-get -s remove` combinando `stdout` e `stderr`:
+/// o `apt-get` escreve os pacotes quebrados em `stdout` e só o resumo `E:` em
+/// `stderr`, então olhar apenas `stderr` esconde qual pacote causou o bloqueio.
+pub fn describe_apt_simulation_failure(package: &str, output: &CommandOutput) -> String {
+    if output.timed_out {
+        return "A simulação do apt ultrapassou o tempo limite; tente novamente.".to_string();
+    }
+    let combined_lower = format!("{}\n{}", output.stdout, output.stderr).to_ascii_lowercase();
+    if combined_lower.contains("dpkg was interrupted")
+        || combined_lower.contains("dpkg --configure -a")
+    {
+        return "Uma operação anterior do dpkg foi interrompida. Execute `sudo dpkg --configure -a` no terminal para concluir a configuração pendente e tente novamente.".to_string();
+    }
+
+    let mut unmet = parse_apt_unmet_dependencies(&output.stdout);
+    if unmet.is_empty() {
+        unmet = parse_apt_unmet_dependencies(&output.stderr);
+    }
+    if !unmet.is_empty() || combined_lower.contains("unmet dependencies") {
+        let target = bare(package);
+        let mut names: Vec<&str> = Vec::new();
+        for (name, _) in &unmet {
+            if !names.contains(&name.as_str()) {
+                names.push(name.as_str());
+            }
+        }
+        let details: Vec<&str> = unmet
+            .iter()
+            .map(|(_, line)| line.as_str())
+            .take(3)
+            .collect();
+        let more_details = if unmet.len() > details.len() {
+            "…"
+        } else {
+            ""
+        };
+
+        if !names.is_empty() && !names.iter().any(|name| bare(name) == target) {
+            let shown_names: Vec<&str> = names.iter().copied().take(4).collect();
+            let more_names = if names.len() > shown_names.len() {
+                "…"
+            } else {
+                ""
+            };
+            let list = format!("{}{more_names}", shown_names.join(", "));
+            return format!(
+                "O apt bloqueou a remoção porque há dependência quebrada em outro pacote do sistema ({list}): {}{more_details}. Corrija com `sudo apt --fix-broken install` no terminal (ou remova {list} antes) e tente novamente.",
+                details.join("; "),
+            );
+        }
+        if !details.is_empty() {
+            return format!(
+                "O apt recusou a remoção por dependências pendentes no sistema: {}{more_details}. Execute `sudo apt --fix-broken install` no terminal e tente novamente.",
+                details.join("; "),
+            );
+        }
+        return "O apt recusou a remoção por dependências quebradas no sistema. Execute `sudo apt --fix-broken install` no terminal e tente novamente.".to_string();
+    }
+
+    let tail = output.tail(3).join(" ");
+    if tail.is_empty() {
+        "O apt recusou a remoção na simulação sem informar detalhes.".to_string()
+    } else {
+        format!("O apt recusou a remoção na simulação: {tail}")
+    }
+}
+
 /// Pacotes que o `apt-get -s remove` removeria (`Remv nome [versão]`).
 pub fn parse_apt_simulation(text: &str) -> Vec<String> {
     text.lines()
@@ -339,10 +435,7 @@ fn run_deb(package: &str) -> Result<Executed, String> {
     )
     .map_err(|error| format!("A simulação do apt não pôde ser executada: {error}"))?;
     if !simulation.success() {
-        return Err(format!(
-            "O apt recusou a remoção na simulação: {}",
-            simulation.tail(2).join(" ")
-        ));
+        return Err(describe_apt_simulation_failure(package, &simulation));
     }
     let removed = parse_apt_simulation(&simulation.stdout);
     if !removed.iter().any(|name| bare(name) == bare(package)) {
@@ -701,6 +794,48 @@ Remv dolphin [4:23.08.5-0ubuntu1]\n";
             vec!["kde-baseapps".to_string(), "dolphin".to_string()]
         );
         assert!(parse_apt_simulation("0 upgraded, 0 newly installed, 0 to remove").is_empty());
+    }
+
+    #[test]
+    fn falha_de_simulacao_do_apt_identifica_outro_pacote_quebrado() {
+        let output = CommandOutput {
+            status: Some(100),
+            stdout: concat!(
+                "Reading package lists...\n",
+                "You might want to run 'apt --fix-broken install' to correct these.\n",
+                "The following packages have unmet dependencies:\n",
+                " handy : Depends: libopenblas0 but it is not going to be installed\n",
+            )
+            .to_string(),
+            stderr:
+                "E: Unmet dependencies. Try 'apt --fix-broken install' with no packages (or specify a solution).\n"
+                    .to_string(),
+            timed_out: false,
+        };
+        let message = describe_apt_simulation_failure("chatgpt", &output);
+        assert!(message.contains("outro pacote do sistema (handy)"));
+        assert!(message.contains("libopenblas0"));
+        assert!(message.contains("sudo apt --fix-broken install"));
+
+        let same_pkg = describe_apt_simulation_failure("handy", &output);
+        assert!(!same_pkg.contains("outro pacote"));
+        assert!(same_pkg.contains("libopenblas0"));
+
+        let interrupted = CommandOutput {
+            status: Some(100),
+            stderr:
+                "E: dpkg was interrupted, you must manually run 'sudo dpkg --configure -a' to correct the problem.\n"
+                    .to_string(),
+            ..CommandOutput::default()
+        };
+        assert!(describe_apt_simulation_failure("chatgpt", &interrupted)
+            .contains("sudo dpkg --configure -a"));
+
+        let timed_out = CommandOutput {
+            timed_out: true,
+            ..CommandOutput::default()
+        };
+        assert!(describe_apt_simulation_failure("chatgpt", &timed_out).contains("tempo limite"));
     }
 
     #[test]

@@ -291,10 +291,15 @@ fn parse_socket_inode(link_target: &str) -> Option<u64> {
     digits.parse::<u64>().ok()
 }
 
+fn clean_exe_link(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().trim_end_matches(" (deleted)");
+    (!trimmed.is_empty()).then(|| trimmed.to_owned())
+}
+
 fn resolve_pid_info(pid: u32) -> (String, Option<String>) {
     let exe = fs::read_link(format!("/proc/{pid}/exe"))
         .ok()
-        .map(|path| path.to_string_lossy().into_owned());
+        .and_then(|path| clean_exe_link(&path.to_string_lossy()));
 
     let comm = fs::read_to_string(format!("/proc/{pid}/comm"))
         .ok()
@@ -1496,5 +1501,18 @@ httpProxy=http://127.0.0.1:8080
                 .count()
         );
         assert!(posture.collected_at_unix_ms > 0);
+    }
+
+    #[test]
+    fn limpa_sufixo_deleted_de_exe() {
+        assert_eq!(
+            clean_exe_link("/opt/google/chrome/chrome (deleted)").as_deref(),
+            Some("/opt/google/chrome/chrome")
+        );
+        assert_eq!(
+            clean_exe_link("/usr/bin/firefox").as_deref(),
+            Some("/usr/bin/firefox")
+        );
+        assert_eq!(clean_exe_link("   "), None);
     }
 }

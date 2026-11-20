@@ -4008,7 +4008,7 @@ function App() {
                     <div className="startup-alert" role="note">
                       <span className="startup-alert-badge">AVISO DE DESEMPENHO</span>
                       <p>
-                        <strong>{startupStats.slowest} {startupStats.slowest === 1 ? "aplicativo de alto impacto detectado" : "aplicativos de alto impacto detectados"}.</strong> Eles demandam mais tempo de CPU e disco na inicialização. Desativar itens desnecessários acelera o boot do Windows.
+                        <strong>{startupStats.slowest} {startupStats.slowest === 1 ? "aplicativo de alto impacto detectado" : "aplicativos de alto impacto detectados"}.</strong> Eles demandam mais tempo de CPU e disco na inicialização. Desativar itens desnecessários acelera o boot do {pc.osLabel}.
                       </p>
                     </div>
                   )}
