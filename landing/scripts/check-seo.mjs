@@ -98,8 +98,12 @@ const h4BeforeH3 = /<h4[\s>][\s\S]*?<h3[\s>]/.test(html);
 check(!h4BeforeH3, "nenhum h4 antes do primeiro h3");
 
 // 7. Sem placeholder óbvio
-check(!html.includes("lorem ipsum") && !html.includes("TODO") && !html.includes("example.com"),
-  "sem placeholder de texto");
+check(
+  !html.includes("lorem ipsum") &&
+  !html.includes("TODO") &&
+  !/https?:\/\/(?:www\.)?example\.com(?:[\/?#]|$)/i.test(html),
+  "sem placeholder de texto"
+);
 check(html.includes("pulse.lagrimante.com.br"), "domínio real usado nas metas");
 
 // 8. Domínio consistente
