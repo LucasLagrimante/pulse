@@ -2,8 +2,9 @@
  * Pulse LP — interações
  *
  * Escopo enxuto e zero dependências externas: alternância de tema, simulador
- * interativo dos 9 módulos + Tray Flyout & Mixer Core Audio, cópia do hash
- * SHA-256, FAQ acordeão e revelação ao rolar.
+ * interativo dos 9 módulos + Tray Flyout & Mixer de Áudio, seletor de plataforma
+ * (Windows / Linux / macOS) com detecção do SO, cópia de SHA-256, FAQ acordeão e
+ * revelação ao rolar.
  */
 
 const STORAGE_KEY = "pulse-theme";
@@ -62,7 +63,7 @@ function activateSurface(surfaceId) {
   });
   if (titlebarFile) {
     if (surfaceId === "tray") {
-      titlebarFile.textContent = "pulse — painel rápido (tray flyout) · mixer core audio";
+      titlebarFile.textContent = "pulse — painel rápido (tray flyout) · mixer de áudio";
     } else {
       const currentTab = simTabs.find(t => t.getAttribute("aria-selected") === "true");
       const label = currentTab?.getAttribute("data-sim-label") || "visão geral";
@@ -146,12 +147,75 @@ document.querySelectorAll("[data-mixer-slider]").forEach(slider => {
   });
 });
 
-/* ---------- Cópia do Checksum SHA-256 ---------- */
+/* ---------- Seletor de Plataforma na Seção de Download ---------- */
 
-const copyBtn = document.querySelector("[data-copy-sha256]");
-if (copyBtn) {
+const downloadTabs = [...document.querySelectorAll("[data-download-tab]")];
+const downloadPanels = document.querySelectorAll("[data-download-panel]");
+
+function detectVisitorOs() {
+  const hint = navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || "";
+  if (/android|iphone|ipad|ipod/i.test(navigator.userAgent || "")) return "windows";
+  if (/mac|darwin/i.test(hint)) return "macos";
+  if (/linux|x11/i.test(hint)) return "linux";
+  return "windows";
+}
+
+function activateDownloadOs(osId, focusTab = false) {
+  downloadTabs.forEach(tab => {
+    const active = tab.getAttribute("data-download-tab") === osId;
+    tab.setAttribute("aria-selected", String(active));
+    tab.setAttribute("tabindex", active ? "0" : "-1");
+    if (active && focusTab) tab.focus();
+  });
+  downloadPanels.forEach(panel => {
+    const active = panel.getAttribute("data-download-panel") === osId;
+    if (active) panel.removeAttribute("hidden");
+    else panel.setAttribute("hidden", "");
+  });
+}
+
+if (downloadTabs.length) {
+  activateDownloadOs(detectVisitorOs());
+
+  downloadTabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => {
+      const osId = tab.getAttribute("data-download-tab");
+      if (osId) activateDownloadOs(osId);
+    });
+
+    tab.addEventListener("keydown", event => {
+      let nextIndex = -1;
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        nextIndex = (index + 1) % downloadTabs.length;
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        nextIndex = (index - 1 + downloadTabs.length) % downloadTabs.length;
+      } else if (event.key === "Home") {
+        nextIndex = 0;
+      } else if (event.key === "End") {
+        nextIndex = downloadTabs.length - 1;
+      }
+      if (nextIndex >= 0) {
+        event.preventDefault();
+        const targetOs = downloadTabs[nextIndex].getAttribute("data-download-tab");
+        if (targetOs) activateDownloadOs(targetOs, true);
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-select-download-os]").forEach(trigger => {
+    trigger.addEventListener("click", () => {
+      const targetOs = trigger.getAttribute("data-select-download-os");
+      if (targetOs) activateDownloadOs(targetOs);
+    });
+  });
+}
+
+/* ---------- Cópia do Checksum SHA-256 (suporta múltiplos instaladores) ---------- */
+
+document.querySelectorAll("[data-copy-sha256]").forEach(copyBtn => {
   copyBtn.addEventListener("click", async () => {
-    const hashEl = document.querySelector("[data-release-sha256]");
+    const box = copyBtn.closest(".checksum-box");
+    const hashEl = box?.querySelector("[data-sha256-value], [data-release-sha256]");
     const hash = hashEl?.textContent?.trim();
     if (!hash) return;
     try {
@@ -165,7 +229,7 @@ if (copyBtn) {
       // sem clipboard API disponível
     }
   });
-}
+});
 
 /* ---------- FAQ: acordeão com um item aberto por vez ---------- */
 

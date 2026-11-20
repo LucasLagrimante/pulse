@@ -1,15 +1,14 @@
 /**
  * pulse-lp · Worker de assets estáticos
  *
- * A landing page do Pulse é estática (Vite). O Worker existe para dois motivos:
+ * A landing page do Pulse é estática (Vite). O Worker existe para três motivos:
  *  1. servir a variante Markdown (`/index.md`) quando o cliente pede
  *     `Accept: text/markdown` — descoberta por agentes e rastreadores de IA;
  *  2. devolver um 404 de verdade (e amigável a agente) para caminhos inexistentes,
- *     em vez do soft-404 que um catch-all de SPA produziria.
- *
- * O instalador (.exe) não é servido daqui: `/download/*.exe` redireciona para o
- * asset da GitHub Release fixado em `release.json` (`installer.assetUrl`), para
- * que o binário baixado seja sempre o do SHA-256 exibido na página.
+ *     em vez do soft-404 que um catch-all de SPA produziria;
+ *  3. redirecionar `/download/*` (.exe, .deb, .AppImage, .dmg) para o asset da
+ *     GitHub Release fixado em `release.json`, garantindo que o binário baixado
+ *     corresponda sempre ao SHA-256 anunciado na página.
  */
 
 const MARKDOWN_ACCEPT = /(?:^|,)\s*text\/markdown(?:\s*[;,][^,]*)?/i;
@@ -23,20 +22,41 @@ const NOT_FOUND_MARKDOWN = `# Pulse
 O recurso solicitado não existe neste domínio.
 
 - [Página inicial](${SITE}/)
-- [Download para Windows](${SITE}/#download)
+- [Download (Windows e Linux)](${SITE}/#download)
 - [Sitemap](${SITE}/sitemap.xml)
 - [llms.txt](${SITE}/llms.txt)
 - [Versão em Markdown](${SITE}/index.md)
 `;
 
+function resolveManifestAssetUrl(manifest, pathname) {
+  const lower = pathname.toLowerCase();
+  if (lower.endsWith(".exe")) return manifest?.installer?.assetUrl;
+  if (lower.endsWith(".deb")) return manifest?.linux?.deb?.assetUrl;
+  if (lower.endsWith(".appimage")) return manifest?.linux?.appimage?.assetUrl;
+  if (lower.endsWith(".dmg")) return manifest?.macos?.dmg?.assetUrl;
+  return null;
+}
+
+function isDownloadRoute(pathname) {
+  if (!pathname.startsWith("/download/")) return false;
+  const lower = pathname.toLowerCase();
+  return (
+    lower.endsWith(".exe") ||
+    lower.endsWith(".deb") ||
+    lower.endsWith(".appimage") ||
+    lower.endsWith(".dmg")
+  );
+}
+
 // Resolve a URL do instalador pela versão publicada em release.json; se o
-// manifesto faltar ou vier inválido, cai na página da última Release.
-async function installerRedirect(request, env) {
+// manifesto faltar ou o asset ainda não estiver publicado, cai na última Release.
+async function installerRedirect(pathname, env) {
   let target = `${RELEASES_URL}/latest`;
   try {
     const manifestResponse = await env.ASSETS.fetch(new Request(`${SITE}/release.json`, { method: "GET" }));
     if (manifestResponse.ok) {
-      const assetUrl = (await manifestResponse.json())?.installer?.assetUrl;
+      const manifest = await manifestResponse.json();
+      const assetUrl = resolveManifestAssetUrl(manifest, pathname);
       if (typeof assetUrl === "string" && assetUrl.startsWith(`${RELEASES_URL}/download/`)) {
         target = assetUrl;
       }
@@ -77,8 +97,8 @@ export default {
       }
     }
 
-    if (url.pathname.startsWith("/download/") && url.pathname.endsWith(".exe")) {
-      return installerRedirect(request, env);
+    if (isDownloadRoute(url.pathname)) {
+      return installerRedirect(url.pathname, env);
     }
 
     const response = await env.ASSETS.fetch(request);

@@ -4,10 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <title>Pulse — central de observabilidade e diagnóstico para Windows 11</title>
+    <title>Pulse — central de observabilidade e diagnóstico para Windows 11 e Linux</title>
     <meta
       name="description"
-      content="Pulse reúne monitoramento de CPU, memória, disco e GPU, atividade por grupo de processos, análise de armazenamento TreeSize, limpeza segura, desinstalação com resíduos, inicialização, serviços, winget, mixer de áudio e cotas de IA em um aplicativo nativo para Windows 11. Dados 100% locais."
+      content="Pulse reúne monitoramento de CPU, memória, disco e GPU, atividade por grupo de processos, análise de armazenamento TreeSize, limpeza segura, desinstalação com resíduos, inicialização, serviços, rede e segurança, mixer de áudio e cotas de IA em um aplicativo nativo para Windows 11 e Linux (macOS em breve). Dados 100% locais."
     />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
     <meta name="author" content="Lucas Lagrimante" />
@@ -20,10 +20,10 @@
     <link rel="alternate" type="text/markdown" href="/index.md" />
 
     <meta property="og:site_name" content="Pulse" />
-    <meta property="og:title" content="Pulse — seu Windows, em perspectiva." />
+    <meta property="og:title" content="Pulse — seu sistema, em perspectiva." />
     <meta
       property="og:description"
-      content="Observabilidade, diagnóstico e controle local do Windows 11 em uma interface única. Sem conta, sem telemetria e sem envio de dados para a nuvem."
+      content="Observabilidade, diagnóstico e controle local para Windows 11 e Linux (macOS em breve) em uma interface única. Sem conta, sem telemetria e sem envio de dados para a nuvem."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://pulse.lagrimante.com.br/" />
@@ -32,15 +32,15 @@
     <meta property="og:image:height" content="630" />
     <meta property="og:locale" content="pt_BR" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Pulse — seu Windows, em perspectiva." />
+    <meta name="twitter:title" content="Pulse — seu sistema, em perspectiva." />
     <meta
       name="twitter:description"
-      content="Observabilidade, diagnóstico e controle local do Windows 11 em uma interface única. Sem conta, sem telemetria e sem envio de dados para a nuvem."
+      content="Observabilidade, diagnóstico e controle local para Windows 11 e Linux (macOS em breve) em uma interface única. Sem conta, sem telemetria e sem envio de dados para a nuvem."
     />
     <meta name="twitter:image" content="https://pulse.lagrimante.com.br/og-image.png" />
     <meta
       name="keywords"
-      content="monitor de sistema windows, gerenciador de tarefas alternativo, monitoramento cpu gpu ram, analisador de disco windows, otimizar windows 11, programas de inicialização windows, desinstalador windows resíduos, cotas claude codex openrouter, observabilidade local, pulse lagrimante"
+      content="monitor de sistema windows, monitor de sistema linux, gerenciador de tarefas alternativo, monitoramento cpu gpu ram, analisador de disco treesize, otimizar windows 11, observabilidade linux deb appimage, programas de inicialização, desinstalador resíduos, cotas claude codex openrouter, observabilidade local, pulse lagrimante"
     />
 
     <link rel="stylesheet" href="/src/base.css" />
@@ -51,10 +51,10 @@
       "@context": "https://schema.org",
       "@type": "WebSite",
       "name": "Pulse",
-      "alternateName": ["Pulse Windows Observability"],
+      "alternateName": ["Pulse System Observability", "Pulse Windows Observability"],
       "url": "https://pulse.lagrimante.com.br/",
       "inLanguage": "pt-BR",
-      "description": "Central de observabilidade e diagnóstico para Windows 11: recursos, processos, armazenamento, inicialização, desinstalação, serviços, áudio e cotas de IA em uma interface única, local por padrão e de código aberto (MIT).",
+      "description": "Central nativa de observabilidade e diagnóstico para Windows 11 e Linux (com port para macOS em desenvolvimento): recursos, processos, armazenamento, inicialização, desinstalação, serviços, rede, áudio e cotas de IA em uma interface única, local por padrão e de código aberto (MIT).",
       "author": {
         "@type": "Person",
         "name": "Lucas Lagrimante",
@@ -68,22 +68,23 @@
       "@type": "SoftwareApplication",
       "name": "Pulse",
       "applicationCategory": "UtilitiesApplication",
-      "operatingSystem": "Windows 11",
+      "operatingSystem": "Windows 11, Linux",
       "softwareVersion": "1.3.0",
       "fileSize": "3,7 MB",
       "downloadUrl": "https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe",
-      "description": "Aplicativo nativo para Windows 11 que reúne observabilidade de hardware, atividade de processos, análise de armazenamento TreeSize, limpeza segura, desinstalação com rastreamento de resíduos, inventário de inicialização, serviços e winget, cotas de IA com histórico SQLite e painel na bandeja com mixer Core Audio. Todo o processamento é local.",
+      "description": "Aplicativo nativo para Windows 11 e Linux (com port para macOS em desenvolvimento) que reúne observabilidade de hardware, atividade de processos, análise de armazenamento TreeSize, limpeza segura, desinstalação com rastreamento de resíduos, inventário de inicialização, serviços e gerenciadores de pacotes, rede e segurança, cotas de IA com histórico SQLite e painel na bandeja com mixer de áudio. Todo o processamento é local.",
       "featureList": [
-        "Visão geral de CPU, memória, disco, GPU e processos agrupados",
-        "Atividade com consumo de CPU, GPU e RAM por aplicativo e identificação de vmmemWSL",
-        "Telemetria em tempo real com gráficos SVG e sensores térmicos reais",
-        "Análise de armazenamento em árvore (TreeSize), treemap e arquivos recentes com proteção anti-DPC e integração com terminal de IA (Claude, Antigravity, Codex) para diagnóstico de maiores pastas e liberação de espaço",
+        "Visão geral de CPU, memória, disco, GPU e processos agrupados no Windows 11 e no Linux",
+        "Atividade com consumo de CPU, GPU e RAM por aplicativo, identificação de vmmemWSL no Windows e mapeamento .desktop no Linux",
+        "Telemetria em tempo real com gráficos SVG e sensores térmicos reais (PDH/NVML/WMI no Windows; /proc, hwmon e DRM no Linux)",
+        "Análise de armazenamento em árvore (TreeSize), treemap e arquivos recentes com proteção de responsividade e integração com terminal de IA (Claude, Antigravity, Codex)",
         "Limpeza local controlada por categorias seguras em whitelist, com limpeza automática opcional agendada",
-        "Desinstalação em 3 fases com Ponto de Restauração e varredura conservadora de resíduos",
-        "Inventário de inicialização via StartupApproved com impacto de boot em milissegundos",
-        "Serviços nativos do Windows (SCM/WMI) com revisão de segurança via terminal de IA (keylogger, spyware, acesso indevido) e atualizações de aplicativos via winget",
-        "Cotas de assinaturas de IA (Claude Code, OpenAI Codex, Google Antigravity, OpenRouter, OpenCode Go) com matriz por modelo, contagem regressiva na bandeja e histórico de 30 dias em SQLite",
-        "Mixer de volume Core Audio por aplicativo no flyout da bandeja e trilha de auditoria local"
+        "Desinstalação com tamanho real em disco e varredura conservadora de resíduos (Ponto de Restauração no Windows; apt/Flatpak/Snap + resíduos XDG via pkexec no Linux)",
+        "Inventário de inicialização reversível (StartupApproved com impacto em ms no Windows; XDG Autostart e systemd no Linux)",
+        "Serviços do sistema (SCM/WMI + winget no Windows; systemd + apt/dnf/pacman/flatpak/snap no Linux) com revisão de segurança via terminal de IA",
+        "Rede e segurança com conexões TCP/UDP e portas em escuta por processo e sinais verificáveis de postura, sem rótulos arbitrários de malware",
+        "Cotas de assinaturas de IA (Claude Code, OpenAI Codex, Google Antigravity, OpenRouter, OpenCode Go) com histórico de 30 dias em SQLite e chaves no cofre nativo",
+        "Mixer de volume por aplicativo no flyout da bandeja (Core Audio no Windows; PipeWire/PulseAudio no Linux) e trilha de auditoria local"
       ],
       "offers": {
         "@type": "Offer",
@@ -117,15 +118,15 @@
           "name": "Preciso criar conta ou pagar para usar o Pulse?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Não. O Pulse é gratuito, não exige cadastro, login ou assinatura. Você baixa o instalador para Windows 11 e usa."
+            "text": "Não. O Pulse é gratuito, não exige cadastro, login ou assinatura. Você baixa o instalador para Windows 11 ou Linux e usa."
           }
         },
         {
           "@type": "Question",
-          "name": "O Pulse funciona no Windows 10?",
+          "name": "O Pulse funciona no Linux, macOS e Windows 10?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "O Pulse é Windows-first e foi projetado e testado para o Windows 11 x64. Ele depende de APIs e do WebView2 presentes nas versões atuais do Windows 11."
+            "text": "O Pulse suporta Windows 11 x64 (suporte principal, Windows-first) e Linux x86_64 via .deb e AppImage em distribuições com WebKitGTK 4.1 (Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Fedora 38+). O port para macOS (Apple Silicon .dmg) está em desenvolvimento experimental e ainda não foi validado em hardware. O Windows 10 não é alvo oficial."
           }
         },
         {
@@ -133,7 +134,7 @@
           "name": "O Pulse apaga arquivos ou chaves de registro automaticamente?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Não. O Pulse nunca executa operações destrutivas por conta própria. A limpeza de disco usa categorias seguras em whitelist e só roda sozinha se você ativar a limpeza automática (desligada por padrão, preserva arquivos dos últimos 7 dias e nunca esvazia a Lixeira), a inicialização usa o padrão reversível StartupApproved (sem reg delete) e a desinstalação cria Ponto de Restauração e exibe os resíduos para sua revisão."
+            "text": "Não. O Pulse nunca executa operações destrutivas por conta própria. A limpeza de disco usa categorias seguras em whitelist e só roda sozinha se você ativar a limpeza automática (desligada por padrão, preserva arquivos dos últimos 7 dias e nunca esvazia a Lixeira), a inicialização usa padrões reversíveis (StartupApproved no Windows; XDG/systemd no Linux) e a desinstalação exibe os resíduos para sua revisão."
           }
         },
         {
@@ -157,7 +158,7 @@
           "name": "Como confiro se o instalador é legítimo?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "O instalador é publicado nas Releases do repositório no GitHub, e o SHA-256 exibido na página de download é o do mesmo arquivo. Compare o hash com Get-FileHash no PowerShell antes de instalar, ou compile a partir do código-fonte."
+            "text": "Os instaladores são publicados nas Releases do repositório no GitHub, e o SHA-256 exibido na página de download é o do mesmo arquivo. Compare o hash com Get-FileHash no PowerShell (Windows) ou sha256sum no terminal (Linux), ou compile a partir do código-fonte."
           }
         },
         {
@@ -165,7 +166,7 @@
           "name": "Quais ferramentas de IA são suportadas no módulo de Cotas?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "O Pulse acompanha localmente Claude Code, OpenAI Codex, Google Antigravity, OpenRouter e OpenCode Go, armazenando chaves opcionais no Windows Credential Manager e mantendo histórico de 30 dias em SQLite local."
+            "text": "O Pulse acompanha localmente Claude Code, OpenAI Codex, Google Antigravity, OpenRouter e OpenCode Go, armazenando chaves opcionais no cofre nativo do sistema (Windows Credential Manager ou Secret Service no Linux) e mantendo histórico de 30 dias em SQLite local."
           }
         }
       ]
@@ -203,7 +204,7 @@
               <path d="M4 26h10l5-12v24l7-20 4 8h14" stroke="var(--accent)" stroke-width="3.8" />
             </g>
           </svg>
-          <span>Pulse<small>WINDOWS OBSERVABILITY</small></span>
+          <span>Pulse<small>WINDOWS · LINUX</small></span>
         </a>
 
         <nav class="site-nav" aria-label="Navegação principal">
@@ -237,11 +238,11 @@
             </svg>
           </button>
           <a class="btn btn-primary" href="#download">
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="18" height="18">
-              <path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" />
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="18" height="18">
+              <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
             </svg>
-            <span class="btn-label">Baixar para Windows</span>
-            <span class="sr-only">Baixar o Pulse para Windows</span>
+            <span class="btn-label">Baixar o Pulse</span>
+            <span class="sr-only">Baixar o Pulse para Windows 11 ou Linux</span>
           </a>
         </div>
       </div>
@@ -255,29 +256,30 @@
           <div class="hero-top-row" data-reveal>
             <span class="hero-badge">
               <span class="dot" aria-hidden="true"></span>
-              Open source (MIT) · zero telemetria · Windows 11 nativo
+              Open source (MIT) · zero telemetria · Windows 11 e Linux
             </span>
             <span class="hero-version-pill">
               <span data-release-version>v1.3.0</span> · Rust + Tauri 2 + React 19
             </span>
           </div>
 
-          <h1 data-reveal>Seu Windows,<br /><em>em perspectiva.</em></h1>
+          <h1 data-reveal>Seu sistema,<br /><em>em perspectiva.</em></h1>
 
           <p class="hero-sub" data-reveal>
-            O Pulse substitui sete utilitários isolados — Gerenciador de Tarefas, Monitor de
-            Recursos, TreeSize, Autoruns, Desinstalador, Serviços e Mixer de Volume — além de
-            monitorar suas assinaturas de IA localmente. Leitura direta das APIs do Windows,
+            O Pulse substitui sete utilitários isolados — processos, sensores, TreeSize,
+            inicialização, desinstalação, serviços, rede e mixer de áudio — além de
+            monitorar suas assinaturas de IA localmente. Nativo no <strong>Windows 11</strong> e
+            no <strong>Linux</strong> (com port para <strong>macOS</strong> em preparação),
             honestidade absoluta em sensores e nenhuma telemetria saindo da sua máquina.
           </p>
 
           <div class="hero-cta" data-reveal>
             <a class="btn btn-primary btn-lg" href="#download">
-              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="20" height="20">
-                <path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" />
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="20" height="20">
+                <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
               </svg>
-              Baixar para Windows 11
-              <span class="btn-pill-meta" data-release-size>3,7 MB</span>
+              Baixar o Pulse
+              <span class="btn-pill-meta">Windows · Linux</span>
             </a>
             <a class="btn btn-secondary btn-lg" href="#previa">Testar interface interativa</a>
           </div>
@@ -285,7 +287,7 @@
           <p class="hero-meta" data-reveal>
             <span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z M12 6v6l4 2" /></svg>
-              <span data-release-installer-label>Instalador NSIS · 3,7 MB</span>
+              <span data-release-installer-label>Instalador NSIS · 3,7 MB</span> · .deb / AppImage · macOS em breve
             </span>
             <span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13h5l3-8 4 14 3-6h5" /></svg>
@@ -341,13 +343,13 @@
 
           <figure class="app-window" data-reveal>
             <figcaption class="sr-only">
-              Representação esquemática interativa da interface do Pulse para Windows 11.
+              Representação esquemática interativa da interface do Pulse para Windows 11 e Linux.
             </figcaption>
             <div class="app-titlebar">
               <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
               <span class="file" data-sim-title>pulse — visão geral</span>
               <div class="title-badges">
-                <span class="local-pill">PDH · WMI · CORE AUDIO · SQLITE</span>
+                <span class="local-pill">WIN32 / PDH · /PROC / SYSTEMD · SQLITE</span>
                 <span class="live">AO VIVO</span>
               </div>
             </div>
@@ -821,14 +823,14 @@
                 <div class="sim-panel">
                   <div class="sim-panel-header">
                     <div>
-                      <h3>Flyout nativo na bandeja + Mixer Core Audio</h3>
-                      <p>Sempre à mão ao lado do relógio do Windows 11, sem precisar abrir a janela principal</p>
+                      <h3>Flyout nativo na bandeja + Mixer de Áudio</h3>
+                      <p>Sempre à mão na bandeja do Windows 11 ou do Linux, sem precisar abrir a janela principal</p>
                     </div>
                     <span class="sim-api-tag">390×740 PX · ZERO OVERFLOW</span>
                   </div>
                   <div class="app-rows">
                     <div class="app-row">
-                      <span class="tag ok">CORE AUDIO COM</span>
+                      <span class="tag ok">CORE AUDIO / PIPEWIRE</span>
                       <span class="name">Controle o volume e o mute de cada aplicativo individualmente (arraste os sliders ao lado para testar)</span>
                     </div>
                     <div class="app-row">
@@ -840,8 +842,8 @@
                       <span class="name">Veja as janelas de 5 horas e semanal das suas ferramentas de IA em um único olhar</span>
                     </div>
                     <div class="app-row">
-                      <span class="tag">PORTAS DEV (WIN + WSL2)</span>
-                      <span class="name">Veja projetos e portas locais em escuta no Windows e no WSL2, abra no navegador ou encerre pelo flyout e botão direito</span>
+                      <span class="tag">PORTAS DEV (WIN · WSL2 · LINUX)</span>
+                      <span class="name">Veja projetos e portas locais em escuta no Windows, WSL2 ou Linux nativo, abra no navegador ou encerre pelo flyout</span>
                     </div>
                     <div class="app-row">
                       <span class="tag ok">FOCO INTELIGENTE</span>
@@ -862,9 +864,9 @@
             <span class="eyebrow">Consolidação nativa</span>
             <h2>Sete ferramentas fragmentadas vs. uma única central.</h2>
             <p class="section-lead">
-              Diagnosticar o Windows não deveria exigir sete janelas com interfaces de décadas
-              diferentes. O Pulse unifica toda a observabilidade operacional da máquina sob o
-              mesmo sistema de design e com pegada mínima de memória.
+              Diagnosticar o Windows ou o Linux não deveria exigir sete janelas com interfaces
+              e comandos diferentes. O Pulse unifica toda a observabilidade operacional da máquina
+              sob o mesmo sistema de design e com pegada mínima de memória.
             </p>
           </div>
 
@@ -875,27 +877,27 @@
               <div class="tool-pill-list">
                 <div class="tool-pill">
                   <span>Gerenciador de Tarefas + Monitor de Recursos</span>
-                  <code>taskmgr / resmon</code>
+                  <code>taskmgr / resmon / htop</code>
                 </div>
                 <div class="tool-pill">
                   <span>Analisador de disco externo pesado</span>
-                  <code>TreeSize / WinDirStat</code>
+                  <code>TreeSize / Baobab</code>
                 </div>
                 <div class="tool-pill">
-                  <span>Inventário de boot e registro técnico</span>
-                  <code>Sysinternals Autoruns</code>
+                  <span>Inventário de boot e inicialização</span>
+                  <code>Autoruns / XDG / systemd</code>
                 </div>
                 <div class="tool-pill">
-                  <span>Desinstalador de terceiros com anúncios</span>
-                  <code>Revo / IObit</code>
+                  <span>Desinstalador de terceiros ou CLI manual</span>
+                  <code>Revo / apt / flatpak</code>
                 </div>
                 <div class="tool-pill">
-                  <span>Console legado de serviços e terminal CLI</span>
-                  <code>services.msc + winget</code>
+                  <span>Console de serviços e terminal de pacotes</span>
+                  <code>services.msc / systemctl</code>
                 </div>
                 <div class="tool-pill">
                   <span>Mixer de áudio por app + 5 dashboards web de IA</span>
-                  <code>EarTrumpet + Browser</code>
+                  <code>EarTrumpet / pavucontrol</code>
                 </div>
               </div>
             </div>
@@ -909,23 +911,23 @@
                   <span class="arrow-tag">Integrado</span>
                 </div>
                 <div class="tool-pill">
-                  <span><strong>TreeSize + Treemap + Limpeza Segura</strong> (com proteção anti-DPC)</span>
+                  <span><strong>TreeSize + Treemap + Limpeza Segura</strong> (com proteção de responsividade)</span>
                   <span class="arrow-tag">Integrado</span>
                 </div>
                 <div class="tool-pill">
-                  <span><strong>Inicialização StartupApproved</strong> + impacto de boot em milissegundos</span>
+                  <span><strong>Inicialização reversível</strong> (StartupApproved no Win · XDG/systemd no Linux)</span>
                   <span class="arrow-tag">Integrado</span>
                 </div>
                 <div class="tool-pill">
-                  <span><strong>Desinstalação em 3 fases</strong> (Ponto de Restauração + varredura de resíduos)</span>
+                  <span><strong>Desinstalação rastreada</strong> (Ponto de Restauração no Win · pacotes + XDG no Linux)</span>
                   <span class="arrow-tag">Integrado</span>
                 </div>
                 <div class="tool-pill">
-                  <span><strong>Serviços SCM nativos</strong> (Sistema / Usuário / Revisão) + <strong>Winget Upgrade</strong></span>
+                  <span><strong>Serviços &amp; Pacotes</strong> (SCM + winget no Win · systemd + apt/dnf/pacman/flatpak no Linux)</span>
                   <span class="arrow-tag">Integrado</span>
                 </div>
                 <div class="tool-pill">
-                  <span><strong>Tray Flyout com Mixer Core Audio</strong> + <strong>Cotas de 5 provedores de IA (SQLite 30d)</strong></span>
+                  <span><strong>Tray Flyout com Mixer de Áudio</strong> + <strong>Cotas de 5 provedores de IA (SQLite 30d)</strong></span>
                   <span class="arrow-tag">Integrado</span>
                 </div>
               </div>
@@ -934,7 +936,7 @@
         </div>
       </section>
 
-      <!-- ================= RECURSOS (10 MÓDULOS) ================= -->
+      <!-- ================= RECURSOS (11 MÓDULOS) ================= -->
       <section class="section" id="recursos">
         <div class="container">
           <div class="section-head" data-reveal>
@@ -943,7 +945,7 @@
             <p class="section-lead">
               Cada módulo substitui uma ferramenta isolada e responde a uma pergunta
               concreta sobre a sua máquina. Nada de painel genérico: a leitura é direta
-              das APIs do Windows.
+              das APIs nativas do Windows 11 e do Linux.
             </p>
           </div>
 
@@ -956,7 +958,7 @@
                 <span class="feature-badge">CACHE TTL 3,5 S</span>
               </div>
               <h3>Visão geral e Atividade</h3>
-              <p>CPU, memória, disco, GPU e processos agrupados por aplicativo com nome, editor e ícone resolvidos até para processos elevados ou protegidos (incluindo <code>vmmemWSL</code> e a Compressão de memória do kernel), com ordenação por RAM, CPU ou GPU, filtro por nome e ação de fechar destacada na própria linha, com encerramento seguro de árvore.</p>
+              <p>CPU, memória, disco, GPU e processos agrupados por aplicativo com nome, editor e ícone resolvidos até para processos elevados ou protegidos (incluindo <code>vmmemWSL</code> no Windows e mapeamento <code>.desktop</code> no Linux), com ordenação por RAM, CPU ou GPU, filtro por nome e encerramento seguro de árvore.</p>
               <button type="button" class="feature-sim-link" data-open-sim="activity">Ver no simulador ↑</button>
             </article>
 
@@ -965,10 +967,10 @@
                 <span class="icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13h5l3-8 4 14 3-6h5" /></svg>
                 </span>
-                <span class="feature-badge">PDH · NVML · WMI</span>
+                <span class="feature-badge">PDH · HWMON · NVML</span>
               </div>
               <h3>Telemetria em tempo real</h3>
-              <p>Gráficos vetoriais de CPU, RAM, GPU, download, upload e discos físicos. Sensores sem suporte aparecem como <strong>Indisponível</strong> com justificativa técnica, nunca como zero fictício.</p>
+              <p>Gráficos vetoriais de CPU, RAM, GPU, download, upload e discos físicos (PDH/NVML/WMI no Windows; <code>/proc</code>, <code>hwmon</code> e DRM no Linux). Sensores sem suporte aparecem como <strong>Indisponível</strong> com justificativa técnica, nunca como zero fictício.</p>
               <button type="button" class="feature-sim-link" data-open-sim="performance">Ver no simulador ↑</button>
             </article>
 
@@ -980,7 +982,7 @@
                 <span class="feature-badge">TREESIZE · ANTI-DPC</span>
               </div>
               <h3>Análise de armazenamento</h3>
-              <p>Mapa visual Treemap e árvore agregada da ocupação do disco, arquivos recentes e pastas personalizadas em múltiplos volumes, com <code>yield_now</code> para não travar o mouse.</p>
+              <p>Mapa visual Treemap e árvore agregada da ocupação do disco, arquivos recentes e pastas personalizadas em múltiplos volumes ou pontos de montagem, com <code>yield_now</code> para manter o sistema responsivo.</p>
               <button type="button" class="feature-sim-link" data-open-sim="storage">Ver no simulador ↑</button>
             </article>
 
@@ -992,7 +994,7 @@
                 <span class="feature-badge">WHITELIST SEGURA</span>
               </div>
               <h3>Limpeza local controlada</h3>
-              <p>Categorias seguras de espaço recuperável (temporários, caches de navegador, shaders DirectX/NVIDIA, npm/uv/Gradle e relatórios conhecidos), com estimativa exata antes da ação. Temporários das últimas 24 horas ficam preservados. A limpeza automática é opcional e vem desligada: ative uma vez e o Pulse limpa em segundo plano com o PC ocioso, preservando arquivos dos últimos 7 dias. A recuperação guiada mostra como compactar os discos virtuais do WSL/Docker e limpar a WinSxS com o DISM, sem apagar nada por conta própria.</p>
+              <p>Categorias seguras de espaço recuperável (temporários, caches de navegador, shaders, npm/uv/Gradle e relatórios conhecidos), com estimativa exata antes da ação. Temporários das últimas 24h são preservados, e a limpeza automática é opcional e vem desligada (preservando últimos 7 dias). No Windows, a recuperação guiada mostra comandos para WSL/Docker e WinSxS sem apagar nada sozinho.</p>
               <button type="button" class="feature-sim-link" data-open-sim="storage">Ver no simulador ↑</button>
             </article>
 
@@ -1001,10 +1003,10 @@
                 <span class="icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l1 4H8z M6 7h12l1.5 14H4.5z" /></svg>
                 </span>
-                <span class="feature-badge">RESTORE POINT + RESÍDUOS</span>
+                <span class="feature-badge">RESÍDUOS · RESTORE / PKEXEC</span>
               </div>
               <h3>Desinstalação com rastreamento</h3>
-              <p>Inventário deduplicado com tamanho real medido no disco (programa + dados em AppData/ProgramData, à parte), medição que continua em segundo plano e reabre na hora a partir do cache local, e ordenação por tamanho (do maior para o menor, por padrão), data ou nome; cria Ponto de Restauração do Windows, executa o desinstalador oficial do fabricante e rastreia pastas e chaves de registro órfãs para revisão.</p>
+              <p>Inventário deduplicado com tamanho real medido no disco e cache local para reabrir na hora. No Windows, cria Ponto de Restauração, roda o desinstalador oficial e rastreia pastas e chaves de registro órfãs; no Linux, remove pacotes (<code>apt</code>/Flatpak/Snap) com elevação via <code>pkexec</code> e lista resíduos em pastas XDG para sua revisão.</p>
               <button type="button" class="feature-sim-link" data-open-sim="uninstall">Ver no simulador ↑</button>
             </article>
 
@@ -1013,10 +1015,10 @@
                 <span class="icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v6c0 4-8 8-8 8s-8-4-8-8V7z M8 12l3 3 5-6" /></svg>
                 </span>
-                <span class="feature-badge">STARTUPAPPROVED</span>
+                <span class="feature-badge">STARTUPAPPROVED · XDG</span>
               </div>
               <h3>Inicialização e segurança</h3>
-              <p>Ativa ou desativa itens de boot pelo registro binário nativo do Windows (sem destruir chaves) e mede o impacto real em milissegundos, apontando anomalias verificáveis.</p>
+              <p>No Windows, ativa ou desativa itens pelo padrão reversível <code>StartupApproved</code> (sem destruir chaves) e mede o impacto em milissegundos; no Linux, gerencia Autostart XDG e unidades <code>systemd</code> de usuário e sistema, apontando anomalias verificáveis.</p>
               <button type="button" class="feature-sim-link" data-open-sim="startup">Ver no simulador ↑</button>
             </article>
 
@@ -1025,10 +1027,10 @@
                 <span class="icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z M12 2.5v3 M12 18.5v3 M2.5 12h3 M18.5 12h3 M5.2 5.2l2.1 2.1 M16.7 16.7l2.1 2.1 M18.8 5.2l-2.1 2.1 M7.3 16.7l-2.1 2.1" /></svg>
                 </span>
-                <span class="feature-badge">SCM NATIVO · WINGET</span>
+                <span class="feature-badge">SCM / SYSTEMD · PACOTES</span>
               </div>
               <h3>Serviços e atualizações</h3>
-              <p>Inspeção direta do Service Control Manager (classificados em Sistema, Usuário e Revisão), revisão de segurança dos serviços ativos com o CLI de IA que você tem instalado e conferência/atualização de programas instalados via <code>winget</code>.</p>
+              <p>Inspeção direta do Service Control Manager no Windows e unidades <code>systemd</code> no Linux (classificados em Sistema, Usuário e Revisão), revisão de segurança dos serviços ativos com seu CLI de IA local e conferência/atualização de pacotes via <code>winget</code> (Windows) ou <code>apt</code>/<code>dnf</code>/<code>pacman</code>/<code>flatpak</code>/<code>snap</code> (Linux).</p>
               <button type="button" class="feature-sim-link" data-open-sim="services">Ver no simulador ↑</button>
             </article>
 
@@ -1037,10 +1039,10 @@
                 <span class="icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H4z M8 20h8 M12 16v4 M8 9.5h.01 M11 9.5h5 M8 12.5h.01 M11 12.5h3" /></svg>
                 </span>
-                <span class="feature-badge">NOVO NA 1.3 · TCP/UDP DO KERNEL</span>
+                <span class="feature-badge">TCP/UDP DO KERNEL · WIN + LINUX</span>
               </div>
               <h3>Rede e segurança</h3>
-              <p>Lista o que sai da máquina e por qual processo: conexões estabelecidas, sockets UDP e portas em escuta lidas direto da tabela TCP/UDP do Windows, com as portas acessíveis pela rede local destacadas. Ao lado, sinais verificáveis de postura — filtros de teclado, proxy, certificados raiz, Defender e auditoria — sempre como evidência, nunca como rótulo de malware. <strong>Não substitui antivírus</strong>: nada aqui é bloqueado ou removido automaticamente.</p>
+              <p>Lista o que sai da máquina e por qual processo: conexões estabelecidas, sockets UDP e portas em escuta lidas direto do kernel (tabela TCP/UDP no Windows e <code>/proc/net</code> no Linux), destacando portas acessíveis pela rede local. Ao lado, sinais verificáveis de postura — sempre como evidência, nunca como rótulo de malware. <strong>Não substitui antivírus</strong>.</p>
               <button type="button" class="feature-sim-link" data-open-sim="services">Ver no simulador ↑</button>
             </article>
 
@@ -1061,10 +1063,10 @@
                 <span class="icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z M15.5 8.5a5 5 0 0 1 0 7 M19 5a9 9 0 0 1 0 14" /></svg>
                 </span>
-                <span class="feature-badge">CORE AUDIO COM</span>
+                <span class="feature-badge">CORE AUDIO · PIPEWIRE</span>
               </div>
               <h3>Áudio e bandeja do sistema</h3>
-              <p>Flyout nativo na bandeja com telemetria instantânea, barras duplas de cotas de IA, mixer de volume individual por aplicativo com troca rápida de entrada/saída e inspetor de portas e projetos dev ativos (Windows + WSL2) para abrir no navegador, copiar a URL ou liberar a porta pelo painel rápido ou botão direito.</p>
+              <p>Flyout nativo na bandeja com telemetria instantânea, barras duplas de cotas de IA, mixer de volume individual por aplicativo (Core Audio COM no Windows; PipeWire/PulseAudio no Linux) com troca rápida de entrada/saída e inspetor de portas e projetos dev ativos (Windows + WSL2 e Linux nativo).</p>
               <button type="button" class="feature-sim-link" data-open-sim="tray">Ver no simulador ↑</button>
             </article>
 
@@ -1095,8 +1097,9 @@
               <p class="section-lead">
                 Chega de ser surpreendido por bloqueios de rate-limit no meio de uma tarefa.
                 O Pulse lê localmente o estado das suas ferramentas de IA, armazena chaves
-                opcionais no <strong>Windows Credential Manager</strong> e grava um histórico
-                local de 30 dias em SQLite para mostrar seu pico e média diária por janela.
+                opcionais no <strong>cofre nativo do sistema</strong> (Windows Credential Manager
+                ou Secret Service no Linux) e grava um histórico local de 30 dias em SQLite para
+                mostrar seu pico e média diária por janela.
               </p>
 
               <div class="provider-pills" aria-label="Provedores de IA suportados">
@@ -1224,13 +1227,13 @@
 
             <aside class="local-panel" data-reveal aria-label="Diagrama de fluxo de dados local">
               <h3>Caminho dos dados na sua máquina</h3>
-              <p>Toda coleta começa e termina dentro do seu perfil de usuário no Windows 11.</p>
+              <p>Toda coleta começa e termina dentro do seu perfil de usuário, no Windows 11 ou no Linux.</p>
               <div class="local-flow">
                 <div class="local-node">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 9h6v6H9z" /></svg>
                   <div>
-                    <strong>1. Subsistemas Nativos do Windows 11</strong>
-                    <small>PDH, DXGI, Core Audio COM, SCM, WMI, Event Log e Registro</small>
+                    <strong>1. Subsistemas Nativos do Sistema</strong>
+                    <small>Windows: PDH, DXGI, Core Audio, SCM, WMI, Registro · Linux: /proc, /sys, systemd, PipeWire</small>
                   </div>
                 </div>
                 <span class="local-arrow" aria-hidden="true"></span>
@@ -1238,7 +1241,7 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 13h5l3-8 4 14 3-6h5" /></svg>
                   <div>
                     <strong>2. Motor Nativo Rust (Tauri v2 IPC)</strong>
-                    <small>Agregação em memória com cache TTL 3,5 s e proteção anti-DPC</small>
+                    <small>Agregação em memória com cache TTL 3,5 s e proteção de responsividade</small>
                   </div>
                 </div>
                 <span class="local-arrow" aria-hidden="true"></span>
@@ -1246,7 +1249,7 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
                   <div>
                     <strong>3. Persistência Exclusivamente Local</strong>
-                    <small>%LOCALAPPDATA%\Pulse (SQLite de 30 dias) + Windows Credential Manager</small>
+                    <small>%LOCALAPPDATA%\Pulse ou ~/.local/share/Pulse (SQLite 30d) + cofre nativo de chaves</small>
                   </div>
                 </div>
               </div>
@@ -1272,12 +1275,12 @@
 
           <div class="steps">
             <article class="step" data-reveal>
-              <h3>Baixe o instalador</h3>
-              <p>Um único executável NSIS compacto (<span data-release-size>3,7 MB</span>), configurado para instalação rápida no usuário atual sem exigir elevação de administrador para todo o sistema. O Pulse roda sem administrador; o indicador PERMISSÃO no topo mostra o modo atual, lista o que depende de elevação (pastas do sistema na limpeza, ponto de restauração, serviços do Windows) e permite reiniciar como administrador pelo UAC quando você quiser.</p>
+              <h3>Baixe o pacote do seu sistema</h3>
+              <p>No Windows 11, um instalador NSIS compacto (<span data-release-size>3,7 MB</span>) por usuário, sem exigir administrador para abrir (com elevação via UAC só quando você pedir). No Linux, escolha <code>.deb</code> (Ubuntu, Mint, Debian) ou <code>AppImage</code> universal (ações administrativas pedem senha via <code>pkexec</code>).</p>
             </article>
             <article class="step" data-reveal>
-              <h3>Instale em segundos</h3>
-              <p>O instalador encerra automaticamente instâncias anteriores em upgrades, aproveita o WebView2 nativo do Windows 11 e mantém o Pulse atualizado automaticamente ao iniciar com validação de SHA-256 (desativável no topo ou na bandeja).</p>
+              <h3>Instale ou execute em segundos</h3>
+              <p>No Windows, aproveita o WebView2 nativo e atualiza automaticamente ao iniciar com validação SHA-256. No Linux, use o WebKitGTK 4.1 da distribuição; no AppImage, o auto-update substitui o arquivo atomicamente após validar o SHA-256.</p>
             </article>
             <article class="step" data-reveal>
               <h3>Abra e leia o sistema</h3>
@@ -1291,22 +1294,25 @@
       <section class="section" id="requisitos">
         <div class="container">
           <div class="section-head" data-reveal>
-            <span class="eyebrow">Requisitos</span>
-            <h2>O que você precisa para rodar.</h2>
+            <span class="eyebrow">Requisitos e plataformas</span>
+            <h2>Windows 11, Linux hoje — macOS no horizonte.</h2>
           </div>
 
           <div class="reqs">
             <article class="req" data-reveal>
+              <span class="req-status">Principal</span>
               <h3>Windows 11 x64</h3>
-              <p>O Pulse é Windows-first e foi projetado para o Windows 11 de 64 bits. Ele consome APIs Win32, COM e PDH presentes nas versões atuais do sistema.</p>
+              <p>Suporte principal (Windows-first). Usa WebView2 já incluso no sistema e APIs Win32, COM, PDH e DXGI. Instalador NSIS de <span data-release-size>3,7 MB</span> e &lt; 80 MB de RAM.</p>
             </article>
             <article class="req" data-reveal>
-              <h3>WebView2 Runtime</h3>
-              <p>Já incluído nativamente no Windows 11 atual. Você não precisa instalar nenhum runtime separado.</p>
+              <span class="req-status is-ok">Disponível</span>
+              <h3>Linux x86_64</h3>
+              <p>Suporte nativo em distribuições com <strong>WebKitGTK 4.1</strong> (Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Fedora 38+; testado no Mint 22.3). Formatos <code>.deb</code> e <code>AppImage</code>, com elevação sob demanda via <code>pkexec</code>.</p>
             </article>
             <article class="req" data-reveal>
-              <h3>Pegada ultraleve</h3>
-              <p>Instalador de <span data-release-size>3,7 MB</span>, menos de 80 MB de Working Set em RAM e banco SQLite local compacto em <code>%LOCALAPPDATA%\Pulse</code>.</p>
+              <span class="req-status is-soon">Em breve · Experimental</span>
+              <h3>macOS 11+ (Apple Silicon)</h3>
+              <p>Base multiplataforma em preparação com empacotamento <code>.dmg</code> no CI (sem assinatura/notarização). Ainda não validado em hardware Apple; módulos específicos seguem em evolução.</p>
             </article>
           </div>
         </div>
@@ -1317,56 +1323,226 @@
         <div class="container">
           <div class="download-box" data-reveal>
             <span class="eyebrow" style="justify-content: center">Download Oficial</span>
-            <h2>Leve o Pulse para o seu Windows.</h2>
+            <h2>Leve o Pulse para a sua máquina.</h2>
             <p>
-              Gratuito, código aberto (MIT), sem cadastro e sem surpresas. Compilado com
-              toolchain nativo MSVC para Windows 11 x64.
+              Gratuito, código aberto (MIT), sem cadastro e sem surpresas. Escolha o seu
+              sistema operacional abaixo.
             </p>
 
-            <div class="download-actions">
-              <a
-                class="btn btn-primary btn-lg"
-                href="/download/Pulse-latest-x64-setup.exe"
-                download="Pulse-latest-x64-setup.exe"
+            <div class="download-os-tabs" role="tablist" aria-label="Escolha o sistema operacional">
+              <button
+                type="button"
+                role="tab"
+                class="download-os-tab"
+                data-download-tab="windows"
+                aria-selected="true"
+                tabindex="0"
               >
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="20" height="20">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" />
                 </svg>
-                Baixar para Windows
-                <span class="btn-pill-meta" data-release-version>v1.3.0</span>
-              </a>
-              <a class="btn btn-secondary btn-lg" href="https://github.com/LucasLagrimante/pulse" rel="noopener">
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="20" height="20">
-                  <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49v-1.7c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.34 1.12 2.91.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.35 4.8-4.58 5.05.36.32.68.95.68 1.92v2.85c0 .27.18.59.69.49A10.05 10.05 0 0 0 22 12.25C22 6.58 17.52 2 12 2z" />
+                Windows 11
+              </button>
+              <button
+                type="button"
+                role="tab"
+                class="download-os-tab"
+                data-download-tab="linux"
+                aria-selected="false"
+                tabindex="-1"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="14" rx="2" />
+                  <path d="m7 9 3 2-3 2 M12 13h4 M8 21h8 M12 18v3" />
                 </svg>
-                Ver o código-fonte
-              </a>
+                Linux
+                <span class="os-tab-pill">Novo</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                class="download-os-tab"
+                data-download-tab="macos"
+                aria-selected="false"
+                tabindex="-1"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.744.9-1.99 1.57-2.987 1.57-.12 0-.23-.02-.3-.03-.01-.06-.04-.22-.04-.39 0-1.15.572-2.27 1.206-2.98.804-.94 2.142-1.64 3.248-1.68.03.13.05.28.05.43zm4.565 15.71c-.03.07-.463 1.58-1.518 3.12-.945 1.34-1.94 2.71-3.43 2.71-1.517 0-1.9-.88-3.63-.88-1.698 0-2.302.91-3.67.91-1.377 0-2.332-1.26-3.428-2.8-1.287-1.82-2.323-4.63-2.323-7.28 0-4.28 2.797-6.55 5.552-6.55 1.448 0 2.675.95 3.6.95.865 0 2.222-1.01 3.902-1.01.613 0 2.886.06 4.374 2.19-.13.09-2.383 1.37-2.383 4.19 0 3.26 2.854 4.42 2.955 4.45z" />
+                </svg>
+                macOS
+                <span class="os-tab-pill is-soon">Em breve</span>
+              </button>
             </div>
 
-            <div class="download-facts">
-              <span class="win-badge">
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" /></svg>
-                WINDOWS 11 · X64
-              </span>
-              <span data-release-installer-label>Instalador NSIS · 3,7 MB</span>
-              <span data-release-version-label>Versão 1.3.0</span>
-              <span>Gratuito · Sem conta</span>
-              <a href="https://github.com/LucasLagrimante/pulse/releases" rel="noopener">Todas as versões no GitHub</a>
-            </div>
-
-            <div class="checksum-box" aria-label="Checksum SHA-256 do instalador">
-              <div class="checksum-meta">
-                <span>SHA-256 (Pulse-latest-x64-setup.exe)</span>
-                <code data-release-sha256>9993861f16e9e21b218948e0f9dd5c0709b5ae941c18a7f1fc68211348a7bad5</code>
+            <!-- PAINEL WINDOWS 11 -->
+            <div class="download-panel" role="tabpanel" data-download-panel="windows">
+              <div class="download-actions">
+                <a
+                  class="btn btn-primary btn-lg"
+                  href="/download/Pulse-latest-x64-setup.exe"
+                  download="Pulse-latest-x64-setup.exe"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="20" height="20">
+                    <path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" />
+                  </svg>
+                  Baixar para Windows
+                  <span class="btn-pill-meta" data-release-version>v1.3.0</span>
+                </a>
+                <a class="btn btn-secondary btn-lg" href="https://github.com/LucasLagrimante/pulse" rel="noopener">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="20" height="20">
+                    <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49v-1.7c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.34 1.12 2.91.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.35 4.8-4.58 5.05.36.32.68.95.68 1.92v2.85c0 .27.18.59.69.49A10.05 10.05 0 0 0 22 12.25C22 6.58 17.52 2 12 2z" />
+                  </svg>
+                  Ver o código-fonte
+                </a>
               </div>
-              <button type="button" class="copy-hash-btn" data-copy-sha256>Copiar SHA-256</button>
+
+              <div class="download-facts">
+                <span class="win-badge">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" /></svg>
+                  WINDOWS 11 · X64
+                </span>
+                <span data-release-installer-label>Instalador NSIS · 3,7 MB</span>
+                <span data-release-version-label>Versão 1.3.0</span>
+                <span>Gratuito · Sem conta</span>
+                <a href="https://github.com/LucasLagrimante/pulse/releases" rel="noopener">Todas as versões no GitHub</a>
+              </div>
+
+              <div class="checksum-box" aria-label="Checksum SHA-256 do instalador Windows">
+                <div class="checksum-meta">
+                  <span>SHA-256 (Pulse-latest-x64-setup.exe)</span>
+                  <code data-release-sha256 data-sha256-value>9993861f16e9e21b218948e0f9dd5c0709b5ae941c18a7f1fc68211348a7bad5</code>
+                </div>
+                <button type="button" class="copy-hash-btn" data-copy-sha256>Copiar SHA-256</button>
+              </div>
+              <p class="signing-note">
+                O instalador ainda não tem assinatura de código, então o Windows pode mostrar
+                o aviso do SmartScreen (“Mais informações” → “Executar assim mesmo”);
+                confira o SHA-256 acima.
+                <a href="https://github.com/LucasLagrimante/pulse#pol%C3%ADtica-de-assinatura-de-c%C3%B3digo" rel="noopener">Política de assinatura</a>
+              </p>
             </div>
-            <p class="signing-note">
-              O instalador ainda não tem assinatura de código, então o Windows pode mostrar
-              o aviso do SmartScreen (“Mais informações” → “Executar assim mesmo”);
-              confira o SHA-256 acima.
-              <a href="https://github.com/LucasLagrimante/pulse#pol%C3%ADtica-de-assinatura-de-c%C3%B3digo" rel="noopener">Política de assinatura</a>
-            </p>
+
+            <!-- PAINEL LINUX -->
+            <div class="download-panel" role="tabpanel" data-download-panel="linux" hidden>
+              <div data-linux-published hidden>
+                <div class="download-actions">
+                  <a
+                    class="btn btn-primary btn-lg"
+                    href="/download/Pulse-latest-amd64.deb"
+                    download="Pulse-latest-amd64.deb"
+                    data-linux-deb-block
+                   hidden>
+                    Baixar .deb (Ubuntu / Mint / Debian)
+                    <span class="btn-pill-meta" data-release-linux-deb-size>Indisponível</span>
+                  </a>
+                  <a
+                    class="btn btn-secondary btn-lg"
+                    href="/download/Pulse-latest-amd64.AppImage"
+                    download="Pulse-latest-amd64.AppImage"
+                    data-linux-appimage-block
+                   hidden>
+                    Baixar AppImage (Universal)
+                    <span class="btn-pill-meta" data-release-linux-appimage-size>Indisponível</span>
+                  </a>
+                </div>
+
+                <div class="checksum-stack">
+                  <div class="checksum-box" data-linux-deb-block aria-label="Checksum SHA-256 do pacote .deb" hidden>
+                    <div class="checksum-meta">
+                      <span>SHA-256 (Pulse-latest-amd64.deb)</span>
+                      <code data-release-linux-deb-sha256 data-sha256-value>Indisponível</code>
+                    </div>
+                    <button type="button" class="copy-hash-btn" data-copy-sha256>Copiar SHA-256</button>
+                  </div>
+                  <div class="checksum-box" data-linux-appimage-block aria-label="Checksum SHA-256 do AppImage" hidden>
+                    <div class="checksum-meta">
+                      <span>SHA-256 (Pulse-latest-amd64.AppImage)</span>
+                      <code data-release-linux-appimage-sha256 data-sha256-value>Indisponível</code>
+                    </div>
+                    <button type="button" class="copy-hash-btn" data-copy-sha256>Copiar SHA-256</button>
+                  </div>
+                </div>
+              </div>
+
+              <div data-linux-pending>
+                <div class="download-notice">
+                  <strong>Port Linux pronto no código-fonte · pacotes oficiais na próxima release</strong>
+                  O suporte nativo para Linux x86_64 (<code>.deb</code> e <code>.AppImage</code>) já foi integrado ao repositório após a v1.3.0. Os pacotes pré-compilados com SHA-256 passam a sair automaticamente a partir da próxima release; até lá, você já pode compilar localmente com <code>npm run build:linux</code>.
+                </div>
+                <div class="download-actions">
+                  <a class="btn btn-primary btn-lg" href="https://github.com/LucasLagrimante/pulse#linux-deb-appimage-e-rpm" rel="noopener">
+                    Compilar no Linux (npm run build:linux)
+                  </a>
+                  <a class="btn btn-secondary btn-lg" href="https://github.com/LucasLagrimante/pulse/releases" rel="noopener">
+                    Acompanhar Releases no GitHub
+                  </a>
+                </div>
+              </div>
+
+              <div class="download-facts">
+                <span class="win-badge">LINUX X86_64 · WEBKITGTK 4.1</span>
+                <span>Ubuntu 22.04+ · Mint 21+ · Debian 12+ · Fedora 38+</span>
+                <span>AppImage: auto-update com SHA-256</span>
+                <a href="https://github.com/LucasLagrimante/pulse/releases" rel="noopener">SHA256SUMS no GitHub</a>
+              </div>
+              <p class="signing-note">
+                No AppImage: dê permissão de execução (<code>chmod +x Pulse_*.AppImage</code>);
+                em sistemas sem FUSE 2, execute com <code>--appimage-extract-and-run</code>.
+                Ações privilegiadas (serviços e remoção de pacotes) pedem senha via <code>pkexec</code>.
+              </p>
+            </div>
+
+            <!-- PAINEL MACOS (EM BREVE / EXPERIMENTAL) -->
+            <div class="download-panel" role="tabpanel" data-download-panel="macos" hidden>
+              <div class="download-notice">
+                <strong>Port para macOS em preparação (experimental)</strong>
+                O empacotamento <code>.dmg</code> para macOS 11+ (Apple Silicon) está em desenvolvimento e ainda não foi validado em hardware Apple; diversos módulos específicos seguem em andamento. O pacote não possui assinatura Developer ID nem notarização.
+              </div>
+
+              <div data-macos-published hidden>
+                <div class="download-actions">
+                  <a
+                    class="btn btn-secondary btn-lg"
+                    href="/download/Pulse-latest-macos.dmg"
+                    download="Pulse-latest-macos.dmg"
+                  >
+                    Baixar .dmg experimental (Apple Silicon)
+                    <span class="btn-pill-meta" data-release-macos-dmg-size>Indisponível</span>
+                  </a>
+                  <a class="btn btn-secondary btn-lg" href="https://github.com/LucasLagrimante/pulse#macos-experimental" rel="noopener">
+                    Ver status no GitHub
+                  </a>
+                </div>
+                <div class="checksum-box" aria-label="Checksum SHA-256 do pacote macOS">
+                  <div class="checksum-meta">
+                    <span>SHA-256 (Pulse-latest-macos.dmg)</span>
+                    <code data-release-macos-dmg-sha256 data-sha256-value>Indisponível</code>
+                  </div>
+                  <button type="button" class="copy-hash-btn" data-copy-sha256>Copiar SHA-256</button>
+                </div>
+              </div>
+
+              <div data-macos-pending>
+                <div class="download-actions">
+                  <a class="btn btn-secondary btn-lg" href="https://github.com/LucasLagrimante/pulse#macos-experimental" rel="noopener">
+                    Acompanhar port macOS no GitHub
+                  </a>
+                  <a class="btn btn-secondary btn-lg" href="https://github.com/LucasLagrimante/pulse/releases" rel="noopener">
+                    Ver todas as Releases
+                  </a>
+                </div>
+              </div>
+
+              <div class="download-facts">
+                <span class="win-badge">MACOS 11+ · APPLE SILICON</span>
+                <span>Status: Experimental · Sem assinatura/notarização</span>
+                <span>Build local: npm run build:macos</span>
+              </div>
+              <p class="signing-note">
+                Na primeira abertura de builds não assinadas, o Gatekeeper bloqueia o app:
+                clique com o botão direito → “Abrir”, ou rode <code>xattr -dr com.apple.quarantine /Applications/Pulse.app</code>.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -1396,7 +1572,7 @@
                 <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
               </button>
               <div class="faq-a" data-faq-a>
-                <p>Não. O Pulse é gratuito e não exige cadastro, login ou assinatura. Você baixa o instalador para Windows 11 e usa.</p>
+                <p>Não. O Pulse é gratuito e não exige cadastro, login ou assinatura. Você baixa o instalador para Windows 11 ou Linux e usa.</p>
               </div>
             </div>
 
@@ -1416,17 +1592,17 @@
                 <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
               </button>
               <div class="faq-a" data-faq-a>
-                <p>O instalador é publicado nas <a href="https://github.com/LucasLagrimante/pulse/releases" rel="noopener">Releases do GitHub</a>, e o SHA-256 da seção de download é o do mesmo arquivo. Antes de instalar, compare com <code>Get-FileHash .\Pulse-latest-x64-setup.exe</code> no PowerShell, ou compile a partir do código-fonte.</p>
+                <p>Os instaladores são publicados nas <a href="https://github.com/LucasLagrimante/pulse/releases" rel="noopener">Releases do GitHub</a>, e o SHA-256 da seção de download é o do mesmo arquivo. Antes de instalar, compare com <code>Get-FileHash .\Pulse-latest-x64-setup.exe</code> no PowerShell (Windows) ou <code>sha256sum Pulse_*.AppImage</code> no terminal (Linux), ou compile a partir do código-fonte.</p>
               </div>
             </div>
 
             <div class="faq-item" data-faq-item>
               <button class="faq-q" type="button" data-faq-q aria-expanded="false">
-                O Pulse funciona no Windows 10?
+                O Pulse funciona no Linux, macOS e Windows 10?
                 <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
               </button>
               <div class="faq-a" data-faq-a>
-                <p>O Pulse é Windows-first e foi projetado e testado para o Windows 11 x64. Ele depende de APIs e do WebView2 presentes nas versões atuais do Windows 11.</p>
+                <p>O Pulse tem suporte principal para <strong>Windows 11 x64</strong> e suporte nativo para <strong>Linux x86_64</strong> (<code>.deb</code> e <code>AppImage</code> em distribuições com WebKitGTK 4.1, como Ubuntu 22.04+, Linux Mint 21+, Debian 12+ e Fedora 38+). O port para <strong>macOS</strong> está em desenvolvimento experimental (<code>.dmg</code> Apple Silicon sem assinatura/notarização e ainda não validado em hardware). O Windows 10 não é alvo oficial.</p>
               </div>
             </div>
 
@@ -1436,7 +1612,7 @@
                 <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
               </button>
               <div class="faq-a" data-faq-a>
-                <p>Não. O Pulse não executa operações destrutivas por conta própria. A limpeza de disco usa categorias seguras em whitelist e só roda sozinha se você ativar a limpeza automática (desligada por padrão, preserva arquivos dos últimos 7 dias e nunca esvazia a Lixeira), a inicialização usa o padrão reversível <code>StartupApproved</code> (sem <code>reg delete</code>) e a desinstalação cria Ponto de Restauração antes de rodar o desinstalador oficial, exibindo os resíduos restantes para sua revisão manual.</p>
+                <p>Não. O Pulse não executa operações destrutivas por conta própria. A limpeza de disco usa categorias seguras em whitelist e só roda sozinha se você ativar a limpeza automática (desligada por padrão, preserva arquivos dos últimos 7 dias e nunca esvazia a Lixeira), a inicialização usa padrões reversíveis (<code>StartupApproved</code> no Windows; XDG e <code>systemd</code> no Linux) e a desinstalação exibe os resíduos para sua revisão manual.</p>
               </div>
             </div>
 
@@ -1456,7 +1632,7 @@
                 <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
               </button>
               <div class="faq-a" data-faq-a>
-                <p>O Pulse acompanha localmente <strong>Claude Code</strong>, <strong>OpenAI Codex</strong>, <strong>Google Antigravity</strong>, <strong>OpenRouter</strong> e <strong>OpenCode Go</strong>, protegendo chaves opcionais no Windows Credential Manager e registrando até 30 dias de histórico no banco SQLite local.</p>
+                <p>O Pulse acompanha localmente <strong>Claude Code</strong>, <strong>OpenAI Codex</strong>, <strong>Google Antigravity</strong>, <strong>OpenRouter</strong> e <strong>OpenCode Go</strong>, protegendo chaves opcionais no cofre nativo do sistema (Windows Credential Manager ou Secret Service no Linux) e registrando até 30 dias de histórico no banco SQLite local.</p>
               </div>
             </div>
 
@@ -1466,7 +1642,7 @@
                 <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
               </button>
               <div class="faq-a" data-faq-a>
-                <p>Os módulos de inspeção apontam evidências técnicas verificáveis (como caminho fora de <code>Program Files</code>/<code>System32</code>, similaridade de nome Damerau-Levenshtein ou ausência de assinatura), classificando o item para <strong>Revisão</strong> sem rotular executáveis arbitrariamente como malware. Para uma segunda opinião, o botão de revisão com IA envia os serviços em execução a um CLI local (Claude Code, Antigravity ou Codex) com instruções de apenas investigar, exigir evidência e não alterar nada.</p>
+                <p>Os módulos de inspeção apontam evidências técnicas verificáveis (como caminho fora das pastas do sistema, similaridade de nome Damerau-Levenshtein ou ausência de assinatura), classificando o item para <strong>Revisão</strong> sem rotular executáveis arbitrariamente como malware. Para uma segunda opinião, o botão de revisão com IA envia os serviços em execução a um CLI local (Claude Code, Antigravity ou Codex) com instruções de apenas investigar, exigir evidência e não alterar nada.</p>
               </div>
             </div>
           </div>
@@ -1478,10 +1654,10 @@
         <div class="container">
           <div class="download-box" data-reveal>
             <span class="eyebrow" style="justify-content: center">Comece agora</span>
-            <h2>Entenda o seu Windows sem sair dele.</h2>
+            <h2>Entenda o seu sistema sem sair dele.</h2>
             <p>
-              Um instalador leve, um aplicativo nativo e nenhuma conta. O Pulse começa a
-              ler a sua máquina no primeiro clique.
+              Um aplicativo nativo, leve e sem conta para Windows 11 e Linux — com macOS no
+              horizonte. O Pulse começa a ler a sua máquina no primeiro clique.
             </p>
             <div class="download-actions">
               <a class="btn btn-primary btn-lg" href="/download/Pulse-latest-x64-setup.exe" download="Pulse-latest-x64-setup.exe">
@@ -1489,6 +1665,9 @@
                   <path d="M3 5.5 10.5 4.4v7.1H3z M11.6 4.2 21 2.8v8.7h-9.4z M3 12.5h7.5v7.1L3 18.5z M11.6 12.5H21v8.7l-9.4-1.4z" />
                 </svg>
                 Baixar para Windows 11
+              </a>
+              <a class="btn btn-secondary btn-lg" href="#download" data-select-download-os="linux">
+                Opções para Linux (.deb / AppImage)
               </a>
               <a class="btn btn-secondary btn-lg" href="https://github.com/LucasLagrimante/pulse" rel="noopener">
                 <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="20" height="20">
@@ -1499,7 +1678,8 @@
             </div>
             <div class="download-facts">
               <span>Windows 11 x64</span>
-              <span data-release-installer-label>Instalador NSIS · 3,7 MB</span>
+              <span>Linux x86_64 (.deb / AppImage)</span>
+              <span>macOS em breve</span>
               <span>Gratuito e sem cadastro</span>
             </div>
           </div>
@@ -1520,11 +1700,11 @@
                   <path d="M4 26h10l5-12v24l7-20 4 8h14" stroke="var(--accent)" stroke-width="3.8" />
                 </g>
               </svg>
-              <span>Pulse<small>WINDOWS OBSERVABILITY</small></span>
+              <span>Pulse<small>WINDOWS · LINUX</small></span>
             </a>
             <p>
-              Central de observabilidade e diagnóstico para Windows 11, criada por
-              Lucas Lagrimante. Todo o processamento acontece na sua máquina.
+              Central de observabilidade e diagnóstico para Windows 11 e Linux (macOS em
+              preparação), criada por Lucas Lagrimante. Todo o processamento acontece na sua máquina.
             </p>
           </div>
 

@@ -2,6 +2,11 @@
   "product": "Pulse",
   "version": "1.3.0",
   "platform": "Windows 11 x64",
+  "platforms": [
+    "Windows 11 x64",
+    "Linux x86_64 (.deb, AppImage)",
+    "macOS Apple Silicon (experimental)"
+  ],
   "installer": {
     "filename": "Pulse-latest-x64-setup.exe",
     "url": "https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe",
@@ -10,5 +15,5 @@
     "sizeFormatted": "3,7 MB",
     "sha256": "9993861f16e9e21b218948e0f9dd5c0709b5ae941c18a7f1fc68211348a7bad5"
   },
-  "updatedAt": "2026-11-19"
+  "updatedAt": "2026-11-20"
 }

@@ -4,7 +4,8 @@
  * Uso: node scripts/check-seo.mjs [--dir=dist] [--base=https://...]
  *
  * Confere o que uma auditoria de SEO/indexação por IA exige: arquivos canônicos,
- * meta tags, JSON-LD válido, hierarquia de headings, 404 real e o instalador.
+ * meta tags, JSON-LD válido, hierarquia de headings, 404 real e metadados dos
+ * instaladores (Windows, Linux e macOS experimental).
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -35,17 +36,33 @@ try {
   problems.push("og-image.png ilegível");
 }
 
-// 3. Instalador: publicado na GitHub Release, nunca empacotado no site
-check(!existsSync(join(dir, "download")), "nenhum .exe empacotado em download/ (instalador vive na GitHub Release)");
+// 3. Instaladores: publicados na GitHub Release, nunca empacotados no site
+check(!existsSync(join(dir, "download")), "nenhum instalador empacotado em download/ (binários vivem na GitHub Release)");
 try {
   const release = JSON.parse(readFileSync(join(dir, "release.json"), "utf8"));
   const inst = release.installer || {};
-  check(/^[a-f0-9]{64}$/.test(inst.sha256 || ""), "release.json com SHA-256 válido");
-  check(inst.sizeBytes > 500_000, `release.json com tamanho do instalador (${((inst.sizeBytes || 0) / 1024 / 1024).toFixed(1)} MB)`);
+  const releasePrefix = `https://github.com/LucasLagrimante/pulse/releases/download/v${release.version}/`;
+  check(/^[a-f0-9]{64}$/.test(inst.sha256 || ""), "release.json (Windows) com SHA-256 válido");
+  check(inst.sizeBytes > 500_000, `release.json (Windows) com tamanho do instalador (${((inst.sizeBytes || 0) / 1024 / 1024).toFixed(1)} MB)`);
   check(
-    inst.assetUrl === `https://github.com/LucasLagrimante/pulse/releases/download/v${release.version}/Pulse_${release.version}_x64-setup.exe`,
-    "release.json aponta para o asset da GitHub Release da versão atual",
+    inst.assetUrl === `${releasePrefix}Pulse_${release.version}_x64-setup.exe`,
+    "release.json (Windows) aponta para o asset da GitHub Release da versão atual",
   );
+
+  // Linux e macOS são validados quando presentes na versão publicada.
+  for (const [label, entry, ext] of [
+    ["Linux .deb", release.linux?.deb, ".deb"],
+    ["Linux AppImage", release.linux?.appimage, ".AppImage"],
+    ["macOS .dmg", release.macos?.dmg, ".dmg"],
+  ]) {
+    if (!entry) continue;
+    check(/^[a-f0-9]{64}$/.test(entry.sha256 || ""), `release.json (${label}) com SHA-256 válido`);
+    check(entry.sizeBytes > 500_000, `release.json (${label}) com tamanho válido`);
+    check(
+      typeof entry.assetUrl === "string" && entry.assetUrl.startsWith(releasePrefix) && entry.assetUrl.endsWith(ext),
+      `release.json (${label}) aponta para o asset da GitHub Release da versão atual`,
+    );
+  }
 } catch (e) {
   problems.push(`release.json ilegível: ${e.message.slice(0, 60)}`);
 }
@@ -67,7 +84,16 @@ const mustContain = [
   ['data-sim-surface-btn="tray"', "simulador do tray flyout e mixer"],
   ['data-release-sha256', "verificação de integridade SHA-256"],
   ['id="download"', "seção de download"],
-  ['Baixar para Windows', "CTA de download"],
+  ['Baixar para Windows', "CTA de download Windows"],
+  ['data-download-tab="linux"', "seletor de download Linux"],
+  ['data-download-tab="macos"', "seletor de status macOS"],
+  // A barra de projetos vem de um componente externo e ja sumiu do build uma
+  // vez: landing/ e a fonte e ../pulse-lp e espelho gerado, entao editar so o
+  // espelho faz a proxima sincronizacao apagar o bloco. Sem esta checagem o
+  // deploy sai sem a assinatura e ninguem percebe.
+  ['lagrimante-ticker-v2.js', "assinatura: script do componente"],
+  ['lagrimante-ticker-v2.css', "assinatura: estilo do componente"],
+  ['class="lagrimante-slot', "assinatura: slot da barra de projetos"],
 ];
 for (const [needle, msg] of mustContain) {
   check(html.includes(needle), msg);
@@ -77,10 +103,14 @@ for (const [needle, msg] of mustContain) {
 const blocks = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => m[1]);
 check(blocks.length >= 3, `JSON-LD: ${blocks.length} blocos (mínimo 3)`);
 const types = [];
+let softwareApp = null;
 for (const b of blocks) {
   try {
     const data = JSON.parse(b);
-    for (const item of Array.isArray(data) ? data : [data]) types.push(item["@type"]);
+    for (const item of Array.isArray(data) ? data : [data]) {
+      types.push(item["@type"]);
+      if (item["@type"] === "SoftwareApplication") softwareApp = item;
+    }
   } catch (e) {
     problems.push(`JSON-LD inválido: ${e.message.slice(0, 60)}`);
   }
@@ -88,6 +118,12 @@ for (const b of blocks) {
 for (const t of ["WebSite", "SoftwareApplication", "FAQPage"]) {
   check(types.includes(t), `JSON-LD inclui ${t}`);
 }
+check(
+  typeof softwareApp?.operatingSystem === "string" &&
+    softwareApp.operatingSystem.includes("Windows 11") &&
+    softwareApp.operatingSystem.includes("Linux"),
+  "SoftwareApplication.operatingSystem inclui Windows 11 e Linux",
+);
 
 // 6. Hierarquia de headings: um único h1, h2 antes de h3, sem salto de nível
 const h1Count = (html.match(/<h1[\s>]/g) || []).length;
@@ -113,6 +149,7 @@ check(!html.includes(`href="${base}`) === false || true, "urls absolutas do host
 const llms = readFileSync(join(dir, "llms.txt"), "utf8");
 check(llms.startsWith("# Pulse"), "llms.txt começa com '# Pulse'");
 check(llms.includes("Quando usar") || llms.includes("Quando NÃO usar"), "llms.txt orienta quando usar/não usar");
+check(llms.includes("Linux"), "llms.txt documenta suporte a Linux");
 check(llms.length > 1500, `llms.txt com conteúdo substancial (${llms.length} chars)`);
 
 const robots = readFileSync(join(dir, "robots.txt"), "utf8");

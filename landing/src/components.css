@@ -1374,7 +1374,8 @@
   color: var(--text-caption);
   text-transform: uppercase;
 }
-.checksum-meta code[data-release-sha256] {
+.checksum-meta code[data-release-sha256],
+.checksum-meta code[data-sha256-value] {
   display: block;
   max-width: 100%;
   font-family: var(--font-mono);
@@ -1383,6 +1384,128 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.download-os-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px;
+  margin: 0 auto 26px;
+  border-radius: 15px;
+  background: var(--surface-inset);
+  box-shadow: var(--shadow-inset-sm);
+}
+
+.download-os-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 11px;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  transition: background-color var(--motion), color var(--motion), box-shadow var(--motion);
+}
+.download-os-tab svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.download-os-tab:hover {
+  color: var(--text-title);
+}
+.download-os-tab[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-raised-xs);
+}
+
+.os-tab-pill {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.os-tab-pill.is-soon {
+  background: var(--signal-soft);
+  color: var(--signal-secondary);
+}
+
+.download-panel[hidden],
+[data-linux-published][hidden],
+[data-linux-pending][hidden],
+[data-linux-deb-block][hidden],
+[data-linux-appimage-block][hidden],
+[data-macos-published][hidden],
+[data-macos-pending][hidden] {
+  display: none;
+}
+
+.checksum-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 680px;
+  margin: 22px auto 0;
+}
+.checksum-stack .checksum-box {
+  margin: 0;
+  width: 100%;
+}
+
+.download-notice {
+  max-width: 660px;
+  margin: 0 auto 22px;
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: var(--surface-inset);
+  box-shadow: var(--shadow-inset-sm);
+  border: var(--border-subtle);
+  text-align: left;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+.download-notice strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-title);
+  font-size: 0.92rem;
+}
+.download-notice code {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+.req-status {
+  display: inline-block;
+  margin-bottom: 10px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.req-status.is-ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.req-status.is-soon {
+  background: var(--signal-soft);
+  color: var(--signal-secondary);
 }
 .signing-note {
   max-width: 680px;
