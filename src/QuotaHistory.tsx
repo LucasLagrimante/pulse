@@ -1,13 +1,29 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  computeCreditsBurnEstimate,
+  computeQuotaPace,
+  computeRecentHistoryPace,
+  formatExhaustedResetSummary,
+  formatPaceDuration,
+  formatPaceRate,
+  formatResetDateTime,
+  projectPaceAtRecentRate,
+  type CreditsBurnEstimate,
+  type QuotaPaceEstimate,
+  type RecentHistoryPace,
+} from "./quotaPace";
 
 export const QUOTA_HISTORY_DAYS = 30;
+export const RECENT_PACE_HISTORY_DAYS = 4;
 export const CREDITS_WINDOW_ID = "__credits__";
-const POPOVER_WIDTH = 320;
-const POPOVER_HEIGHT = 280;
+const POPOVER_WIDTH = 344;
+const POPOVER_HEIGHT = 340;
 const POPOVER_MARGIN = 8;
 const HISTORY_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_RENDER_POINTS = 90;
+// Abaixo do teto de 6000 pontos do backend: garante que o lote recente não foi podado.
+const BULK_COMPLETE_POINT_LIMIT = 5900;
 
 export type QuotaHistoryPoint = {
   providerId: string;
@@ -113,8 +129,11 @@ export function downsampleValues(values: TimedValue[], maxPoints: number): Timed
 export type QuotaWindowInfo = {
   id?: string;
   label?: string;
+  usedPercent?: number | null;
+  remainingPercent?: number | null;
   windowMinutes?: number | null;
   resetsAtUnixSeconds?: number | null;
+  resetDescription?: string | null;
 };
 
 export type QuotaCycleInfo = {
@@ -217,10 +236,77 @@ export function computeCycleInfo(
   };
 }
 
+type RecentHistoryCacheEntry = {
+  at: number;
+  coveredSinceMs: number;
+  isComplete: boolean;
+  bySeries: Map<string, QuotaHistoryPoint[]>;
+};
+
 const historyCache = new Map<string, { at: number; points: QuotaHistoryPoint[] }>();
+const historyInFlight = new Map<string, Promise<QuotaHistoryPoint[]>>();
+let recentHistoryCache: RecentHistoryCacheEntry | null = null;
+let recentHistoryInFlight: Promise<Map<string, QuotaHistoryPoint[]>> | null = null;
+
+export function quotaSeriesKey(providerId: string, windowId: string): string {
+  return `${providerId}|${windowId}`;
+}
 
 export function quotaHistoryCacheKey(providerId: string, windowId: string, sinceUnixMs?: number | null): string {
   return `${providerId}|${windowId}|${sinceUnixMs ?? 0}`;
+}
+
+function groupPointsBySeries(points: QuotaHistoryPoint[]): Map<string, QuotaHistoryPoint[]> {
+  const bySeries = new Map<string, QuotaHistoryPoint[]>();
+  for (const point of points) {
+    if (!point || typeof point.providerId !== "string" || typeof point.windowId !== "string") continue;
+    const key = quotaSeriesKey(point.providerId, point.windowId);
+    const list = bySeries.get(key);
+    if (list) list.push(point);
+    else bySeries.set(key, [point]);
+  }
+  return bySeries;
+}
+
+/**
+ * Carrega o histórico recente (últimos 4 dias) de todos os provedores em uma
+ * única chamada IPC, com cache compartilhado e deduplicação em voo.
+ */
+export async function fetchRecentQuotaHistory(
+  forceRefresh = false,
+): Promise<Map<string, QuotaHistoryPoint[]>> {
+  const now = Date.now();
+  if (!forceRefresh && recentHistoryCache && now - recentHistoryCache.at < HISTORY_CACHE_TTL_MS) {
+    return recentHistoryCache.bySeries;
+  }
+  if (!forceRefresh && recentHistoryInFlight) {
+    return recentHistoryInFlight;
+  }
+
+  const coveredSinceMs = now - RECENT_PACE_HISTORY_DAYS * 86_400_000;
+  const request = invoke<QuotaHistoryResponse>("get_quota_history", {
+    providerId: null,
+    windowId: null,
+    days: RECENT_PACE_HISTORY_DAYS,
+    sinceUnixMs: null,
+  })
+    .then(response => {
+      const points = Array.isArray(response?.points) ? response.points : [];
+      const bySeries = groupPointsBySeries(points);
+      recentHistoryCache = {
+        at: Date.now(),
+        coveredSinceMs,
+        isComplete: points.length < BULK_COMPLETE_POINT_LIMIT,
+        bySeries,
+      };
+      return bySeries;
+    })
+    .finally(() => {
+      if (recentHistoryInFlight === request) recentHistoryInFlight = null;
+    });
+
+  recentHistoryInFlight = request;
+  return request;
 }
 
 export async function fetchQuotaHistory(
@@ -230,21 +316,51 @@ export async function fetchQuotaHistory(
   sinceUnixMs?: number | null,
 ): Promise<QuotaHistoryPoint[]> {
   const key = quotaHistoryCacheKey(providerId, windowId, sinceUnixMs);
+  const now = Date.now();
   const cached = historyCache.get(key);
-  if (cached && Date.now() - cached.at < HISTORY_CACHE_TTL_MS) return cached.points;
-  const response = await invoke<QuotaHistoryResponse>("get_quota_history", {
+  if (cached && now - cached.at < HISTORY_CACHE_TTL_MS) return cached.points;
+
+  // Reaproveita o lote recente quando o ciclo pedido cabe inteiro na janela já carregada.
+  if (
+    recentHistoryCache &&
+    recentHistoryCache.isComplete &&
+    now - recentHistoryCache.at < HISTORY_CACHE_TTL_MS &&
+    sinceUnixMs != null &&
+    sinceUnixMs >= recentHistoryCache.coveredSinceMs
+  ) {
+    const series = recentHistoryCache.bySeries.get(quotaSeriesKey(providerId, windowId)) ?? [];
+    const filtered = series.filter(point => point.sampledAtUnixMs >= sinceUnixMs);
+    historyCache.set(key, { at: now, points: filtered });
+    return filtered;
+  }
+
+  const existing = historyInFlight.get(key);
+  if (existing) return existing;
+
+  const request = invoke<QuotaHistoryResponse>("get_quota_history", {
     providerId,
     windowId,
     days,
     sinceUnixMs: sinceUnixMs ?? null,
-  });
-  const points = Array.isArray(response?.points) ? response.points : [];
-  historyCache.set(key, { at: Date.now(), points });
-  return points;
+  })
+    .then(response => {
+      const points = Array.isArray(response?.points) ? response.points : [];
+      historyCache.set(key, { at: Date.now(), points });
+      return points;
+    })
+    .finally(() => {
+      if (historyInFlight.get(key) === request) historyInFlight.delete(key);
+    });
+
+  historyInFlight.set(key, request);
+  return request;
 }
 
 export function clearQuotaHistoryCache(): void {
   historyCache.clear();
+  historyInFlight.clear();
+  recentHistoryCache = null;
+  recentHistoryInFlight = null;
 }
 
 function formatDayMonth(at: number): string {
@@ -267,6 +383,159 @@ function ChartIcon() {
       <path d="M7 14l4-4 3 3 5-6" />
     </svg>
   );
+}
+
+function QuotaHistoryPacePanel({
+  pace,
+  quota,
+  recentPace,
+  creditsBurn,
+  mode,
+  formatValue,
+}: {
+  pace: QuotaPaceEstimate | null;
+  quota?: QuotaWindowInfo | null;
+  recentPace: RecentHistoryPace | null;
+  creditsBurn: CreditsBurnEstimate | null;
+  mode: QuotaHistoryMode;
+  formatValue: (value: number) => string;
+}) {
+  if (mode === "credits") {
+    if (!creditsBurn) return null;
+    const rateLabel = `${formatValue(creditsBurn.ratePerDay)}/dia`;
+    const runway =
+      creditsBurn.daysRemaining != null
+        ? `dura ~${formatPaceDuration(creditsBurn.daysRemaining * 86_400_000)}`
+        : "saldo zerado";
+    const tone =
+      creditsBurn.daysRemaining == null
+        ? "danger"
+        : creditsBurn.daysRemaining < 7
+          ? "warning"
+          : "ok";
+    return (
+      <div className={`quota-history-pace is-${tone}`} role="status">
+        <div className="quota-history-pace-head">
+          <i className="quota-pace-dot" aria-hidden="true" />
+          <strong>Ritmo de saldo</strong>
+          <span>~{rateLabel}</span>
+        </div>
+        <p className="quota-history-pace-detail">
+          No passo dos últimos {Math.max(1, Math.round(creditsBurn.spanDays))}d, o saldo atual {runway}.
+        </p>
+      </div>
+    );
+  }
+
+  if (!pace) return null;
+
+  if (pace.status === "exhausted" && quota) {
+    return (
+      <div className="quota-history-pace is-danger" role="status">
+        <div className="quota-history-pace-head">
+          <i className="quota-pace-dot" aria-hidden="true" />
+          <strong>Cota esgotada</strong>
+          <span>100% usado</span>
+        </div>
+        <p className="quota-history-pace-detail">{formatExhaustedResetSummary(quota)}</p>
+      </div>
+    );
+  }
+
+  const renderRecentPaceNote = () => {
+    if (!recentPace || recentPace.trend === "steady") return null;
+    const recentRate =
+      recentPace.ratePerUnit > 0
+        ? `~${formatPaceRate(recentPace.ratePerUnit, recentPace.rateUnit)}`
+        : formatPaceRate(0, recentPace.rateUnit);
+    const recentProjection = projectPaceAtRecentRate(pace, recentPace);
+    const escalatedRisk =
+      recentPace.trend === "faster" &&
+      pace.status !== "will-deplete" &&
+      Boolean(recentProjection?.willDeplete) &&
+      recentProjection?.timeToDepleteMs != null;
+    const suffix = escalatedRisk && recentProjection?.timeToDepleteMs != null
+      ? `acelerou · esgotaria em ~${formatPaceDuration(recentProjection.timeToDepleteMs)}`
+      : recentPace.trend === "faster"
+        ? "acelerou"
+        : "desacelerou";
+    return (
+      <p className={`quota-history-pace-recent${escalatedRisk ? " is-danger" : ""}`}>
+        Nos {recentPace.windowLabel}: {recentRate} ({suffix})
+      </p>
+    );
+  };
+
+  if (pace.status === "will-deplete" && pace.ratePerUnit != null && pace.timeToDepleteMs != null) {
+    const rateText = formatPaceRate(pace.ratePerUnit, pace.rateUnit);
+    const endsIn = formatPaceDuration(pace.timeToDepleteMs);
+    const beforeMs = pace.marginMs != null ? Math.abs(pace.marginMs) : null;
+    const beforeText =
+      beforeMs != null && beforeMs >= 10 * 60_000
+        ? ` · ${formatPaceDuration(beforeMs)} antes do reset`
+        : "";
+    const depleteAtText =
+      pace.depleteAtUnixMs != null ? ` (${formatResetDateTime(pace.depleteAtUnixMs)})` : "";
+    return (
+      <div className="quota-history-pace is-danger" role="status">
+        <div className="quota-history-pace-head">
+          <i className="quota-pace-dot" aria-hidden="true" />
+          <strong>Vai esgotar antes do reset</strong>
+          <span>~{rateText}</span>
+        </div>
+        <p className="quota-history-pace-detail">
+          Esgota em ~{endsIn}{depleteAtText}{beforeText}
+        </p>
+        {renderRecentPaceNote()}
+      </div>
+    );
+  }
+
+  if ((pace.status === "tight" || pace.status === "ok") && pace.ratePerUnit != null && pace.projectedRemainingPercent != null) {
+    const rateText = formatPaceRate(pace.ratePerUnit, pace.rateUnit);
+    const projectedUsed = Math.min(100, Math.round(pace.projectedEndPercent ?? 0));
+    const projectedLeft = Math.round(pace.projectedRemainingPercent);
+    const isTight = pace.status === "tight";
+    return (
+      <div className={`quota-history-pace is-${isTight ? "warning" : "ok"}`} role="status">
+        <div className="quota-history-pace-head">
+          <i className="quota-pace-dot" aria-hidden="true" />
+          <strong>{isTight ? "Chega no limite até o reset" : "Dura até o reset"}</strong>
+          <span>~{rateText}</span>
+        </div>
+        <p className="quota-history-pace-detail">
+          Projeção de ~{projectedUsed}% no fechamento (sobra ~{projectedLeft}%)
+        </p>
+        {renderRecentPaceNote()}
+      </div>
+    );
+  }
+
+  if (pace.status === "idle") {
+    return (
+      <div className="quota-history-pace is-neutral" role="status">
+        <p className="quota-history-pace-detail">Sem consumo registrado neste ciclo.</p>
+      </div>
+    );
+  }
+
+  if (pace.status === "insufficient") {
+    return (
+      <div className="quota-history-pace is-neutral" role="status">
+        <p className="quota-history-pace-detail">Início do ciclo — aguarde mais uso para projetar o ritmo.</p>
+      </div>
+    );
+  }
+
+  if (pace.status === "no-reset") {
+    return (
+      <div className="quota-history-pace is-neutral" role="status">
+        <p className="quota-history-pace-detail">Reset não informado pelo provedor — projeção indisponível.</p>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 export function QuotaHistoryChart({
@@ -307,18 +576,45 @@ export function QuotaHistoryChart({
     };
   }, [providerId, windowId, cycleInfo.cycleStartMs]);
 
-  const values = useMemo(
+  const rawTimedValues = useMemo(
     () =>
       points
-        ? downsampleValues(
-            toTimedValues(
-              points.filter(point => point.sampledAtUnixMs >= cycleInfo.cycleStartMs),
-              mode,
-            ),
-            MAX_RENDER_POINTS,
+        ? toTimedValues(
+            points.filter(point => point.sampledAtUnixMs >= cycleInfo.cycleStartMs),
+            mode,
           )
         : [],
     [points, mode, cycleInfo.cycleStartMs],
+  );
+
+  const values = useMemo(
+    () => downsampleValues(rawTimedValues, MAX_RENDER_POINTS),
+    [rawTimedValues],
+  );
+
+  const pace = useMemo(
+    () =>
+      mode === "percent" && quota
+        ? computeQuotaPace({
+            ...quota,
+            id: quota.id ?? windowId,
+            label: quota.label ?? windowLabel,
+          })
+        : null,
+    [mode, quota, windowId, windowLabel],
+  );
+
+  const recentPace = useMemo(
+    () =>
+      mode === "percent" && pace?.ratePerUnit != null
+        ? computeRecentHistoryPace(rawTimedValues, pace.ratePerUnit, pace.rateUnit, Date.now(), pace.cycleStartMs)
+        : null,
+    [mode, pace, rawTimedValues],
+  );
+
+  const creditsBurn = useMemo(
+    () => (mode === "credits" ? computeCreditsBurnEstimate(rawTimedValues) : null),
+    [mode, rawTimedValues],
   );
 
   const buckets = useMemo(() => groupValuesByDay(values), [values]);
@@ -347,10 +643,28 @@ export function QuotaHistoryChart({
     );
   }
   if (values.length === 0 || stats == null) {
+    const showPaceWithoutHistory =
+      pace != null &&
+      (pace.status === "exhausted" ||
+        pace.status === "will-deplete" ||
+        pace.status === "tight" ||
+        pace.status === "ok");
     return (
-      <p className="quota-history-empty" role="status">
-        Sem histórico ainda no ciclo atual. Cada atualização de cotas registra um ponto — volte após as próximas leituras.
-      </p>
+      <div className="quota-history-chart">
+        {showPaceWithoutHistory && (
+          <QuotaHistoryPacePanel
+            pace={pace}
+            quota={quota}
+            recentPace={null}
+            creditsBurn={null}
+            mode={mode}
+            formatValue={formatValue}
+          />
+        )}
+        <p className="quota-history-empty" role="status">
+          Sem histórico ainda no ciclo atual. Cada atualização de cotas registra um ponto — volte após as próximas leituras.
+        </p>
+      </div>
     );
   }
 
@@ -365,16 +679,55 @@ export function QuotaHistoryChart({
   const scale = mode === "percent" ? 100 : Math.max(...values.map(entry => entry.value), 1);
   const first = values[0].at;
   const last = values[values.length - 1].at;
-  const span = Math.max(1, last - first);
+  const lastValue = values[values.length - 1].value;
+
+  const hasProjection =
+    mode === "percent" &&
+    pace != null &&
+    (pace.status === "ok" || pace.status === "tight" || pace.status === "will-deplete") &&
+    pace.resetsAtMs != null &&
+    pace.resetsAtMs > last;
+
+  const xEnd = hasProjection && pace?.resetsAtMs ? pace.resetsAtMs : last;
+  const span = Math.max(1, xEnd - first);
   const x = (at: number) => padLeft + ((at - first) / span) * plotWidth;
-  const y = (value: number) => padTop + plotHeight - (Math.max(0, value) / scale) * plotHeight;
+  const y = (value: number) => padTop + plotHeight - (Math.max(0, Math.min(scale, value)) / scale) * plotHeight;
 
   const line = values.map((entry, index) => `${index === 0 ? "M" : "L"}${x(entry.at).toFixed(1)},${y(entry.value).toFixed(1)}`).join(" ");
   const area = `${line} L${x(last).toFixed(1)},${(padTop + plotHeight).toFixed(1)} L${x(first).toFixed(1)},${(padTop + plotHeight).toFixed(1)} Z`;
   const peakIndex = values.reduce((best, entry, index) => (entry.value > values[best].value ? index : best), 0);
 
+  const projection = (() => {
+    if (!hasProjection || !pace || pace.resetsAtMs == null) return null;
+    const isDeplete = pace.status === "will-deplete" && pace.depleteAtUnixMs != null;
+    const targetAt = isDeplete
+      ? Math.min(pace.resetsAtMs, Math.max(last, pace.depleteAtUnixMs!))
+      : pace.resetsAtMs;
+    const targetValue = isDeplete
+      ? 100
+      : Math.min(100, Math.max(lastValue, pace.projectedEndPercent ?? lastValue));
+    const color =
+      pace.status === "will-deplete"
+        ? "var(--neu-danger)"
+        : pace.status === "tight"
+          ? "var(--neu-warning)"
+          : "var(--neu-success)";
+    const title = isDeplete
+      ? `Projeção: esgota em ${formatResetDateTime(targetAt)}`
+      : `Projeção no reset: ~${Math.round(targetValue)}% usado`;
+    return {
+      x1: x(last),
+      y1: y(lastValue),
+      x2: x(targetAt),
+      y2: y(targetValue),
+      color,
+      title,
+      isDeplete,
+    };
+  })();
+
   const hovered = hoverIndex != null ? values[hoverIndex] : null;
-  const accent = "var(--quota-accent, #83a9c4)";
+  const accent = "var(--quota-accent, var(--neu-accent))";
   const yTicks = mode === "percent" ? [100, 50, 0] : [scale, scale / 2, 0];
   const tickLabel = (tick: number) =>
     mode === "percent" ? `${Math.round(tick)}%` : formatValue(tick);
@@ -389,10 +742,17 @@ export function QuotaHistoryChart({
         onMouseMove={event => {
           const rect = plotRef.current?.getBoundingClientRect();
           if (!rect || rect.width <= 0 || values.length === 0) return;
-          const ratio = (event.clientX - rect.left) / rect.width;
-          const plotRatio = (ratio * width - padLeft) / plotWidth;
-          const index = Math.round(plotRatio * (values.length - 1));
-          setHoverIndex(Math.max(0, Math.min(values.length - 1, index)));
+          const cursorSvgX = ((event.clientX - rect.left) / rect.width) * width;
+          let bestIndex = 0;
+          let bestDist = Math.abs(x(values[0].at) - cursorSvgX);
+          for (let i = 1; i < values.length; i += 1) {
+            const dist = Math.abs(x(values[i].at) - cursorSvgX);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestIndex = i;
+            }
+          }
+          setHoverIndex(bestIndex);
         }}
         onMouseLeave={() => setHoverIndex(null)}
       >
@@ -411,7 +771,7 @@ export function QuotaHistoryChart({
                 x2={width - padRight}
                 y1={y(tick)}
                 y2={y(tick)}
-                stroke="var(--neu-divider, rgba(255,255,255,0.08))"
+                stroke="var(--neu-divider)"
                 strokeWidth="1"
                 vectorEffect="non-scaling-stroke"
               />
@@ -420,7 +780,33 @@ export function QuotaHistoryChart({
           ))}
           <path d={area} fill={accent} opacity="0.18" />
           <path d={line} fill="none" stroke={accent} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-          <circle cx={x(values[peakIndex].at)} cy={y(values[peakIndex].value)} r="3.5" fill={accent} stroke="var(--neu-surface, #141619)" strokeWidth="1.5">
+          {projection && (
+            <g className="quota-history-projection">
+              <line
+                className="quota-history-projection-line"
+                x1={projection.x1}
+                y1={projection.y1}
+                x2={projection.x2}
+                y2={projection.y2}
+                style={{ stroke: projection.color }}
+                strokeWidth="1.75"
+                strokeDasharray="4 3"
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+              />
+              <circle
+                cx={projection.x2}
+                cy={projection.y2}
+                r="3.2"
+                fill={projection.isDeplete ? projection.color : "var(--neu-surface)"}
+                stroke={projection.color}
+                strokeWidth="1.8"
+              >
+                <title>{projection.title}</title>
+              </circle>
+            </g>
+          )}
+          <circle cx={x(values[peakIndex].at)} cy={y(values[peakIndex].value)} r="3.5" fill={accent} stroke="var(--neu-surface)" strokeWidth="1.5">
             <title>{`Pico: ${formatValue(values[peakIndex].value)} em ${formatDayMonth(values[peakIndex].at)} · ${formatHour(values[peakIndex].at)}`}</title>
           </circle>
           {hovered && (
@@ -430,19 +816,21 @@ export function QuotaHistoryChart({
                 x2={x(hovered.at)}
                 y1={padTop}
                 y2={padTop + plotHeight}
-                stroke="var(--neu-divider, rgba(255,255,255,0.35))"
+                stroke="var(--neu-divider)"
                 strokeWidth="1"
                 vectorEffect="non-scaling-stroke"
               />
-              <circle cx={x(hovered.at)} cy={y(hovered.value)} r="3" fill="var(--neu-surface, #fff)" stroke={accent} strokeWidth="2" />
+              <circle cx={x(hovered.at)} cy={y(hovered.value)} r="3" fill="var(--neu-surface)" stroke={accent} strokeWidth="2" />
             </g>
           )}
           {(() => {
-            const isShortSpan = span <= 24 * 3600 * 1000 || formatDayMonth(first) === formatDayMonth(last);
+            const isShortSpan = span <= 24 * 3600 * 1000 || formatDayMonth(first) === formatDayMonth(xEnd);
             const startLabel = isShortSpan ? formatHour(first) : formatDayMonth(first);
-            const endLabel = values.length > 1
-              ? (isShortSpan ? formatHour(last) : formatDayMonth(last))
-              : (isShortSpan ? formatHour(first) : "hoje");
+            const endLabel = hasProjection
+              ? `reset ${isShortSpan ? formatHour(xEnd) : formatDayMonth(xEnd)}`
+              : values.length > 1
+                ? (isShortSpan ? formatHour(last) : formatDayMonth(last))
+                : (isShortSpan ? formatHour(first) : "hoje");
             return (
               <>
                 <text x={padLeft} y={height - 3} className="quota-history-tick">{startLabel}</text>
@@ -464,6 +852,14 @@ export function QuotaHistoryChart({
           </div>
         )}
       </div>
+      <QuotaHistoryPacePanel
+        pace={pace}
+        quota={quota}
+        recentPace={recentPace}
+        creditsBurn={creditsBurn}
+        mode={mode}
+        formatValue={formatValue}
+      />
       <div className="quota-history-stats">
         <span>MÁX <b>{formatValue(stats.max)}</b></span>
         <span>MÉDIA <b>{formatValue(stats.avg)}</b></span>

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearQuotaHistoryCache, RECENT_PACE_HISTORY_DAYS } from "./QuotaHistory";
 import { formatCountdown, groupQuotaWindowsByModel, shortModelName } from "./subscriptionHelpers";
 import { formatReset, formatUsd, hasMeasuredQuota, isProviderDisabled, isWindowChartEligible, reorderIds, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, SubscriptionUsage, type SubscriptionUsageReport } from "./SubscriptionUsage";
 
@@ -42,6 +43,7 @@ const report: SubscriptionUsageReport = {
 describe("SubscriptionUsage", () => {
   beforeEach(() => {
     localStorage.clear();
+    clearQuotaHistoryCache();
     vi.clearAllMocks();
   });
 
@@ -412,5 +414,172 @@ describe("SubscriptionUsage", () => {
     expect(screen.getByText("100% restante")).toBeInTheDocument();
     expect(screen.getByText("0% usado")).toBeInTheDocument();
     expect(screen.getByText("Ciclo renovado")).toBeInTheDocument();
+  });
+
+  it("displays burn rate, projection on bars and highlights exhausted quota reset time", async () => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const paceReport: SubscriptionUsageReport = {
+      ...report,
+      providers: [
+        {
+          id: "opencode-go",
+          provider: "OpenCode Go",
+          subtitle: "Assinatura de modelos Open (USD)",
+          status: "available",
+          source: "OpenCode Go API",
+          windows: [
+            {
+              id: "weekly-1",
+              label: "Semanal",
+              usedPercent: 8,
+              remainingPercent: 92,
+              windowMinutes: 10080,
+              resetsAtUnixSeconds: nowSec + 5 * 86400 + 19 * 3600,
+            },
+            {
+              id: "monthly-2",
+              label: "Mensal",
+              usedPercent: 60,
+              remainingPercent: 40,
+              windowMinutes: 43200,
+              resetsAtUnixSeconds: nowSec + 20 * 86400, // 60% em 10d → acaba em ~6d 16h
+            },
+          ],
+        },
+        {
+          id: "claude",
+          provider: "Claude Code",
+          subtitle: "Assinatura Anthropic",
+          status: "available",
+          source: "Claude Code CLI",
+          windows: [
+            {
+              id: "weekly",
+              label: "Semanal",
+              usedPercent: 100,
+              remainingPercent: 0,
+              windowMinutes: 10080,
+              resetsAtUnixSeconds: nowSec + 30 * 3600,
+              resetDescription: "resets Nov 25, 8am (America/Sao_Paulo)",
+            },
+          ],
+        },
+      ],
+    };
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_subscription_settings") {
+        return Promise.resolve({ openrouterConfigured: false, opencodeGoConfigured: true }) as never;
+      }
+      return Promise.resolve(paceReport) as never;
+    });
+
+    const { container } = render(<SubscriptionUsage />);
+    await screen.findByText("OpenCode Go");
+
+    expect(screen.getByText(/dura até o reset/)).toBeInTheDocument();
+    expect(screen.getByText(/esgota em ~6d 16h/)).toBeInTheDocument();
+    expect(screen.getByText("Esgotada")).toBeInTheDocument();
+    expect(container.querySelector(".quota-exhausted-banner")).toHaveTextContent(/Renova em 1d 6h/);
+  });
+
+  it("shows recent acceleration and deceleration badges directly on QuotaMeter with a single bulk history call", async () => {
+    const nowMs = Date.now();
+    const nowSec = Math.floor(nowMs / 1000);
+    const dayMs = 86_400_000;
+    const trendReport: SubscriptionUsageReport = {
+      ...report,
+      sampledAtUnixMs: nowMs,
+      providers: [
+        {
+          id: "opencode-go",
+          provider: "OpenCode Go",
+          subtitle: "Assinatura de modelos Open (USD)",
+          status: "available",
+          source: "OpenCode Go API",
+          windows: [
+            {
+              id: "weekly-1",
+              label: "Semanal",
+              usedPercent: 50,
+              remainingPercent: 50,
+              windowMinutes: 10080,
+              resetsAtUnixSeconds: nowSec + 3 * 86400, // 4d decorridos -> média 12,5%/dia
+            },
+            {
+              id: "monthly-2",
+              label: "Mensal",
+              usedPercent: 30,
+              remainingPercent: 70,
+              windowMinutes: 43200,
+              resetsAtUnixSeconds: nowSec + 12 * 86400, // 18d decorridos -> média 1,7%/dia (ok)
+            },
+          ],
+        },
+        {
+          id: "claude",
+          provider: "Claude Code",
+          subtitle: "Assinatura Anthropic",
+          status: "available",
+          source: "Claude Code CLI",
+          windows: [
+            {
+              id: "weekly",
+              label: "Semanal",
+              usedPercent: 100,
+              remainingPercent: 0,
+              windowMinutes: 10080,
+              resetsAtUnixSeconds: null,
+              resetDescription: null,
+            },
+          ],
+        },
+      ],
+    };
+
+    const historyPoints = [
+      // Semanal desacelerou nos últimos 2d (parou em 50%)
+      { providerId: "opencode-go", windowId: "weekly-1", label: "Semanal", usedPercent: 50, remainingPercent: 50, sampledAtUnixMs: nowMs - 2 * dayMs },
+      { providerId: "opencode-go", windowId: "weekly-1", label: "Semanal", usedPercent: 50, remainingPercent: 50, sampledAtUnixMs: nowMs },
+      // Mensal acelerou nos últimos 3d (+25% -> ~8,3%/dia, esgotaria antes dos 12d restantes)
+      { providerId: "opencode-go", windowId: "monthly-2", label: "Mensal", usedPercent: 5, remainingPercent: 95, sampledAtUnixMs: nowMs - 3 * dayMs },
+      { providerId: "opencode-go", windowId: "monthly-2", label: "Mensal", usedPercent: 30, remainingPercent: 70, sampledAtUnixMs: nowMs },
+    ];
+
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_subscription_settings") {
+        return Promise.resolve({ openrouterConfigured: false, opencodeGoConfigured: true }) as never;
+      }
+      if (command === "get_quota_history") {
+        return Promise.resolve({ points: historyPoints, retainedDays: 35 }) as never;
+      }
+      return Promise.resolve(trendReport) as never;
+    });
+
+    const { container } = render(<SubscriptionUsage />);
+    await screen.findByText("OpenCode Go");
+
+    const fasterBadge = await screen.findByText("↑ acelerou (~8,3%/dia · esgota antes)");
+    expect(fasterBadge).toHaveClass("quota-pace-trend", "is-danger");
+    expect(fasterBadge).toHaveAttribute("title", expect.stringMatching(/média do ciclo/i));
+    expect(fasterBadge).toHaveAttribute("title", expect.stringMatching(/antes do reset/i));
+
+    const slowerBadge = screen.getByText("↓ desacelerou");
+    expect(slowerBadge).toHaveClass("quota-pace-trend", "is-ok");
+    expect(slowerBadge).toHaveAttribute("title", expect.stringMatching(/0,0%\/dia/));
+
+    // Cota esgotada sem timestamp exibe aviso honesto e não renderiza linha de ritmo
+    expect(screen.getByText("Horário de reset não informado")).toBeInTheDocument();
+    const claudeCard = container.querySelector(".quota-provider-card.provider-claude");
+    expect(claudeCard?.querySelector(".quota-meter-pace")).not.toBeInTheDocument();
+
+    // Apenas 1 chamada IPC em lote para alimentar todas as janelas
+    const historyCalls = vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "get_quota_history");
+    expect(historyCalls).toHaveLength(1);
+    expect(historyCalls[0][1]).toEqual({
+      providerId: null,
+      windowId: null,
+      days: RECENT_PACE_HISTORY_DAYS,
+      sinceUnixMs: null,
+    });
   });
 });

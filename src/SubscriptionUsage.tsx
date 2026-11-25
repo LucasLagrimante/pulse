@@ -4,7 +4,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEventHandler } from "react";
 import { ModuleIcon } from "./Identity";
 import { ProviderIcon } from "./ProviderIcon";
-import { CREDITS_WINDOW_ID, QuotaHistoryButton } from "./QuotaHistory";
+import {
+  CREDITS_WINDOW_ID,
+  fetchRecentQuotaHistory,
+  QuotaHistoryButton,
+  quotaSeriesKey,
+  toTimedValues,
+  type QuotaHistoryPoint,
+} from "./QuotaHistory";
+import {
+  computeQuotaPace,
+  computeRecentHistoryPace,
+  formatExhaustedResetSummary,
+  formatMatrixPaceHint,
+  formatMeterPaceLine,
+} from "./quotaPace";
 import {
   formatCountdown,
   formatReset,
@@ -99,17 +113,45 @@ function GripIcon() {
   );
 }
 
-function QuotaMeter({ quota, providerId, providerName }: { quota: QuotaWindow; providerId: string; providerName: string }) {
-  const isExpired = typeof quota.resetsAtUnixSeconds === "number" && quota.resetsAtUnixSeconds * 1000 <= Date.now();
+function QuotaMeter({
+  quota,
+  providerId,
+  providerName,
+  recentPoints,
+}: {
+  quota: QuotaWindow;
+  providerId: string;
+  providerName: string;
+  recentPoints?: QuotaHistoryPoint[];
+}) {
+  const nowMs = Date.now();
+  const isExpired =
+    typeof quota.resetsAtUnixSeconds === "number" &&
+    quota.resetsAtUnixSeconds > 0 &&
+    quota.resetsAtUnixSeconds * 1000 <= nowMs;
   const remaining = isExpired ? 100 : safePercent(quota.remainingPercent);
   const used = isExpired ? 0 : safePercent(quota.usedPercent);
   const available = remaining != null && !quota.unavailableReason;
-  const reset = isExpired ? "Ciclo renovado" : (quota.resetDescription?.trim() || formatReset(quota.resetsAtUnixSeconds));
+  const reset = isExpired ? "Ciclo renovado" : (quota.resetDescription?.trim() || formatReset(quota.resetsAtUnixSeconds, nowMs));
   const windowId = quota.id?.trim() || quota.label?.trim() || "cota";
   const windowLabel = quota.label?.trim() || "Janela sem nome";
   const canShowChart = available && isWindowChartEligible(quota);
+  const pace = available ? computeQuotaPace(quota, nowMs) : null;
+  const isExhausted = pace?.status === "exhausted";
+  const recentPace =
+    pace && pace.ratePerUnit != null && recentPoints && recentPoints.length >= 2
+      ? computeRecentHistoryPace(
+          toTimedValues(recentPoints, "percent"),
+          pace.ratePerUnit,
+          pace.rateUnit,
+          nowMs,
+          pace.cycleStartMs,
+        )
+      : null;
+  const paceLine = pace ? formatMeterPaceLine(pace, recentPace, nowMs) : null;
+  const exhaustedReset = isExhausted ? formatExhaustedResetSummary(quota, nowMs) : null;
   return (
-    <div className={`quota-meter${available ? "" : " is-unavailable"}`}>
+    <div className={`quota-meter${available ? "" : " is-unavailable"}${isExhausted ? " is-exhausted" : ""}`}>
       <div className="quota-meter-heading">
         <span className="quota-meter-title">
           <strong>{windowLabel}</strong>
@@ -123,7 +165,9 @@ function QuotaMeter({ quota, providerId, providerName }: { quota: QuotaWindow; p
             />
           )}
         </span>
-        <span>{available ? reset : "Indisponível"}</span>
+        <span className={isExhausted ? "quota-reset-urgent" : undefined}>
+          {available ? (isExhausted ? "Esgotada" : reset) : "Indisponível"}
+        </span>
       </div>
       {available ? (
         <>
@@ -141,6 +185,28 @@ function QuotaMeter({ quota, providerId, providerName }: { quota: QuotaWindow; p
             <b>{Math.round(remaining)}% restante</b>
             <small>{used == null ? "Uso indisponível" : `${Math.round(used)}% usado`}</small>
           </div>
+          {exhaustedReset && (
+            <div className="quota-exhausted-banner" role="status">
+              <span className="quota-exhausted-icon" aria-hidden="true">↻</span>
+              <span>{exhaustedReset}</span>
+            </div>
+          )}
+          {!isExhausted && paceLine && (
+            <div className={`quota-meter-pace is-${paceLine.tone}`} title={paceLine.tooltip}>
+              <i className="quota-pace-dot" aria-hidden="true" />
+              <span className="quota-pace-rate">{paceLine.rateText}</span>
+              <span className="quota-pace-sep" aria-hidden="true">·</span>
+              <span className="quota-pace-verdict">{paceLine.verdictText}</span>
+              {paceLine.recentBadge && (
+                <span
+                  className={`quota-pace-trend is-${paceLine.recentBadge.tone}`}
+                  title={paceLine.recentBadge.tooltip}
+                >
+                  {paceLine.recentBadge.text}
+                </span>
+              )}
+            </div>
+          )}
         </>
       ) : <p>{quota.unavailableReason || `O ${providerName} não informou esta cota.`}</p>}
     </div>
@@ -176,8 +242,12 @@ function QuotaMatrixCell({
   const countdown = isExpired ? "renovado" : formatCountdown(quota.resetsAtUnixSeconds);
   const reset = quota.resetDescription?.trim() || formatReset(quota.resetsAtUnixSeconds);
   const windowLabel = quota.label?.trim() || `${model} · ${column}`;
+  const pace = computeQuotaPace(quota);
+  const isExhausted = pace?.status === "exhausted";
+  const paceHint = formatMatrixPaceHint(pace, quota);
+  const cellTitle = paceHint ? `${windowLabel} — ${reset} · ${paceHint.tooltip}` : `${windowLabel} — ${reset}`;
   return (
-    <div className="quota-matrix-cell" role="cell" title={`${windowLabel} — ${reset}`}>
+    <div className={`quota-matrix-cell${isExhausted ? " is-exhausted" : ""}`} role="cell" title={cellTitle}>
       <div className="quota-matrix-cell-head">
         <b>{Math.round(remaining)}%</b>
         <QuotaHistoryButton
@@ -198,7 +268,20 @@ function QuotaMatrixCell({
       >
         <i className={quotaTone(remaining)} style={{ width: `${remaining}%` }} />
       </div>
-      <small>{countdown ? `↻ ${countdown}` : quota.resetDescription?.trim() || "Reset não informado"}</small>
+      {isExhausted && paceHint ? (
+        <span className="quota-matrix-pace is-danger is-exhausted-pill" title={paceHint.tooltip}>
+          {paceHint.text}
+        </span>
+      ) : (
+        <>
+          <small>{countdown ? `↻ ${countdown}` : quota.resetDescription?.trim() || "Reset não informado"}</small>
+          {paceHint && (
+            <span className={`quota-matrix-pace is-${paceHint.tone}`} title={paceHint.tooltip}>
+              {paceHint.text}
+            </span>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -237,6 +320,7 @@ function QuotaMatrixView({ matrix, providerId }: { matrix: QuotaMatrixData; prov
 function ProviderCard({
   provider,
   disabled,
+  recentHistoryBySeries,
   onConfigureKey,
   onToggleEnabled,
   toggleBusy,
@@ -249,6 +333,7 @@ function ProviderCard({
 }: {
   provider: ProviderUsage;
   disabled: boolean;
+  recentHistoryBySeries?: Map<string, QuotaHistoryPoint[]> | null;
   onConfigureKey?: () => void;
   onToggleEnabled?: () => void;
   toggleBusy?: boolean;
@@ -331,7 +416,18 @@ function ProviderCard({
         </div>
       ) : available ? (
         <div className="quota-window-list">
-          {matrix ? <QuotaMatrixView matrix={matrix} providerId={provider.id} /> : windows.length > 0 ? windows.map((quota, index) => <QuotaMeter key={quota.id || `${provider.id}-${index}`} quota={quota} providerId={provider.id} providerName={provider.provider} />) : (
+          {matrix ? <QuotaMatrixView matrix={matrix} providerId={provider.id} /> : windows.length > 0 ? windows.map((quota, index) => {
+            const windowId = quota.id?.trim() || quota.label?.trim() || "cota";
+            return (
+              <QuotaMeter
+                key={quota.id || `${provider.id}-${index}`}
+                quota={quota}
+                providerId={provider.id}
+                providerName={provider.provider}
+                recentPoints={recentHistoryBySeries?.get(quotaSeriesKey(provider.id, windowId))}
+              />
+            );
+          }) : (
             <div className="quota-credit-summary">
               <strong>{provider.id === "openrouter" ? "Saldo disponível" : "Créditos disponíveis"}</strong>
               <b>{credits != null ? (provider.id === "openrouter" ? formatUsd(credits) : credits.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })) : "Indisponível"}</b>
@@ -432,6 +528,8 @@ export function SubscriptionUsage() {
   const [order, setOrder] = useState<string[]>([]);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [orderBusy, setOrderBusy] = useState(false);
+  const [recentHistoryBySeries, setRecentHistoryBySeries] = useState<Map<string, QuotaHistoryPoint[]> | null>(null);
+  const lastHistorySampledAtRef = useRef<number | null>(null);
   // O componente é lazy e desmonta ao trocar de aba: o loop de polling abaixo
   // (até ~12 s) não deve continuar invocando o backend nem setar estado morto.
   const disposedRef = useRef(false);
@@ -645,6 +743,40 @@ export function SubscriptionUsage() {
   const handleDragEnd = () => setDraggingId(null);
 
 
+  const hasPaceCandidate = useMemo(() => {
+    if (!report) return false;
+    const nowMs = Date.now();
+    return displayProviders.some(provider => {
+      if (isProviderDisabled(provider, disabledIds) || !hasMeasuredQuota(provider)) return false;
+      const windows = Array.isArray(provider.windows) ? provider.windows : [];
+      if (windows.length === 0 || groupQuotaWindowsByModel(windows)) return false;
+      return windows.some(quota => {
+        if (quota.unavailableReason) return false;
+        return computeQuotaPace(quota, nowMs)?.ratePerUnit != null;
+      });
+    });
+  }, [report, displayProviders, disabledIds]);
+
+  const reportSampledAt = measuredNumber(report?.sampledAtUnixMs);
+  useEffect(() => {
+    if (!hasPaceCandidate) return;
+    let disposed = false;
+    const prevSampledAt = lastHistorySampledAtRef.current;
+    const shouldForce =
+      prevSampledAt != null &&
+      reportSampledAt != null &&
+      reportSampledAt - prevSampledAt >= 60_000;
+    if (reportSampledAt != null) lastHistorySampledAtRef.current = reportSampledAt;
+    void fetchRecentQuotaHistory(shouldForce)
+      .then(bySeries => {
+        if (!disposed) setRecentHistoryBySeries(bySeries);
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+    };
+  }, [hasPaceCandidate, reportSampledAt]);
+
   const hasMeasuredProvider = measuredProviders.length > 0;
   const unavailableReasons = useMemo(
     () => report?.providers
@@ -707,6 +839,7 @@ export function SubscriptionUsage() {
                         key={provider.id}
                         provider={provider}
                         disabled={disabled}
+                        recentHistoryBySeries={recentHistoryBySeries}
                         toggleBusy={toggleBusy === provider.id}
                         onToggleEnabled={() => void toggleProvider(provider, disabled)}
                         onConfigureKey={target ? () => openModal(target) : undefined}

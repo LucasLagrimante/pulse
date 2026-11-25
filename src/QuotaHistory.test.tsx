@@ -5,11 +5,15 @@ import {
   clearQuotaHistoryCache,
   computeCycleInfo,
   downsampleValues,
+  fetchQuotaHistory,
+  fetchRecentQuotaHistory,
   groupValuesByDay,
   historyPointValue,
   peakBucket,
   QuotaHistoryButton,
   QuotaHistoryChart,
+  quotaSeriesKey,
+  RECENT_PACE_HISTORY_DAYS,
   type QuotaHistoryPoint,
   type TimedValue,
 } from "./QuotaHistory";
@@ -239,6 +243,151 @@ describe("QuotaHistoryChart", () => {
     const endHour = new Date(end).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     expect(await screen.findByText(startHour)).toBeInTheDocument();
     expect(screen.getByText(endHour)).toBeInTheDocument();
+  });
+
+  it("exibe linha de projeção e painel de ritmo quando a cota vai esgotar antes do reset", async () => {
+    const now = Date.now();
+    const oneDay = 24 * 3600 * 1000;
+    const resetsAt = Math.floor((now + 5 * oneDay) / 1000); // 2 dias decorridos de 7
+    const points = [
+      point(now - 2 * oneDay, 5),
+      point(now - oneDay, 30),
+      point(now, 60),
+    ];
+    vi.mocked(invoke).mockResolvedValue({ points, retainedDays: 35 } as never);
+    const { container } = render(
+      <QuotaHistoryChart
+        providerId="opencode-go"
+        windowId="weekly-1"
+        windowLabel="Semanal"
+        mode="percent"
+        quota={{
+          id: "weekly-1",
+          label: "Semanal",
+          usedPercent: 60,
+          remainingPercent: 40,
+          windowMinutes: 10080,
+          resetsAtUnixSeconds: resetsAt,
+        }}
+      />,
+    );
+    expect(await screen.findByText("Vai esgotar antes do reset")).toBeInTheDocument();
+    expect(screen.getByText(/Esgota em ~/)).toBeInTheDocument();
+    expect(container.querySelector(".quota-history-projection-line")).not.toBeNull();
+  });
+
+  it("exibe banner de cota esgotada no gráfico mesmo sem pontos históricos no ciclo", async () => {
+    const resetsAt = Math.floor((Date.now() + 26 * 3600 * 1000) / 1000);
+    vi.mocked(invoke).mockResolvedValue({ points: [], retainedDays: 35 } as never);
+    render(
+      <QuotaHistoryChart
+        providerId="claude"
+        windowId="weekly"
+        windowLabel="Semanal"
+        mode="percent"
+        quota={{
+          id: "weekly",
+          label: "Semanal",
+          usedPercent: 100,
+          remainingPercent: 0,
+          windowMinutes: 10080,
+          resetsAtUnixSeconds: resetsAt,
+        }}
+      />,
+    );
+    expect(await screen.findByText("Cota esgotada")).toBeInTheDocument();
+    expect(screen.getByText(/Renova em/)).toBeInTheDocument();
+  });
+
+  it("destaca no painel do gráfico quando a aceleração recente esgotaria a cota antes do reset", async () => {
+    const now = Date.now();
+    const oneDay = 24 * 3600 * 1000;
+    const resetsAt = Math.floor((now + 12 * oneDay) / 1000); // 18d decorridos de 30d
+    const points: QuotaHistoryPoint[] = [
+      { ...point(now - 15 * oneDay, 2), providerId: "opencode-go", windowId: "monthly-2", label: "Mensal" },
+      { ...point(now - 3 * oneDay, 5), providerId: "opencode-go", windowId: "monthly-2", label: "Mensal" },
+      { ...point(now, 30), providerId: "opencode-go", windowId: "monthly-2", label: "Mensal" },
+    ];
+    vi.mocked(invoke).mockResolvedValue({ points, retainedDays: 35 } as never);
+    const { container } = render(
+      <QuotaHistoryChart
+        providerId="opencode-go"
+        windowId="monthly-2"
+        windowLabel="Mensal"
+        mode="percent"
+        quota={{
+          id: "monthly-2",
+          label: "Mensal",
+          usedPercent: 30,
+          remainingPercent: 70,
+          windowMinutes: 43200,
+          resetsAtUnixSeconds: resetsAt,
+        }}
+      />,
+    );
+    expect(await screen.findByText("Dura até o reset")).toBeInTheDocument();
+    const recentNote = container.querySelector(".quota-history-pace-recent");
+    expect(recentNote).toHaveClass("is-danger");
+    expect(recentNote).toHaveTextContent(/acelerou · esgotaria em ~8d 9h/);
+  });
+
+  it("compartilha o lote recente entre janelas sem duplicar chamadas IPC e consulta completo para ciclos mais longos", async () => {
+    const now = Date.now();
+    const hour = 3_600_000;
+    const day = 86_400_000;
+    const bulkPoints: QuotaHistoryPoint[] = [
+      { ...point(now - 2 * hour, 10), providerId: "claude", windowId: "session", label: "Sessão" },
+      { ...point(now, 45), providerId: "claude", windowId: "session", label: "Sessão" },
+    ];
+    vi.mocked(invoke).mockResolvedValue({ points: bulkPoints, retainedDays: 35 } as never);
+
+    // Chamadas concorrentes deduplicam em uma única IPC
+    const [first, second] = await Promise.all([fetchRecentQuotaHistory(), fetchRecentQuotaHistory()]);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("get_quota_history", {
+      providerId: null,
+      windowId: null,
+      days: RECENT_PACE_HISTORY_DAYS,
+      sinceUnixMs: null,
+    });
+    expect(first.get(quotaSeriesKey("claude", "session"))).toHaveLength(2);
+    expect(second).toBe(first);
+
+    // Janela de 5h (sinceUnixMs dentro dos 4 dias) reaproveita o cache com 0 novas IPCs
+    const sessionPoints = await fetchQuotaHistory("claude", "session", 30, now - 5 * hour);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(sessionPoints).toHaveLength(2);
+
+    // Ciclo mensal (15 dias atrás) excede o lote recente -> faz consulta específica
+    await fetchQuotaHistory("opencode-go", "monthly-2", 30, now - 15 * day);
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(invoke).toHaveBeenLastCalledWith("get_quota_history", {
+      providerId: "opencode-go",
+      windowId: "monthly-2",
+      days: 30,
+      sinceUnixMs: now - 15 * day,
+    });
+  });
+
+  it("exibe ritmo de gasto em saldo para provedores de créditos", async () => {
+    const now = Date.now();
+    const oneDay = 24 * 3600 * 1000;
+    const creditPoints: QuotaHistoryPoint[] = [
+      { providerId: "openrouter", windowId: "__credits__", label: "Saldo (USD)", creditsRemaining: 10, sampledAtUnixMs: now - 4 * oneDay },
+      { providerId: "openrouter", windowId: "__credits__", label: "Saldo (USD)", creditsRemaining: 6, sampledAtUnixMs: now },
+    ];
+    vi.mocked(invoke).mockResolvedValue({ points: creditPoints, retainedDays: 35 } as never);
+    render(
+      <QuotaHistoryChart
+        providerId="openrouter"
+        windowId="__credits__"
+        windowLabel="Saldo (USD)"
+        mode="credits"
+        formatValue={v => `$ ${v.toFixed(2)}`}
+      />,
+    );
+    expect(await screen.findByText("Ritmo de saldo")).toBeInTheDocument();
+    expect(screen.getByText(/dura ~6d/)).toBeInTheDocument();
   });
 });
 
