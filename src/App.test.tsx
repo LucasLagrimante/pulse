@@ -2537,9 +2537,11 @@ describe("Pulse application shell", () => {
       "Atividade",
       "Desempenho",
       "Armazenamento",
+      "Arquivos",
       "Desinstalar programas",
       "Inicialização e segurança",
       "Serviços e atualizações",
+      "Segurança",
       "Rede e segurança",
       "Cotas de IA",
     ]);
@@ -2558,9 +2560,11 @@ describe("Pulse application shell", () => {
         "Atividade",
         "Desempenho",
         "Armazenamento",
+        "Arquivos",
         "Desinstalar programas",
         "Inicialização e segurança",
         "Serviços e atualizações",
+        "Segurança",
         "Rede e segurança",
         "Cotas de IA",
         "Debug",
@@ -2969,6 +2973,13 @@ describe("Pulse application shell", () => {
         expect(screen.getByText("pagefile.sys")).toBeInTheDocument();
         expect(screen.queryByText("Program Files")).not.toBeInTheDocument();
       });
+
+      // Garante que o ícone na tabela de maiores arquivos tem wrapper .tree-icon e dimensões explícitas
+      const topFileRow = screen.getByText("pagefile.sys").closest(".tree-row");
+      const topFileIcon = topFileRow?.querySelector(".tree-icon svg.file-symbol");
+      expect(topFileIcon).toBeInTheDocument();
+      expect(topFileIcon).toHaveAttribute("width", "16");
+      expect(topFileIcon).toHaveAttribute("height", "16");
 
       // Retorna para todos os itens
       fireEvent.click(screen.getByRole("button", { name: "TODOS OS ITENS" }));

@@ -2,28 +2,49 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Component, type ErrorInfo, type KeyboardEvent as ReactKeyboardEvent, lazy, type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Moon, Search, Sun } from "lucide-react";
+import { Moon, Search, SlidersHorizontal, Sun } from "lucide-react";
 import "./App.css";
 import "./identity.css";
 import "./DataTable.css";
 import { ActivityProcessTable } from "./ActivityProcessTable";
 import { PulseMark, ModuleIcon, PulseLoading, FileIcon, ProcessFallbackIcon } from "./Identity";
 import {
-  DetailedResourceChart,
-  HardwareGaugeBar,
   MiniCapacityBar,
   MiniUsageBar,
   SparklineChart,
 } from "./Charts";
+import { PerformanceModule } from "./PerformanceModule";
+import {
+  DEFAULT_TELEMETRY_PREFERENCES,
+  DEFAULT_TRAY_METRICS,
+  MAX_TRAY_METRICS,
+  buildUnifiedMetrics,
+  formatTelemetryNumber,
+  isDefaultTraySelection,
+  sanitizeTelemetryPreferences,
+  telemetryMetricColor,
+  type HardwareTelemetrySnapshot,
+  type PerformanceGroup,
+  type TelemetryPreferences,
+} from "./telemetry";
+import { computeQuotaPace, formatCompactDuration } from "./quotaPace";
 // Módulos pesados em chunks lazy: o flyout do tray e a primeira pintura nunca
 // os baixam/executam — só carregam ao abrir a aba correspondente. Sem perda
 // funcional: o fallback reutiliza o loading padrão do app.
 const DiskAnalyzer = lazy(() => import("./DiskAnalyzer").then(module => ({ default: module.DiskAnalyzer })));
 const DiskCleanup = lazy(() => import("./DiskCleanup").then(module => ({ default: module.DiskCleanup })));
+const FileExplorer = lazy(() => import("./FileExplorer").then(module => ({ default: module.FileExplorer })));
 const SubscriptionUsage = lazy(() => import("./SubscriptionUsage").then(module => ({ default: module.SubscriptionUsage })));
 const ServicesHub = lazy(() => import("./ServicesHub").then(module => ({ default: module.ServicesHub })));
 const UninstallHub = lazy(() => import("./UninstallHub").then(module => ({ default: module.UninstallHub })));
 const NetworkSecurity = lazy(() => import("./NetworkSecurity").then(module => ({ default: module.NetworkSecurity })));
+const SecurityHub = lazy(() => import("./SecurityHub").then(module => ({ default: module.SecurityHub })));
+const BetaHub = lazy(() => import("./BetaHub").then(module => ({ default: module.BetaHub })));
+const LauncherWindow = lazy(() => import("./LauncherWindow").then(module => ({ default: module.LauncherWindow })));
+const PeripheralBattery = lazy(() => import("./PeripheralBattery").then(module => ({ default: module.PeripheralBattery })));
+const ShellClockPopup = lazy(() => import("./ShellClockPopup").then(module => ({ default: module.ShellClockPopup })));
+import type { PeripheralBatterySnapshot, PeripheralKind } from "./PeripheralBattery";
+import { DEFAULT_BETA_FEATURES, type BetaFeaturesConfig } from "./betaFeatures";
 import { ensureDiskAnalyzerLoaded } from "./diskScanStore";
 import { formatCountdown, formatUsd, hasMeasuredQuota, safePercent, selectFlyoutQuotaWindows, shortQuotaWindowLabel, type ProviderUsage } from "./subscriptionHelpers";
 import { ProviderIcon } from "./ProviderIcon";
@@ -42,9 +63,11 @@ export const ALL_NAVIGATION_ITEMS = [
   "Atividade",
   "Desempenho",
   "Armazenamento",
+  "Arquivos",
   "Desinstalar programas",
   "Inicialização e segurança",
   "Serviços e atualizações",
+  "Segurança",
   "Rede e segurança",
   "Cotas de IA",
   "Debug",
@@ -321,6 +344,8 @@ export type PhysicalDisk = {
   sizeBytes?: Capability<number>;
   health?: Capability<string>;
   temperatureCelsius?: Capability<number>;
+  wearPercent?: number | null;
+  powerOnHours?: number | null;
 };
 export type VolumeInfo = {
   path: string;
@@ -410,6 +435,11 @@ const copy: Record<string, ModuleCopy> = {
     title: "Armazenamento — capacidade local",
     intro: "Analise a ocupação, revise arquivos recentes e recupere espaço com uma limpeza local e controlada.",
   },
+  Arquivos: {
+    eyebrow: "ARQUIVOS",
+    title: "Explorador de arquivos local",
+    intro: "Navegação nativa em Rust com abas, pré-visualização, busca rápida e exclusão segura para a Lixeira.",
+  },
   "Desinstalar programas": {
     eyebrow: "DESINSTALAR PROGRAMAS",
     title: "Remoção com rastreamento de resíduos",
@@ -425,6 +455,11 @@ const copy: Record<string, ModuleCopy> = {
     title: "Serviços ativos e aplicativos desatualizados",
     intro: "Serviços do Windows lidos direto do gerenciador do sistema e atualizações pendentes pela fonte oficial do Windows.",
   },
+  "Segurança": {
+    eyebrow: "SEGURANÇA",
+    title: "Auditoria determinística de acesso remoto",
+    intro: "Verifica configuração e porta real do RDP, sessões do sistema, conexões TCP e agentes em execução — diferenciando WSLg de acesso externo.",
+  },
   "Rede e segurança": {
     eyebrow: "REDE E SEGURANÇA",
     title: "O que sai desta máquina e como ela está postada",
@@ -439,6 +474,11 @@ const copy: Record<string, ModuleCopy> = {
     eyebrow: "DEBUG / AUDITORIA",
     title: "Rastro técnico do Pulse.",
     intro: "Operações, duração, origem e falhas expostas em uma trilha local e verificável.",
+  },
+  "Recursos Beta": {
+    eyebrow: "RECURSOS BETA",
+    title: "Laboratório de módulos experimentais.",
+    intro: "Ative ou desative recursos em evolução — todos desligados por padrão e sem custo enquanto inativos.",
   },
   Informações: {
     eyebrow: "INFORMAÇÕES",
@@ -1216,6 +1256,173 @@ export function TrayFlyout({
   const [killingPortId, setKillingPortId] = useState<string | null>(null);
   const [copiedPortId, setCopiedPortId] = useState<string | null>(null);
   const [thermalSensors, setThermalSensors] = useState<ThermalSensor[]>([]);
+  const [telemetryPrefs, setTelemetryPrefs] = useState<TelemetryPreferences>(DEFAULT_TELEMETRY_PREFERENCES);
+  const [hardwareTelemetry, setHardwareTelemetry] = useState<HardwareTelemetrySnapshot | null>(null);
+  const [flyoutDevices, setFlyoutDevices] = useState<PerformanceDevices | null>(null);
+  const [flyoutMetricHistories, setFlyoutMetricHistories] = useState<Record<string, number[]>>({});
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+
+  const saveFlyoutTelemetryPrefs = useCallback((next: TelemetryPreferences) => {
+    const clean = sanitizeTelemetryPreferences(next);
+    setTelemetryPrefs(clean);
+    void Promise.resolve(
+      invoke<TelemetryPreferences>("set_telemetry_preferences", { preferences: clean }),
+    ).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    void Promise.resolve(invoke<TelemetryPreferences>("get_telemetry_preferences"))
+      .then(result => {
+        if (!disposed && result && typeof result === "object") {
+          setTelemetryPrefs(sanitizeTelemetryPreferences(result));
+        }
+      })
+      .catch(() => undefined);
+
+    let unlisten: (() => void) | undefined;
+    listen<TelemetryPreferences>("pulse://telemetry-preferences-updated", event => {
+      if (!disposed && event.payload && typeof event.payload === "object") {
+        setTelemetryPrefs(sanitizeTelemetryPreferences(event.payload));
+      }
+    })
+      .then(cleanup => {
+        if (disposed) cleanup();
+        else unlisten = cleanup;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
+  const [peripheralBatteryEnabled, setPeripheralBatteryEnabled] = useState(false);
+  const [customDockEnabled, setCustomDockEnabled] = useState(false);
+  const [flyoutMode, setFlyoutMode] = useState<"full" | "audio" | "quotas" | "clock" | "peripherals">("full");
+  const [peripheralSnapshot, setPeripheralSnapshot] = useState<PeripheralBatterySnapshot | null>(null);
+  const flyoutContainerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (isForeground !== true || flyoutMode === "full") return;
+    const node = flyoutContainerRef.current;
+    if (!node) return;
+    let rafId = 0;
+    let lastSent = 0;
+    const syncHeight = () => {
+      rafId = 0;
+      const measured = Math.ceil(node.getBoundingClientRect().height);
+      if (measured > 0 && Math.abs(measured - lastSent) > 2) {
+        lastSent = measured;
+        void Promise.resolve(invoke("resize_tray_flyout", { logicalHeight: measured })).catch(() => undefined);
+      }
+    };
+    const schedule = () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+      rafId = window.requestAnimationFrame(syncHeight);
+    };
+    schedule();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(schedule) : null;
+    observer?.observe(node);
+    const settleTimer = window.setTimeout(schedule, 120);
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+      window.clearTimeout(settleTimer);
+      observer?.disconnect();
+    };
+  }, [isForeground, flyoutMode, mixerOpen, mixer, subscriptionProviders.length, peripheralSnapshot]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlistenMode: (() => void) | undefined;
+    listen<string>("pulse://flyout-mode", event => {
+      if (disposed) return;
+      const mode = event.payload;
+      if (mode === "audio" || mode === "quotas" || mode === "clock" || mode === "peripherals" || mode === "full") {
+        setFlyoutMode(mode);
+        if (mode === "audio") {
+          setMixerOpen(true);
+          setDevPortsOpen(false);
+        }
+      }
+    })
+      .then(cleanup => {
+        if (disposed) cleanup();
+        else unlistenMode = cleanup;
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      if (unlistenMode) unlistenMode();
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    invoke<BetaFeaturesConfig>("get_beta_features")
+      .then(cfg => {
+        if (!disposed && cfg && typeof cfg.peripheralBattery === "boolean") {
+          setPeripheralBatteryEnabled(cfg.peripheralBattery);
+          setCustomDockEnabled(Boolean(cfg.customDock));
+          if (!cfg.peripheralBattery) {
+            setPeripheralSnapshot(null);
+          }
+        }
+      })
+      .catch(() => undefined);
+
+    listen<BetaFeaturesConfig>("pulse://beta-features-changed", event => {
+      if (!disposed && event.payload && typeof event.payload.peripheralBattery === "boolean") {
+        setPeripheralBatteryEnabled(event.payload.peripheralBattery);
+        setCustomDockEnabled(Boolean(event.payload.customDock));
+        if (!event.payload.peripheralBattery) {
+          setPeripheralSnapshot(null);
+        }
+      }
+    })
+      .then(cleanup => {
+        if (disposed) cleanup();
+        else unlisten = cleanup;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  // Carrega bateria de periféricos de forma leve quando o flyout está visível e o recurso Beta está ativo.
+  useEffect(() => {
+    if (isForeground !== true || !peripheralBatteryEnabled) return;
+    let disposed = false;
+    const timers: number[] = [];
+    const loadPeripherals = async () => {
+      try {
+        const snap = await invoke<PeripheralBatterySnapshot>("get_peripheral_batteries");
+        if (!disposed && snap && Array.isArray(snap.devices)) {
+          setPeripheralSnapshot(snap);
+        }
+      } catch {
+        // Mantém silencioso no flyout
+      }
+    };
+    timers.push(
+      window.setTimeout(() => {
+        if (disposed) return;
+        void loadPeripherals();
+        timers.push(window.setInterval(() => void loadPeripherals(), 30_000));
+      }, 150),
+    );
+    return () => {
+      disposed = true;
+      timers.forEach(timer => {
+        window.clearTimeout(timer);
+        window.clearInterval(timer);
+      });
+    };
+  }, [isForeground, peripheralBatteryEnabled]);
 
   const updateSubscriptionProviders = (newProviders?: ProviderUsage[], scanStatus?: string) => {
     if (Array.isArray(newProviders) && newProviders.length > 0) {
@@ -1260,6 +1467,13 @@ export function TrayFlyout({
         setRamHistory(prev =>
           [...prev, ram].slice(-20),
         );
+        if (typeof result.gpuPercent === "number" && Number.isFinite(result.gpuPercent)) {
+          const gpuPct = result.gpuPercent;
+          setFlyoutMetricHistories(prev => ({
+            ...prev,
+            "gpu.usage": [...(prev["gpu.usage"] ?? []), gpuPct].slice(-20),
+          }));
+        }
       }
     } catch {
       // Continua silencioso no flyout
@@ -1295,6 +1509,61 @@ export function TrayFlyout({
             )
           : [];
         setThermalSensors(sensors);
+        const cpuT = sensors.find(s => /cpu|package|tctl|tdie|core/i.test(s.label));
+        const gpuT = sensors.find(s => /gpu|nvidia|radeon|amdgpu/i.test(s.label));
+        if (cpuT || gpuT) {
+          setFlyoutMetricHistories(prev => ({
+            ...prev,
+            ...(cpuT ? { "cpu.temp": [...(prev["cpu.temp"] ?? []), cpuT.celsius].slice(-20) } : {}),
+            ...(gpuT ? { "gpu.temp": [...(prev["gpu.temp"] ?? []), gpuT.celsius].slice(-20) } : {}),
+          }));
+        }
+      } catch {
+        // Continua silencioso no flyout
+      }
+      try {
+        const hw = await invoke<HardwareTelemetrySnapshot>("get_hardware_telemetry");
+        if (!disposed && hw && typeof hw === "object" && Array.isArray(hw.metrics)) {
+          setHardwareTelemetry(hw);
+          setFlyoutMetricHistories(prev => {
+            const next = { ...prev };
+            for (const item of hw.metrics) {
+              if (typeof item.value === "number" && Number.isFinite(item.value)) {
+                next[item.id] = [...(next[item.id] ?? []), item.value].slice(-20);
+              }
+            }
+            return next;
+          });
+        }
+      } catch {
+        // Continua silencioso se o comando não estiver disponível
+      }
+      try {
+        const dev = await invoke<PerformanceDevices>("get_performance_devices");
+        if (!disposed && dev && typeof dev === "object") {
+          setFlyoutDevices(dev);
+          const adapters = Array.isArray(dev.adapters?.value) ? dev.adapters.value : [];
+          let dl = 0;
+          let ul = 0;
+          let hasNet = false;
+          for (const adapter of adapters) {
+            if (typeof adapter?.receivedBps?.value === "number" && Number.isFinite(adapter.receivedBps.value)) {
+              dl += adapter.receivedBps.value;
+              hasNet = true;
+            }
+            if (typeof adapter?.sentBps?.value === "number" && Number.isFinite(adapter.sentBps.value)) {
+              ul += adapter.sentBps.value;
+              hasNet = true;
+            }
+          }
+          if (hasNet) {
+            setFlyoutMetricHistories(prev => ({
+              ...prev,
+              "net.download": [...(prev["net.download"] ?? []), Math.round(dl)].slice(-20),
+              "net.upload": [...(prev["net.upload"] ?? []), Math.round(ul)].slice(-20),
+            }));
+          }
+        }
       } catch {
         // Continua silencioso no flyout
       }
@@ -1392,6 +1661,13 @@ export function TrayFlyout({
   }, []);
 
   const mixerOutputId = audioDevices?.outputDefaultId ?? null;
+
+  useEffect(() => {
+    if (flyoutMode === "audio" && isForeground === true) {
+      setMixerOpen(true);
+      void loadMixer(mixerOutputId);
+    }
+  }, [flyoutMode, isForeground, loadMixer, mixerOutputId]);
 
   const toggleMixer = () => {
     const next = !mixerOpen;
@@ -1725,6 +2001,84 @@ export function TrayFlyout({
   // e só colapsa o Disco para a linha inteira se a coleta confirmar que não há GPU.
   const flyoutLoading = overview == null;
   const showFlyoutGpuCard = flyoutLoading || flyoutGpuSensor !== undefined || flyoutGpuUsage !== undefined;
+  const flyoutNetTotals = useMemo(() => {
+    const adapters = Array.isArray(flyoutDevices?.adapters?.value) ? flyoutDevices.adapters.value : [];
+    let dl = 0;
+    let ul = 0;
+    let measured = false;
+    for (const adapter of adapters) {
+      if (typeof adapter?.receivedBps?.value === "number" && Number.isFinite(adapter.receivedBps.value)) {
+        dl += adapter.receivedBps.value;
+        measured = true;
+      }
+      if (typeof adapter?.sentBps?.value === "number" && Number.isFinite(adapter.sentBps.value)) {
+        ul += adapter.sentBps.value;
+        measured = true;
+      }
+    }
+    return measured ? { dl, ul } : { dl: null, ul: null };
+  }, [flyoutDevices]);
+
+  const flyoutUnifiedMetrics = useMemo(
+    () =>
+      buildUnifiedMetrics({
+        cpuPercent: overview?.cpuPercent ?? null,
+        memoryPercent: memoryPercent ?? null,
+        memoryUsedGb: overview?.memoryUsedGb ?? null,
+        memoryTotalGb: overview?.memoryTotalGb ?? null,
+        diskPercent: diskPercent ?? null,
+        diskUsedGb: overview?.diskUsedGb ?? null,
+        diskTotalGb: overview?.diskTotalGb ?? null,
+        systemDiskLabel: pc.systemDiskUpper,
+        gpuPercent: flyoutGpuUsage ?? null,
+        gpuName: hardwareTelemetry?.gpu?.name ?? null,
+        downloadBps: flyoutNetTotals.dl,
+        uploadBps: flyoutNetTotals.ul,
+        cpuTempCelsius: flyoutCpuSensor?.celsius ?? null,
+        cpuTempSource: flyoutCpuSensor?.source ?? null,
+        gpuTempCelsius: flyoutGpuSensor?.celsius ?? null,
+        gpuTempSource: flyoutGpuSensor?.source ?? null,
+        extraThermalSensors: thermalSensors,
+        hardwareTelemetry,
+      }),
+    [
+      overview,
+      memoryPercent,
+      diskPercent,
+      pc.systemDiskUpper,
+      flyoutGpuUsage,
+      hardwareTelemetry,
+      flyoutNetTotals,
+      flyoutCpuSensor,
+      flyoutGpuSensor,
+      thermalSensors,
+    ],
+  );
+
+  const flyoutMetricsById = useMemo(() => {
+    const map = new Map(flyoutUnifiedMetrics.map(item => [item.id, item]));
+    return map;
+  }, [flyoutUnifiedMetrics]);
+
+  const usingDefaultTray = isDefaultTraySelection(telemetryPrefs.trayMetrics);
+
+  const handleSlotChange = (slotIndex: number, metricId: string) => {
+    const nextSlots = [...telemetryPrefs.trayMetrics];
+    while (nextSlots.length <= slotIndex) {
+      nextSlots.push("cpu.usage");
+    }
+    const previousId = nextSlots[slotIndex];
+    const duplicateIdx = nextSlots.findIndex((id, idx) => idx !== slotIndex && id === metricId);
+    if (duplicateIdx >= 0 && previousId) {
+      // Troca os slots de posição em vez de encolher o número de gráficos do Tray.
+      nextSlots[duplicateIdx] = previousId;
+    }
+    nextSlots[slotIndex] = metricId;
+    saveFlyoutTelemetryPrefs({
+      ...telemetryPrefs,
+      trayMetrics: nextSlots,
+    });
+  };
   const visibleQuotaProviders = useMemo(
     () => subscriptionProviders.filter(provider => provider.disabled !== true && hasMeasuredQuota(provider)),
     [subscriptionProviders],
@@ -1742,8 +2096,35 @@ export function TrayFlyout({
   };
 
   // Abre a janela principal já na área pedida (mesmo fluxo dos cards de cota)
-  const openMainArea = (area: NavigationItem) => {
+  const openMainArea = (area: NavigationItem | "Recursos Beta" | "Informações") => {
     void Promise.resolve(invoke("show_main_module", { module: area })).catch(() => undefined);
+  };
+
+  // Dispositivos conectados com percentual medido para a faixa compacta do flyout
+  const flyoutPeripherals = useMemo(() => {
+    if (!peripheralBatteryEnabled || !peripheralSnapshot?.devices) return [];
+    return peripheralSnapshot.devices.filter(device => {
+      if (!device.connected) return false;
+      const pct = device.batteryPercent?.value;
+      return typeof pct === "number" && Number.isFinite(pct) && pct >= 0 && pct <= 100;
+    });
+  }, [peripheralBatteryEnabled, peripheralSnapshot]);
+
+  const peripheralKindShort = (kind: PeripheralKind): string => {
+    switch (kind) {
+      case "mouse":
+        return "Mouse";
+      case "keyboard":
+        return "Teclado";
+      case "headset":
+        return "Fone";
+      case "controller":
+        return "Controle";
+      case "stylus":
+        return "Caneta";
+      default:
+        return "Perif.";
+    }
   };
 
   // Props de card clicável/acessível por teclado que leva a uma área da janela principal
@@ -1788,8 +2169,53 @@ export function TrayFlyout({
     }
   };
 
+  const flyoutSubtitle =
+    flyoutMode === "audio"
+      ? "PAINEL DE ÁUDIO"
+      : flyoutMode === "quotas"
+        ? "COTAS DE IA"
+        : flyoutMode === "clock"
+          ? "DATA E HORA"
+          : flyoutMode === "peripherals"
+            ? "PERIFÉRICOS"
+            : "PAINEL RÁPIDO";
+
+  const showMetricsSection = flyoutMode === "full" && !customDockEnabled;
+  const showAudioSection = flyoutMode === "full" || flyoutMode === "audio";
+  const showDevPortsSub = flyoutMode === "full";
+  const showPeripheralsSection =
+    flyoutMode === "peripherals" ||
+    (flyoutMode === "full" && peripheralBatteryEnabled && flyoutPeripherals.length > 0);
+  const showQuotasSection =
+    flyoutMode === "quotas" || (flyoutMode === "full" && !customDockEnabled);
+  const showProcessesSection = flyoutMode === "full";
+
+  const handleAddTraySlot = () => {
+    if (telemetryPrefs.trayMetrics.length >= MAX_TRAY_METRICS) return;
+    const used = new Set(telemetryPrefs.trayMetrics);
+    const nextMetric =
+      flyoutUnifiedMetrics.find(item => !used.has(item.id))?.id ?? "cpu.usage";
+    saveFlyoutTelemetryPrefs({
+      ...telemetryPrefs,
+      trayMetrics: [...telemetryPrefs.trayMetrics, nextMetric],
+    });
+  };
+
+  const handleRemoveTraySlot = (slotIndex: number) => {
+    if (telemetryPrefs.trayMetrics.length <= 1) return;
+    saveFlyoutTelemetryPrefs({
+      ...telemetryPrefs,
+      trayMetrics: telemetryPrefs.trayMetrics.filter((_, idx) => idx !== slotIndex),
+    });
+  };
+
   return (
-    <aside className="tray-flyout-container" role="complementary" aria-label="Painel rápido do tray">
+    <aside
+      ref={flyoutContainerRef}
+      className={`tray-flyout-container${flyoutMode !== "full" ? " is-modular-popup" : ""}`}
+      role="complementary"
+      aria-label="Painel rápido do tray"
+    >
       <header className="flyout-header">
         <div className="flyout-brand">
           <span
@@ -1803,11 +2229,11 @@ export function TrayFlyout({
           <div>
             <h2>Pulse</h2>
             <div className="flyout-brand-sub">
-              <p>PAINEL RÁPIDO</p>
-              {!overview && <span className="flyout-loading-tag">CONECTANDO</span>}
+              <p>{flyoutSubtitle}</p>
+              {!overview && flyoutMode === "full" && <span className="flyout-loading-tag">CONECTANDO</span>}
             </div>
           </div>
-          {typeof openrouterCredits === "number" && Number.isFinite(openrouterCredits) && (
+          {showQuotasSection && typeof openrouterCredits === "number" && Number.isFinite(openrouterCredits) && (
             <span className="flyout-training-credit" title="Saldo OpenRouter disponível em dólares (USD)" aria-label="Saldo OpenRouter disponível em dólares (USD)">
               {formatUsd(openrouterCredits)}
             </span>
@@ -1837,106 +2263,258 @@ export function TrayFlyout({
         </div>
       </header>
 
+      {flyoutMode === "clock" && (
+        <Suspense fallback={<PulseLoading />}>
+          <ShellClockPopup />
+        </Suspense>
+      )}
+
+      {showMetricsSection && (
       <section className="flyout-metrics">
-        <div className="flyout-metrics-row">
-          <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — CPU")}>
-            <div className="flyout-metric-head">
-              <span>CPU</span>
-              <strong title={flyoutCpuSensor ? `${flyoutCpuSensor.label} · ${flyoutCpuSensor.source}` : undefined}>
-                {overview ? (
-                  `${metric(overview.cpuPercent, "%")}${flyoutCpuSensor ? ` · ${metric(flyoutCpuSensor.celsius, " °C")}` : ""}`
-                ) : (
-                  <span className="flyout-skeleton-value" aria-hidden="true" />
-                )}
-              </strong>
-            </div>
-            <SparklineChart
-              data={cpuHistory}
-              color="var(--neu-accent)"
-              height={18}
-              ariaLabel="Gráfico de histórico de CPU no tray"
-            />
-          </div>
-
-          <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — Memória RAM")}>
-            <div className="flyout-metric-head">
-              <span>RAM</span>
-              <strong>
-                {overview ? (
-                  `${metric(overview.memoryUsedGb, " GB")} (${metric(memoryPercent, "%")})`
-                ) : (
-                  <span className="flyout-skeleton-value" aria-hidden="true" />
-                )}
-              </strong>
-            </div>
-            <SparklineChart
-              data={ramHistory}
-              color="var(--neu-signal-secondary)"
-              height={18}
-              ariaLabel="Gráfico de histórico de Memória RAM no tray"
-            />
-          </div>
-        </div>
-
-        <div className="flyout-metrics-row flyout-metrics-row--split">
-          <div
-            className={`flyout-metric-card disk-health-card disk-health-${diskHealth} is-clickable`}
-            style={showFlyoutGpuCard ? undefined : { gridColumn: "1 / -1" }}
-            {...metricCardLink("Armazenamento", `Abrir Armazenamento — ${pc.systemDisk}`)}
+        <div className="flyout-metrics-header">
+          <span>TELEMETRIA ({telemetryPrefs.trayMetrics.length}/{MAX_TRAY_METRICS})</span>
+          <button
+            type="button"
+            className={`flyout-customize-btn ${customizeOpen ? "is-active" : ""}`}
+            aria-expanded={customizeOpen}
+            aria-label="Personalizar gráficos do painel rápido"
+            onClick={() => setCustomizeOpen(v => !v)}
           >
-            <div className="flyout-metric-head">
-              <div className="disk-metric-label">
-                <span>{pc.systemDiskUpper}</span>
-                {overview && <DiskHealthBadge health={diskHealth} />}
-              </div>
-              <strong>
-                {overview ? metric(diskPercent, "%") : <span className="flyout-skeleton-value" aria-hidden="true" />}
-              </strong>
-            </div>
-            <MiniCapacityBar
-              usedGb={overview?.diskUsedGb}
-              totalGb={overview?.diskTotalGb}
-              percent={diskPercent}
-              color={diskCapacityColor(diskHealth)}
-              loading={flyoutLoading}
-              ariaLabel="Gráfico de alocação de disco no tray"
-            />
-          </div>
-
-          {showFlyoutGpuCard && (
-            <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — GPU")}>
-              <div className="flyout-metric-head">
-                <span>GPU</span>
-                <strong
-                  title={
-                    flyoutLoading
-                      ? undefined
-                      : flyoutGpuSensor
-                        ? `${flyoutGpuSensor.label} · ${flyoutGpuSensor.source}`
-                        : "Nenhum sensor de temperatura da GPU respondeu"
-                  }
-                >
-                  {flyoutLoading ? (
-                    <span className="flyout-skeleton-value" aria-hidden="true" />
-                  ) : flyoutGpuSensor ? (
-                    `${metric(flyoutGpuSensor.celsius)} °C`
-                  ) : (
-                    "—"
-                  )}
-                </strong>
-              </div>
-              <MiniUsageBar
-                percent={flyoutGpuUsage}
-                color="var(--neu-info)"
-                ariaLabel="Uso da GPU no tray"
-                leftLabel={flyoutLoading ? undefined : `USO ${metric(flyoutGpuUsage, "%")}`}
-                rightLabel={flyoutLoading ? undefined : flyoutGpuSensor ? flyoutGpuSensor.source : "SEM SENSOR"}
-              />
-            </div>
-          )}
+            <SlidersHorizontal size={11} aria-hidden="true" />
+            <span>{customizeOpen ? "Concluir" : "Personalizar"}</span>
+          </button>
         </div>
-      </section>
 
+        {customizeOpen && (
+          <div className="flyout-customize-panel" role="region" aria-label={`Configurar até ${MAX_TRAY_METRICS} gráficos do tray`}>
+            <div className="flyout-customize-slots">
+              {telemetryPrefs.trayMetrics.map((currentId, slotIdx) => (
+                <label key={slotIdx} className="flyout-slot-field">
+                  <div className="flyout-slot-field-head">
+                    <span>GRÁFICO {slotIdx + 1}</span>
+                    {telemetryPrefs.trayMetrics.length > 1 && (
+                      <button
+                        type="button"
+                        className="flyout-slot-remove"
+                        aria-label={`Remover gráfico ${slotIdx + 1}`}
+                        onClick={() => handleRemoveTraySlot(slotIdx)}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    aria-label={`Métrica do slot ${slotIdx + 1} do tray`}
+                    value={currentId}
+                    onChange={event => handleSlotChange(slotIdx, event.target.value)}
+                  >
+                    {flyoutUnifiedMetrics.map(option => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                        {option.value != null ? ` (${formatTelemetryNumber(option.value, option.unit)})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+            <div className="flyout-customize-footer">
+              {telemetryPrefs.trayMetrics.length < MAX_TRAY_METRICS ? (
+                <button
+                  type="button"
+                  className="flyout-reset-btn"
+                  onClick={handleAddTraySlot}
+                >
+                  + Adicionar atalho ({telemetryPrefs.trayMetrics.length}/{MAX_TRAY_METRICS})
+                </button>
+              ) : (
+                <small>Limite de {MAX_TRAY_METRICS} atalhos atingido</small>
+              )}
+              <button
+                type="button"
+                className="flyout-reset-btn"
+                onClick={() =>
+                  saveFlyoutTelemetryPrefs({
+                    ...telemetryPrefs,
+                    trayMetrics: [...DEFAULT_TRAY_METRICS],
+                  })
+                }
+              >
+                Restaurar padrão
+              </button>
+            </div>
+          </div>
+        )}
+
+        {usingDefaultTray ? (
+          <>
+            <div className="flyout-metrics-row">
+              <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — CPU")}>
+                <div className="flyout-metric-head">
+                  <span>CPU</span>
+                  <strong title={flyoutCpuSensor ? `${flyoutCpuSensor.label} · ${flyoutCpuSensor.source}` : undefined}>
+                    {overview ? (
+                      `${metric(overview.cpuPercent, "%")}${flyoutCpuSensor ? ` · ${metric(flyoutCpuSensor.celsius, " °C")}` : ""}`
+                    ) : (
+                      <span className="flyout-skeleton-value" aria-hidden="true" />
+                    )}
+                  </strong>
+                </div>
+                <SparklineChart
+                  data={cpuHistory}
+                  color="var(--neu-accent)"
+                  height={20}
+                  ariaLabel="Gráfico de histórico de CPU no tray"
+                />
+              </div>
+
+              <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — Memória RAM")}>
+                <div className="flyout-metric-head">
+                  <span>RAM</span>
+                  <strong>
+                    {overview ? (
+                      `${metric(overview.memoryUsedGb, " GB")} (${metric(memoryPercent, "%")})`
+                    ) : (
+                      <span className="flyout-skeleton-value" aria-hidden="true" />
+                    )}
+                  </strong>
+                </div>
+                <SparklineChart
+                  data={ramHistory}
+                  color="var(--neu-signal-secondary)"
+                  height={20}
+                  ariaLabel="Gráfico de histórico de Memória RAM no tray"
+                />
+              </div>
+            </div>
+
+            <div className="flyout-metrics-row flyout-metrics-row--split">
+              <div
+                className={`flyout-metric-card disk-health-card disk-health-${diskHealth} is-clickable`}
+                style={showFlyoutGpuCard ? undefined : { gridColumn: "1 / -1" }}
+                {...metricCardLink("Armazenamento", `Abrir Armazenamento — ${pc.systemDisk}`)}
+              >
+                <div className="flyout-metric-head">
+                  <div className="disk-metric-label">
+                    <span>{pc.systemDiskUpper}</span>
+                    {overview && <DiskHealthBadge health={diskHealth} />}
+                  </div>
+                  <strong>
+                    {overview ? metric(diskPercent, "%") : <span className="flyout-skeleton-value" aria-hidden="true" />}
+                  </strong>
+                </div>
+                <MiniCapacityBar
+                  usedGb={overview?.diskUsedGb}
+                  totalGb={overview?.diskTotalGb}
+                  percent={diskPercent}
+                  color={diskCapacityColor(diskHealth)}
+                  loading={flyoutLoading}
+                  ariaLabel="Gráfico de alocação de disco no tray"
+                />
+              </div>
+
+              {showFlyoutGpuCard && (
+                <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — GPU")}>
+                  <div className="flyout-metric-head">
+                    <span>GPU</span>
+                    <strong
+                      title={
+                        flyoutLoading
+                          ? undefined
+                          : flyoutGpuSensor
+                            ? `${flyoutGpuSensor.label} · ${flyoutGpuSensor.source}`
+                            : "Nenhum sensor de temperatura da GPU respondeu"
+                      }
+                    >
+                      {flyoutLoading ? (
+                        <span className="flyout-skeleton-value" aria-hidden="true" />
+                      ) : flyoutGpuSensor ? (
+                        `${metric(flyoutGpuSensor.celsius)} °C`
+                      ) : (
+                        "—"
+                      )}
+                    </strong>
+                  </div>
+                  <MiniUsageBar
+                    percent={flyoutGpuUsage}
+                    color="var(--neu-info)"
+                    ariaLabel="Uso da GPU no tray"
+                    leftLabel={flyoutLoading ? undefined : `USO ${metric(flyoutGpuUsage, "%")}`}
+                    rightLabel={flyoutLoading ? undefined : flyoutGpuSensor ? flyoutGpuSensor.source : "SEM SENSOR"}
+                  />
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="flyout-metrics-row">
+            {telemetryPrefs.trayMetrics.slice(0, MAX_TRAY_METRICS).map(slotId => {
+              const item = flyoutMetricsById.get(slotId);
+              if (slotId === "storage.system_disk") {
+                return (
+                  <div
+                    key={slotId}
+                    className={`flyout-metric-card disk-health-card disk-health-${diskHealth} is-clickable`}
+                    {...metricCardLink("Armazenamento", `Abrir Armazenamento — ${pc.systemDisk}`)}
+                  >
+                    <div className="flyout-metric-head">
+                      <div className="disk-metric-label">
+                        <span>{pc.systemDiskUpper}</span>
+                        {overview && <DiskHealthBadge health={diskHealth} />}
+                      </div>
+                      <strong>{overview ? metric(diskPercent, "%") : "—"}</strong>
+                    </div>
+                    <MiniCapacityBar
+                      usedGb={overview?.diskUsedGb}
+                      totalGb={overview?.diskTotalGb}
+                      percent={diskPercent}
+                      color={diskCapacityColor(diskHealth)}
+                      loading={flyoutLoading}
+                      ariaLabel="Gráfico de alocação de disco no tray"
+                    />
+                  </div>
+                );
+              }
+              const history =
+                slotId === "cpu.usage"
+                  ? cpuHistory
+                  : slotId === "ram.usage"
+                    ? ramHistory
+                    : flyoutMetricHistories[slotId] ??
+                      (item && typeof item.value === "number" ? [item.value] : []);
+              const label = item?.shortLabel ?? slotId.toUpperCase();
+              const valueText = item ? formatTelemetryNumber(item.value, item.unit) : "Indisponível";
+              const color = item ? telemetryMetricColor(item) : "var(--neu-accent)";
+              const autoScale = item ? item.maxValue == null && item.unit !== "%" : true;
+              const maxVal = item?.maxValue ?? (item?.unit === "%" ? 100 : 10);
+              return (
+                <div
+                  key={slotId}
+                  className="flyout-metric-card is-clickable"
+                  {...metricCardLink("Desempenho", `Abrir Desempenho — ${item?.label ?? slotId}`)}
+                >
+                  <div className="flyout-metric-head">
+                    <span title={item?.label}>{label}</span>
+                    <strong title={item?.detail ?? item?.source}>{valueText}</strong>
+                  </div>
+                  <SparklineChart
+                    data={history}
+                    color={color}
+                    height={20}
+                    max={maxVal}
+                    autoScale={autoScale}
+                    loading={flyoutLoading && history.length === 0}
+                    ariaLabel={`Gráfico de ${item?.label ?? slotId} no tray`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+      )}
+
+      {showAudioSection && (
       <section className="flyout-audio" aria-labelledby="flyout-audio-title">
         <div className="flyout-section-title">
           <span id="flyout-audio-title">{pc.flyoutAudio}</span>
@@ -2095,6 +2673,7 @@ export function TrayFlyout({
             </div>
           )}
         </div>
+        {showDevPortsSub && (
         <div className="flyout-dev-ports">
           <button
             type="button"
@@ -2201,8 +2780,64 @@ export function TrayFlyout({
             </div>
           )}
         </div>
+        )}
       </section>
+      )}
 
+      {showPeripheralsSection && flyoutMode === "peripherals" && (
+        <section className="flyout-peripherals flyout-peripherals-dedicated" aria-label="Periféricos">
+          <Suspense fallback={<PulseLoading />}>
+            <PeripheralBattery compact />
+          </Suspense>
+        </section>
+      )}
+
+      {showPeripheralsSection && flyoutMode === "full" && (
+        <section className="flyout-peripherals" aria-label="Periféricos">
+          <div className="flyout-section-title">
+            <span>PERIFÉRICOS</span>
+            <small>
+              {flyoutPeripherals.length} {flyoutPeripherals.length === 1 ? "CONECTADO" : "CONECTADOS"}
+            </small>
+          </div>
+          <div className="flyout-peripheral-strip">
+            {flyoutPeripherals.map(device => {
+              const pct = Math.round(device.batteryPercent.value as number);
+              const isLow = pct <= 20;
+              const isCharging = device.charging === true;
+              const kindLabel = peripheralKindShort(device.kind);
+              const titleParts = [
+                device.name,
+                device.hardwareName && device.hardwareName !== device.name
+                  ? `(${device.hardwareName})`
+                  : null,
+                `${kindLabel} · ${pct}%${isCharging ? " · Carregando" : ""}`,
+                "Clique para abrir Recursos Beta",
+              ].filter(Boolean);
+
+              return (
+                <button
+                  key={device.id}
+                  type="button"
+                  className={`flyout-peripheral-chip${isLow ? " is-low" : ""}${isCharging ? " is-charging" : ""}`}
+                  title={titleParts.join(" — ")}
+                  aria-label={`${device.name}, ${kindLabel}, ${pct}%${isCharging ? ", carregando" : ""}${isLow ? ", bateria baixa" : ""}. Abrir Recursos Beta`}
+                  onClick={() => openMainArea("Recursos Beta")}
+                >
+                  <span className="flyout-peripheral-kind">{kindLabel}</span>
+                  <strong className="flyout-peripheral-name">{device.name}</strong>
+                  <span className={`flyout-peripheral-pct${isLow ? " is-low" : isCharging ? " is-charging" : ""}`}>
+                    {isCharging ? <span aria-hidden="true">⚡</span> : null}
+                    {pct}%
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {showQuotasSection && (
       <section className="flyout-quotas" aria-label="Cotas de assinaturas de IA">
         <div className="flyout-section-title">
           <span>COTAS DE IA</span>
@@ -2222,6 +2857,24 @@ export function TrayFlyout({
               const planName = provider.plan?.trim() ? provider.plan.toUpperCase() : "ATUAL";
 
               const openQuotas = () => openMainArea("Cotas de IA");
+              const windowPaces = trayWindows.map(w => computeQuotaPace(w));
+              const urgentPace =
+                windowPaces.find(p => p?.status === "exhausted") ??
+                windowPaces.find(p => p?.status === "will-deplete") ??
+                windowPaces.find(p => p?.status === "tight") ??
+                null;
+              const urgentBadge =
+                urgentPace?.status === "exhausted"
+                  ? { tone: "danger" as const, label: "ESGOTADA", title: "Cota esgotada — aguardando reset" }
+                  : urgentPace?.status === "will-deplete" && urgentPace.timeToDepleteMs != null
+                    ? {
+                        tone: "danger" as const,
+                        label: `! ~${formatCompactDuration(urgentPace.timeToDepleteMs)}`,
+                        title: `No ritmo atual, esgota em ~${formatCompactDuration(urgentPace.timeToDepleteMs)} antes do reset`,
+                      }
+                    : urgentPace?.status === "tight"
+                      ? { tone: "warning" as const, label: "NO LIMITE", title: "No ritmo atual, chega perto de 100% antes do reset" }
+                      : null;
               const resetSummary = trayWindows
                 .map(window => {
                   const countdown = formatCountdown(window.resetsAtUnixSeconds);
@@ -2237,7 +2890,7 @@ export function TrayFlyout({
                   role="button"
                   tabIndex={0}
                   aria-label={`Abrir Cotas de IA: ${provider.provider}${resetSummary ? ` — ${resetSummary}` : ""}`}
-                  title={resetSummary ? `${resetSummary}\nClique para abrir Cotas de IA` : "Clique para abrir Cotas de IA"}
+                  title={[urgentBadge?.title, resetSummary, "Clique para abrir Cotas de IA"].filter(Boolean).join("\n")}
                   onClick={openQuotas}
                   onKeyDown={event => {
                     if (event.key === "Enter" || event.key === " ") {
@@ -2251,7 +2904,17 @@ export function TrayFlyout({
                       <ProviderIcon providerId={provider.id} size={15} />
                       <strong title={provider.provider}>{provider.provider}</strong>
                     </div>
-                    <small className="flyout-quota-plan">{planName}</small>
+                    <div className="flyout-quota-badges">
+                      {urgentBadge && (
+                        <span
+                          className={`flyout-quota-alert is-${urgentBadge.tone}`}
+                          title={urgentBadge.title}
+                        >
+                          {urgentBadge.label}
+                        </span>
+                      )}
+                      <small className="flyout-quota-plan">{planName}</small>
+                    </div>
                   </header>
                   {provider.id === "openrouter" && provider.creditsRemaining != null ? (
                     <div className="flyout-quota-usd">
@@ -2298,7 +2961,9 @@ export function TrayFlyout({
           </div>
         ) : <p className="flyout-quota-empty">Nenhuma cota confirmada nesta consulta.</p>}
       </section>
+      )}
 
+      {showProcessesSection && (
       <section className="flyout-processes">
         <div className="flyout-section-title">
           <span>TOP PROCESSOS</span>
@@ -2349,6 +3014,7 @@ export function TrayFlyout({
           )}
         </ul>
       </section>
+      )}
 
       <footer className="flyout-actions">
         <button
@@ -2396,6 +3062,10 @@ function App() {
   const [activeArea, setActiveArea] = useState("Visão geral");
   const [overview, setOverview] = useState<SystemOverview>();
   const [performance, setPerformance] = useState<Performance>();
+  const [hardwareTelemetry, setHardwareTelemetry] = useState<HardwareTelemetrySnapshot | null>(null);
+  const [metricHistories, setMetricHistories] = useState<Record<string, number[]>>({});
+  const [telemetryPrefs, setTelemetryPrefs] = useState<TelemetryPreferences>(DEFAULT_TELEMETRY_PREFERENCES);
+  const [perfSelectedGroup, setPerfSelectedGroup] = useState<PerformanceGroup | null>(null);
   const [files, setFiles] = useState<RecentFile[]>([]);
   const [startupItems, setStartupItems] = useState<StartupItem[]>([]);
   const [startupItemsLoaded, setStartupItemsLoaded] = useState(false);
@@ -2452,6 +3122,7 @@ function App() {
   const [terminatingProcessId, setTerminatingProcessId] = useState<number | null>(null);
   const [processSort, setProcessSort] = useState<ProcessSortColumn>("memory");
   const [processSortDirection, setProcessSortDirection] = useState<ProcessSortDirection>("desc");
+  const [betaFeatures, setBetaFeatures] = useState<BetaFeaturesConfig>(DEFAULT_BETA_FEATURES);
   const initialLoadStarted = useRef(false);
   const lastOverviewCollectionAt = useRef(0);
 
@@ -2625,9 +3296,43 @@ function App() {
   const gpuChartLoading = overviewLoading || (
     gpuSampleCount > 0 && gpuSampleCount < MIN_CHART_HISTORY_SAMPLES
   );
-  // Sem contadores de engine expostos pelo driver não há o que medir: o gráfico
-  // some por completo em vez de exibir uma barra vazia de "utilização não exposta".
-  const showGpuChart = gpuPercent !== undefined || gpuSampleCount > 0;
+
+  const updateTelemetryPrefs = useCallback((next: TelemetryPreferences) => {
+    const clean = sanitizeTelemetryPreferences(next);
+    setTelemetryPrefs(clean);
+    void Promise.resolve(
+      invoke<TelemetryPreferences>("set_telemetry_preferences", { preferences: clean }),
+    ).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (windowLabel !== "main") return;
+    let disposed = false;
+    void Promise.resolve(invoke<TelemetryPreferences>("get_telemetry_preferences"))
+      .then(result => {
+        if (!disposed && result && typeof result === "object") {
+          setTelemetryPrefs(sanitizeTelemetryPreferences(result));
+        }
+      })
+      .catch(() => undefined);
+
+    let unlisten: (() => void) | undefined;
+    listen<TelemetryPreferences>("pulse://telemetry-preferences-updated", event => {
+      if (!disposed && event.payload && typeof event.payload === "object") {
+        setTelemetryPrefs(sanitizeTelemetryPreferences(event.payload));
+      }
+    })
+      .then(cleanup => {
+        if (disposed) cleanup();
+        else unlisten = cleanup;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      if (unlisten) unlisten();
+    };
+  }, [windowLabel]);
 
   const loadFiles = async (isInitial = false) => {
     setFilesLoading(true);
@@ -2701,6 +3406,26 @@ function App() {
       const result = await invoke<Performance>("get_performance_details");
       if (result && typeof result === "object") {
         setPerformance(result);
+      }
+    } catch {
+      // Continua seguro se falhar
+    }
+  };
+
+  const loadHardwareTelemetry = async () => {
+    try {
+      const result = await invoke<HardwareTelemetrySnapshot>("get_hardware_telemetry");
+      if (result && typeof result === "object" && Array.isArray(result.metrics)) {
+        setHardwareTelemetry(result);
+        setMetricHistories(prev => {
+          const next = { ...prev };
+          for (const item of result.metrics) {
+            if (typeof item.value === "number" && Number.isFinite(item.value)) {
+              next[item.id] = [...(next[item.id] ?? []), item.value].slice(-30);
+            }
+          }
+          return next;
+        });
       }
     } catch {
       // Continua seguro se falhar
@@ -2833,6 +3558,11 @@ function App() {
       void loadDevices();
     }, 800);
 
+    // 6. Telemetria expandida (DXGI VRAM, núcleos CPU, disco I/O, sensores)
+    const t5 = window.setTimeout(() => {
+      void loadHardwareTelemetry();
+    }, 950);
+
     return () => {
       disposed = true;
       if (bootTimer !== undefined) window.clearTimeout(bootTimer);
@@ -2841,6 +3571,7 @@ function App() {
       window.clearTimeout(t2);
       window.clearTimeout(t3);
       window.clearTimeout(t4);
+      window.clearTimeout(t5);
     };
     // Carga inicial escalonada: roda só na largada, não quando as funções de carga são recriadas.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2854,6 +3585,7 @@ function App() {
       void collect();
       void loadPerformance();
       void loadDevices();
+      void loadHardwareTelemetry();
     }
 
     const delayUntilNextSample = Math.max(
@@ -2867,10 +3599,12 @@ function App() {
     const startTimer = window.setTimeout(() => {
       void collect();
       void loadDevices();
+      void loadHardwareTelemetry();
       telemetryTimer = window.setInterval(
         () => {
           void collect();
           void loadDevices();
+          void loadHardwareTelemetry();
         },
         TELEMETRY_POLL_INTERVAL_MS,
       );
@@ -2882,13 +3616,19 @@ function App() {
     };
   }, [isWindowForeground, windowLabel]);
 
-  // Clique num card de cota do flyout: o backend mostra a janela e pede o módulo.
+  // Clique num card de cota do flyout ou menu da Dock: o backend mostra a janela e pede o módulo.
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
     listen<string>("pulse://navigate-area", event => {
-      if (typeof event.payload === "string" && (ALL_NAVIGATION_ITEMS as readonly string[]).includes(event.payload)) {
-        setActiveArea(event.payload);
+      if (typeof event.payload !== "string") return;
+      const normalized = event.payload === "Assinaturas" ? "Cotas de IA" : event.payload;
+      if (
+        (ALL_NAVIGATION_ITEMS as readonly string[]).includes(normalized) ||
+        normalized === "Recursos Beta" ||
+        normalized === "Informações"
+      ) {
+        setActiveArea(normalized);
       }
     })
       .then(cleanup => {
@@ -2896,6 +3636,34 @@ function App() {
         else unlisten = cleanup;
       })
       .catch(() => undefined);
+    return () => {
+      disposed = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    invoke<BetaFeaturesConfig>("get_beta_features")
+      .then(cfg => {
+        if (!disposed && cfg && typeof cfg.peripheralBattery === "boolean") {
+          setBetaFeatures(cfg);
+        }
+      })
+      .catch(() => undefined);
+
+    listen<BetaFeaturesConfig>("pulse://beta-features-changed", event => {
+      if (!disposed && event.payload && typeof event.payload.peripheralBattery === "boolean") {
+        setBetaFeatures(event.payload);
+      }
+    })
+      .then(cleanup => {
+        if (disposed) cleanup();
+        else unlisten = cleanup;
+      })
+      .catch(() => undefined);
+
     return () => {
       disposed = true;
       if (unlisten) unlisten();
@@ -3264,6 +4032,62 @@ function App() {
   };
 
   // Se esta janela for o painel flutuante do tray icon, renderiza a barra flutuante
+  const thermalSensors = useMemo(
+    () =>
+      Array.isArray(performance?.thermalSensors)
+        ? performance.thermalSensors.filter(
+            (sensor): sensor is ThermalSensor =>
+              !!sensor &&
+              typeof sensor.celsius === "number" &&
+              Number.isFinite(sensor.celsius) &&
+              typeof sensor.label === "string" &&
+              sensor.label.length > 0,
+          )
+        : [],
+    [performance?.thermalSensors],
+  );
+  const cpuSensor = selectCpuSensor(thermalSensors);
+  const gpuSensor = selectGpuSensor(thermalSensors);
+  const otherSensors = thermalSensors.filter(sensor => sensor !== cpuSensor && sensor !== gpuSensor);
+
+  const unifiedMetrics = useMemo(
+    () =>
+      buildUnifiedMetrics({
+        cpuPercent: overview?.cpuPercent ?? null,
+        memoryPercent: memoryPercent ?? null,
+        memoryUsedGb: overview?.memoryUsedGb ?? null,
+        memoryTotalGb: overview?.memoryTotalGb ?? null,
+        diskPercent: diskPercent ?? null,
+        diskUsedGb: overview?.diskUsedGb ?? null,
+        diskTotalGb: overview?.diskTotalGb ?? null,
+        systemDiskLabel: pc.systemDiskUpper,
+        gpuPercent: gpuPercent ?? null,
+        gpuName: performance?.gpu?.value ?? null,
+        downloadBps: downloadHistory.length > 0 ? downloadHistory[downloadHistory.length - 1] : null,
+        uploadBps: uploadHistory.length > 0 ? uploadHistory[uploadHistory.length - 1] : null,
+        cpuTempCelsius: cpuSensor?.celsius ?? null,
+        cpuTempSource: cpuSensor?.source ?? null,
+        gpuTempCelsius: gpuSensor?.celsius ?? null,
+        gpuTempSource: gpuSensor?.source ?? null,
+        extraThermalSensors: thermalSensors,
+        hardwareTelemetry,
+      }),
+    [
+      overview,
+      memoryPercent,
+      diskPercent,
+      pc.systemDiskUpper,
+      gpuPercent,
+      performance?.gpu?.value,
+      downloadHistory,
+      uploadHistory,
+      cpuSensor,
+      gpuSensor,
+      thermalSensors,
+      hardwareTelemetry,
+    ],
+  );
+
   if (windowLabel === "tray-flyout") {
     return (
       <TrayFlyout
@@ -3273,53 +4097,59 @@ function App() {
     );
   }
 
-  const module = moduleCopyFor(activeArea, pc);
-  const rawVramBytes = performance?.vramBytes?.value;
-  const vramBytes =
-    typeof rawVramBytes === "number" && Number.isFinite(rawVramBytes)
-      ? rawVramBytes
-      : undefined;
-  const thermalSensors = Array.isArray(performance?.thermalSensors)
-    ? performance.thermalSensors.filter(
-        (sensor): sensor is ThermalSensor =>
-          !!sensor &&
-          typeof sensor.celsius === "number" &&
-          Number.isFinite(sensor.celsius) &&
-          typeof sensor.label === "string" &&
-          sensor.label.length > 0,
-      )
-    : [];
-  const cpuSensor = selectCpuSensor(thermalSensors);
-  const gpuSensor = selectGpuSensor(thermalSensors);
-  const otherSensors = thermalSensors.filter(sensor => sensor !== cpuSensor && sensor !== gpuSensor);
+  if (windowLabel === "launcher") {
+    return (
+      <CrashBoundary onRecover={() => void invoke("launcher_hide").catch(() => undefined)}>
+        <Suspense fallback={<PulseLoading />}>
+          <LauncherWindow />
+        </Suspense>
+      </CrashBoundary>
+    );
+  }
 
-  const networkAdapters = Array.isArray(devices?.adapters?.value)
-    ? devices.adapters.value
-    : [];
-  const activeAdapterCount = networkAdapters.filter(adapter => adapter?.status === "Ativo").length;
-  const physicalDisks = Array.isArray(devices?.disks?.value) ? devices.disks.value : [];
-  const volumes = Array.isArray(devices?.volumes) ? devices.volumes : [];
-  const capacity = volumes.reduce(
-    (totals, volume) => {
-      const total = volume?.totalBytes;
-      const free = volume?.freeBytes;
-      if (
-        typeof total === "number" &&
-        typeof free === "number" &&
-        Number.isFinite(total) &&
-        Number.isFinite(free) &&
-        total > 0 &&
-        free >= 0 &&
-        free <= total
-      ) {
-        totals.total += total;
-        totals.free += free;
-        totals.measured = true;
-      }
-      return totals;
-    },
-    { total: 0, free: 0, measured: false },
-  );
+  if (windowLabel === "files") {
+    return (
+      <CrashBoundary onRecover={() => void invoke("show_main_window").catch(() => undefined)}>
+        <main className="standalone-files-shell" aria-label="Pulse Arquivos">
+          <header className="standalone-files-bar">
+            <div className="standalone-files-brand">
+              <PulseMark />
+              <strong>Pulse Arquivos</strong>
+              <span className="standalone-files-tag">EXPLORADOR NATIVO</span>
+            </div>
+            <div className="standalone-files-actions">
+              <button
+                type="button"
+                className="standalone-files-btn"
+                onClick={() => void invoke("show_main_window").catch(() => undefined)}
+              >
+                Abrir Pulse
+              </button>
+              <button
+                type="button"
+                className="flyout-theme-toggle"
+                aria-label={`Alternar para tema ${theme === "light" ? "escuro" : "claro"}`}
+                onClick={toggleTheme}
+              >
+                {theme === "light" ? (
+                  <Sun className="theme-toggle-icon" size={18} aria-hidden="true" />
+                ) : (
+                  <Moon className="theme-toggle-icon" size={18} aria-hidden="true" />
+                )}
+              </button>
+            </div>
+          </header>
+          <div className="standalone-files-body">
+            <Suspense fallback={<PulseLoading />}>
+              <FileExplorer />
+            </Suspense>
+          </div>
+        </main>
+      </CrashBoundary>
+    );
+  }
+
+  const module = moduleCopyFor(activeArea, pc);
 
   return (
     <CrashBoundary key={activeArea} onRecover={() => setActiveArea("Visão geral")}>
@@ -3352,6 +4182,22 @@ function App() {
             </ul>
           </nav>
           <div className="sidebar-foot">
+            <button
+              type="button"
+              className={`about-nav ${activeArea === "Recursos Beta" ? "active" : ""}`}
+              aria-current={activeArea === "Recursos Beta" ? "page" : undefined}
+              onClick={() => setActiveArea("Recursos Beta")}
+            >
+              <span aria-hidden="true">β</span>
+              Recursos Beta
+              {(betaFeatures.peripheralBattery || betaFeatures.customDock || betaFeatures.pulseRunner) && (
+                <small className="beta-nav-count">
+                  {Number(betaFeatures.peripheralBattery) +
+                    Number(betaFeatures.customDock) +
+                    Number(betaFeatures.pulseRunner)}
+                </small>
+              )}
+            </button>
             <button
               type="button"
               className={`about-nav ${activeArea === "Informações" ? "active" : ""}`}
@@ -3445,7 +4291,12 @@ function App() {
           <div className={`overview-heading${activeArea === "Armazenamento" ? " storage-overview-heading" : ""}`}>
             <div>
               <p className="eyebrow">
-                {module.eyebrow} / {activeArea === "Informações" ? "INFO" : `0${ALL_NAVIGATION_ITEMS.indexOf(activeArea as NavigationItem) + 1}`}
+                {module.eyebrow} /{" "}
+                {activeArea === "Informações"
+                  ? "INFO"
+                  : activeArea === "Recursos Beta"
+                    ? "BETA"
+                    : `0${ALL_NAVIGATION_ITEMS.indexOf(activeArea as NavigationItem) + 1}`}
               </p>
               <h2>{module.title}</h2>
             </div>
@@ -3593,268 +4444,35 @@ function App() {
             )}
 
             {activeArea === "Desempenho" && (
-              <section className="module-dashboard">
-                <div className="focused-grid">
-                  <section className="panel focused-card">
-                    <p>CPU AGORA</p>
-                    <strong>{metric(overview?.cpuPercent, "%")}</strong>
-                    <DetailedResourceChart
-                      title="USO DA CPU EM TEMPO REAL"
-                      history={cpuHistory}
-                      currentValue={metric(overview?.cpuPercent, "%")}
-                            color="var(--neu-accent)"
-                      ariaLabel="Gráfico detalhado de CPU"
-                      loading={cpuChartLoading}
-                    />
-                    <small>
-                      {cpuSensor
-                        ? `${metric(cpuSensor.celsius)} °C · ${cpuSensor.label}`
-                        : "Carga média de processamento"}
-                    </small>
-                  </section>
-                  <section className="panel focused-card">
-                    <p>MEMÓRIA RAM</p>
-                    <strong>
-                      {metric(overview?.memoryUsedGb, " GB")} /{" "}
-                      {metric(overview?.memoryTotalGb, " GB")}
-                    </strong>
-                    <DetailedResourceChart
-                      title="ALOCAÇÃO DE MEMÓRIA RAM"
-                      history={ramHistory}
-                      currentValue={memoryPercent !== undefined ? `${memoryPercent}%` : "—"}
-                      subValue={
-                        overview
-                          ? `${metric(overview.memoryUsedGb, " GB")} em uso de ${metric(overview.memoryTotalGb, " GB")}`
-                          : undefined
-                      }
-                            color="var(--neu-signal-secondary)"
-                      ariaLabel="Gráfico detalhado de Memória RAM"
-                      loading={ramChartLoading}
-                    />
-                    <small>
-                      {memoryPercent !== undefined
-                        ? `${memoryPercent}% em utilização`
-                        : "Telemetria de memória"}
-                    </small>
-                  </section>
-                  <section className="panel focused-card">
-                    <p>GPU</p>
-                    <strong
-                      className="gpu-name"
-                      title={performance?.gpu?.value ?? undefined}
-                    >
-                      {performance?.gpu?.value || "Indisponível"}
-                    </strong>
-                    {showGpuChart && (
-                      <DetailedResourceChart
-                        title="USO DA GPU EM TEMPO REAL"
-                        history={gpuHistory}
-                        currentValue={metric(gpuPercent, "%")}
-                        color="var(--neu-info)"
-                        ariaLabel="Gráfico detalhado de GPU"
-                        loading={gpuChartLoading}
-                      />
-                    )}
-                    {vramBytes !== undefined && (
-                      <HardwareGaugeBar
-                        label="VRAM DEDICADA"
-                        valueText={metric(vramBytes / (1024 * 1024), " MB")}
-                        percent={null}
-                        statusText="Memória dedicada"
-                        type="vram"
-                      />
-                    )}
-                    <small>
-                      {gpuSensor
-                        ? `${metric(gpuSensor.celsius)} °C · ${gpuSensor.label}`
-                        : (performance?.gpu?.unavailableReason || "Controladora gráfica do sistema")}
-                    </small>
-                    {otherSensors.length > 0 && (
-                      <ul className="thermal-sensor-list" aria-label="Outros sensores térmicos">
-                        {otherSensors.map(sensor => (
-                          <li key={sensor.id} className="thermal-sensor-row">
-                            <span className="thermal-sensor-label" title={sensor.source}>
-                              {sensor.label}
-                            </span>
-                            <strong className="thermal-sensor-value">
-                              {`${metric(sensor.celsius)} °C`}
-                            </strong>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </section>
-                  <section className="panel focused-card network-card">
-                    <p>REDE</p>
-                    <strong className="network-total">
-                      <span className="network-rate network-rate-down">
-                        ↓ {formatByteRate(downloadHistory[downloadHistory.length - 1])}
-                      </span>
-                      <span className="network-rate network-rate-up">
-                        ↑ {formatByteRate(uploadHistory[uploadHistory.length - 1])}
-                      </span>
-                    </strong>
-                    <div className="network-charts">
-                      <div className="network-chart">
-                        <span className="network-chart-label">DOWNLOAD</span>
-                        <SparklineChart
-                          data={downloadHistory}
-                          color="var(--neu-signal-secondary)"
-                          height={32}
-                          ariaLabel="Histórico de download da rede"
-                        />
-                      </div>
-                      <div className="network-chart">
-                        <span className="network-chart-label">UPLOAD</span>
-                        <SparklineChart
-                          data={uploadHistory}
-                          color="var(--neu-accent)"
-                          height={32}
-                          ariaLabel="Histórico de upload da rede"
-                        />
-                      </div>
-                    </div>
-                    <ul className="network-adapter-list">
-                      {networkAdapters.map((adapter, index) => (
-                        <li key={`${adapter.name}-${index}`}>
-                          <span
-                            className={`network-dot ${adapter.status === "Ativo" ? "is-active" : ""}`}
-                            aria-hidden="true"
-                          />
-                          <span
-                            className="network-adapter-name"
-                            title={adapter.description || adapter.name}
-                          >
-                            {adapter.name}
-                          </span>
-                          <span className="network-adapter-rate">
-                            ↓ {formatByteRate(adapter.receivedBps?.value)} · ↑{" "}
-                            {formatByteRate(adapter.sentBps?.value)}
-                          </span>
-                        </li>
-                      ))}
-                      {networkAdapters.length === 0 && (
-                        <li className="network-adapter-empty">
-                          {devices?.adapters?.unavailableReason ||
-                            "Nenhum adaptador de rede reportado"}
-                        </li>
-                      )}
-                    </ul>
-                    <small>
-                      {networkAdapters.length > 0
-                        ? `${activeAdapterCount} de ${networkAdapters.length} adaptadores ativos`
-                        : "Adaptadores de rede do sistema"}
-                    </small>
-                  </section>
-                  <section
-                    className="panel focused-card storage-device-card span-2"
-                  >
-                    <p>ARMAZENAMENTO FÍSICO</p>
-                    <strong>
-                      {capacity.measured
-                        ? `${formatCapacity(capacity.total - capacity.free)} / ${formatCapacity(capacity.total)}`
-                        : "Indisponível"}
-                    </strong>
-                    <div className="storage-device-body">
-                      <div className="storage-column">
-                        <span className="storage-column-label">VOLUMES</span>
-                        <ul className="storage-volume-list">
-                          {volumes.map(volume => {
-                            const hasCapacity =
-                              typeof volume.totalBytes === "number" &&
-                              typeof volume.freeBytes === "number" &&
-                              Number.isFinite(volume.totalBytes) &&
-                              Number.isFinite(volume.freeBytes) &&
-                              volume.totalBytes > 0 &&
-                              volume.freeBytes >= 0 &&
-                              volume.freeBytes <= volume.totalBytes;
-                            const usedGb = hasCapacity
-                              ? (volume.totalBytes! - volume.freeBytes!) / 1024 ** 3
-                              : null;
-                            const totalGb = hasCapacity ? volume.totalBytes! / 1024 ** 3 : null;
-                            const percent = hasCapacity
-                              ? Math.round(
-                                  ((volume.totalBytes! - volume.freeBytes!) / volume.totalBytes!) *
-                                    100,
-                                )
-                              : null;
-                            const health = getDiskCapacityHealth(percent);
-                            return (
-                              <li key={volume.path} className="storage-volume">
-                                <div className="storage-volume-head">
-                                  <span className="storage-volume-name">
-                                    {volume.label || volume.path}
-                                  </span>
-                                  <span className="storage-volume-size">
-                                    {hasCapacity
-                                      ? `${formatCapacity(volume.freeBytes)} livres`
-                                      : "Capacidade indisponível"}
-                                  </span>
-                                </div>
-                                <MiniCapacityBar
-                                  usedGb={usedGb}
-                                  totalGb={totalGb}
-                                  percent={percent}
-                                  color={diskCapacityColor(health)}
-                                  ariaLabel={`Ocupação de ${volume.label || volume.path}`}
-                                />
-                              </li>
-                            );
-                          })}
-                          {volumes.length === 0 && (
-                            <li className="storage-empty">Nenhum volume de disco detectado</li>
-                          )}
-                        </ul>
-                      </div>
-                      <div className="storage-column">
-                        <span className="storage-column-label">DISCOS FÍSICOS</span>
-                        <ul className="storage-disk-list">
-                          {physicalDisks.map(disk => (
-                            <li key={disk.index}>
-                              <span className="storage-disk-model" title={disk.model}>
-                                {disk.model}
-                              </span>
-                              <span className="storage-disk-size">
-                                {formatCapacity(disk.sizeBytes?.value)}
-                              </span>
-                              <span className="storage-disk-tags">
-                                {disk.mediaType && disk.mediaType !== "Não especificado" && (
-                                  <span className="storage-tag">{disk.mediaType}</span>
-                                )}
-                                {disk.busType && disk.busType !== "Não especificado" && (
-                                  <span className="storage-tag">{disk.busType}</span>
-                                )}
-                                {typeof disk.temperatureCelsius?.value === "number" &&
-                                  Number.isFinite(disk.temperatureCelsius.value) && (
-                                    <span className="storage-tag">
-                                      {metric(disk.temperatureCelsius.value, " °C")}
-                                    </span>
-                                  )}
-                                <span
-                                  className={`storage-tag storage-tag-${diskHealthTagClass(disk.health?.value)}`}
-                                >
-                                  {disk.health?.value || "Saúde indisponível"}
-                                </span>
-                              </span>
-                            </li>
-                          ))}
-                          {physicalDisks.length === 0 && (
-                            <li className="storage-empty">
-                              {devices?.disks?.unavailableReason ||
-                                "Nenhum disco físico reportado"}
-                            </li>
-                          )}
-                        </ul>
-                      </div>
-                    </div>
-                    <small>
-                      {physicalDisks.length > 0
-                        ? `${volumes.length} volume(s) · ${physicalDisks.length} disco(s) físico(s)`
-                        : "Volumes e discos físicos do sistema"}
-                    </small>
-                  </section>
-                </div>
-              </section>
+              <PerformanceModule
+                overview={overview ?? null}
+                performance={performance ?? null}
+                devices={devices ?? null}
+                hardwareTelemetry={hardwareTelemetry}
+                unifiedMetrics={unifiedMetrics}
+                metricHistories={metricHistories}
+                preferences={telemetryPrefs}
+                onUpdatePreferences={updateTelemetryPrefs}
+                selectedGroup={perfSelectedGroup}
+                onSelectGroup={setPerfSelectedGroup}
+                cpuHistory={cpuHistory}
+                ramHistory={ramHistory}
+                gpuHistory={gpuHistory}
+                downloadHistory={downloadHistory}
+                uploadHistory={uploadHistory}
+                cpuChartLoading={cpuChartLoading}
+                ramChartLoading={ramChartLoading}
+                gpuChartLoading={gpuChartLoading}
+                cpuSensor={cpuSensor}
+                gpuSensor={gpuSensor}
+                otherSensors={otherSensors}
+                metricFmt={metric}
+                formatByteRate={formatByteRate}
+                formatCapacity={formatCapacity}
+                diskCapacityColor={diskCapacityColor}
+                getDiskCapacityHealth={getDiskCapacityHealth}
+                diskHealthTagClass={diskHealthTagClass}
+              />
             )}
 
             {activeArea === "Armazenamento" && (
@@ -4141,6 +4759,12 @@ function App() {
               </section>
             )}
 
+            {activeArea === "Segurança" && (
+              <Suspense fallback={<PulseLoading compact />}>
+                <SecurityHub onNavigate={setActiveArea} />
+              </Suspense>
+            )}
+
             {activeArea === "Rede e segurança" && (
               <Suspense fallback={<PulseLoading compact />}>
                 <NetworkSecurity />
@@ -4153,9 +4777,21 @@ function App() {
               </Suspense>
             )}
 
+            {activeArea === "Arquivos" && (
+              <Suspense fallback={<PulseLoading compact />}>
+                <FileExplorer />
+              </Suspense>
+            )}
+
             {activeArea === "Cotas de IA" && (
               <Suspense fallback={<PulseLoading compact />}>
                 <SubscriptionUsage />
+              </Suspense>
+            )}
+
+            {activeArea === "Recursos Beta" && (
+              <Suspense fallback={<PulseLoading compact />}>
+                <BetaHub config={betaFeatures} onConfigChange={setBetaFeatures} />
               </Suspense>
             )}
 

@@ -646,7 +646,9 @@ export function DiskAnalyzer({
         >
           <div className="tree-cell-name">
             <span className="file-rank-badge font-mono">#{rank + 1}</span>
-            <FileIcon />
+            <span className="tree-icon" aria-hidden="true">
+              <FileIcon />
+            </span>
             <span className="tree-name-text" title={file.path}>
               {file.name}
             </span>
