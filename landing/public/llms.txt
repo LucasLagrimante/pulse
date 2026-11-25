@@ -2,10 +2,10 @@
 
 > Central nativa de observabilidade, diagnóstico e controle local para Windows 11 e Linux (com port experimental para macOS em desenvolvimento). Reúne monitoramento de CPU, memória, disco e GPU, atividade por grupo de processos, análise de armazenamento TreeSize/Treemap, limpeza segura, desinstalação com resíduos, inventário de inicialização, serviços e atualizações de pacotes, rede e postura de segurança, cotas de assinaturas de IA com histórico de 30 dias em SQLite e flyout na bandeja com mixer de volume por aplicativo. Todo o processamento é 100% local: sem conta, sem telemetria e sem nuvem.
 
-- Versão atual: 1.4.0
+- Versão atual: 1.4.1
 - Instalador Windows 11 x64: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe (instalador NSIS de 4,2 MB)
-- SHA-256 (Windows): `8612e03726c5027b6426386e0797bb044a9158f3289208cacddc9b4c19f3484e`
-- **Linux x86_64**: [.deb (7,8 MB)](https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.deb) · SHA-256 `f92000d86ebcd1a51c5f6ce8f72cf5f2bd60796b7ef161437cdeb9d6c4c355a2` | [AppImage (82,0 MB)](https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.AppImage) · SHA-256 `4372fa2edceb0729022ec6e1c7ba3afb7c83e23d2219cae92ad782415d6bc692`
+- SHA-256 (Windows): `9542027540aa6b5e6e27bca8d3c715f9e87a202baf232f422083e2a2967a9c76`
+- **Linux x86_64**: [.deb (7,8 MB)](https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.deb) · SHA-256 `132abbc4d7b455fb1080fcf93757f8aab7b2a31426ce1d1ab8bda4ca6ab9f262` | [AppImage (82,0 MB)](https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.AppImage) · SHA-256 `33b83e26c73b93075349b557fa14686753bcfbb4eb5ea9f1d489defda5839a5a`
 - macOS (em breve · experimental): base em preparação para macOS 11+ (Apple Silicon `.dmg`), ainda não validada em hardware e sem assinatura/notarização
 - Assinatura de código: os instaladores ainda não são assinados, então o SmartScreen no Windows pode avisar ("Mais informações" → "Executar assim mesmo"); confira o SHA-256 publicado. Política: https://github.com/LucasLagrimante/pulse#política-de-assinatura-de-código
 
@@ -62,7 +62,7 @@ Quando NÃO usar:
 ## Requisitos
 
 - **Windows 11 x64**: suporte principal (Windows-first), WebView2 Runtime já incluído nas versões atuais do Windows 11.
-- **Linux x86_64**: [.deb (7,8 MB)](https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.deb) · SHA-256 `f92000d86ebcd1a51c5f6ce8f72cf5f2bd60796b7ef161437cdeb9d6c4c355a2` | [AppImage (82,0 MB)](https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.AppImage) · SHA-256 `4372fa2edceb0729022ec6e1c7ba3afb7c83e23d2219cae92ad782415d6bc692`
+- **Linux x86_64**: [.deb (7,8 MB)](https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.deb) · SHA-256 `132abbc4d7b455fb1080fcf93757f8aab7b2a31426ce1d1ab8bda4ca6ab9f262` | [AppImage (82,0 MB)](https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.AppImage) · SHA-256 `33b83e26c73b93075349b557fa14686753bcfbb4eb5ea9f1d489defda5839a5a`
 - **macOS (em breve · experimental)**: macOS 11+ (Apple Silicon), ainda não validado em hardware.
 - Pegada leve (< 80 MB de Working Set em RAM).
 
