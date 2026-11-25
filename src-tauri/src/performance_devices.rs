@@ -38,6 +38,10 @@ pub struct PhysicalDiskInfo {
     pub size_bytes: Capability<u64>,
     pub health: Capability<String>,
     pub temperature_celsius: Capability<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wear_percent: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power_on_hours: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -316,9 +320,18 @@ mod windows_impl {
         let script = r#"
 $ErrorActionPreference = 'SilentlyContinue'
 $temperatures = @{}
+$wears = @{}
+$hours = @{}
 foreach ($counter in @(Get-StorageReliabilityCounter)) {
+  $id = [int]$counter.DeviceId
   if ($null -ne $counter.Temperature -and [int]$counter.Temperature -ge 0) {
-    $temperatures[[int]$counter.DeviceId] = [double]$counter.Temperature
+    $temperatures[$id] = [double]$counter.Temperature
+  }
+  if ($null -ne $counter.Wear -and [int]$counter.Wear -ge 0 -and [int]$counter.Wear -le 100) {
+    $wears[$id] = [int]$counter.Wear
+  }
+  if ($null -ne $counter.PowerOnHours -and [int64]$counter.PowerOnHours -gt 0) {
+    $hours[$id] = [uint64]$counter.PowerOnHours
   }
 }
 $disks = @()
@@ -332,6 +345,8 @@ foreach ($disk in @(Get-PhysicalDisk)) {
     sizeBytes = [uint64]$disk.Size
     health = [string]$disk.HealthStatus
     temperatureCelsius = $temperatures[$index]
+    wearPercent = $wears[$index]
+    powerOnHours = $hours[$index]
   }
 }
 ConvertTo-Json -InputObject @($disks) -Compress
@@ -389,6 +404,15 @@ ConvertTo-Json -InputObject @($disks) -Compress
                 temperature_celsius: temperature_capability(
                     item.get("temperatureCelsius").and_then(|v| v.as_f64()),
                 ),
+                wear_percent: item
+                    .get("wearPercent")
+                    .and_then(|v| v.as_u64())
+                    .filter(|v| *v <= 100)
+                    .map(|v| v as u32),
+                power_on_hours: item
+                    .get("powerOnHours")
+                    .and_then(|v| v.as_u64())
+                    .filter(|v| *v > 0),
             })
             .collect();
 

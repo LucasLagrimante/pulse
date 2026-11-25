@@ -295,6 +295,8 @@ pub fn collect_physical_disks() -> Capability<Vec<PhysicalDiskInfo>> {
                     "Saúde SMART exige privilégio de administrador (smartctl)",
                 ),
                 temperature_celsius: temperature_capability(disk_temperature(&device_dir)),
+                wear_percent: None,
+                power_on_hours: None,
             }
         })
         .collect();
