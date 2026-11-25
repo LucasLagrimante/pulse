@@ -1,0 +1,651 @@
+/* ==========================================================================
+   Pulse Runner — Command Palette Neumórfico Mineral (Porcelain / Obsidian)
+   100% tokens semânticos de identity.css — zero cores hardcoded.
+   Layout 100% flexbox fluido sem alturas estáticas em pixels.
+   ========================================================================== */
+
+.launcher-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--neu-bg);
+  color: var(--neu-text-primary);
+  border: var(--neu-border);
+  border-radius: 20px;
+  box-shadow: var(--neu-shadow-raised-lg);
+  user-select: none;
+  animation: launcher-pop-in 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes launcher-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Cabeçalho com barra de busca esculpida e chips de categoria */
+.launcher-header {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  background: var(--neu-surface);
+  border-bottom: var(--neu-border-subtle);
+}
+
+.launcher-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: var(--neu-surface-sunken);
+  border: var(--neu-border-inset);
+  box-shadow: var(--neu-shadow-inset);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.launcher-search-bar:focus-within {
+  box-shadow: var(--neu-shadow-inset), var(--neu-accent-glow);
+}
+
+.launcher-brand-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  color: var(--neu-accent);
+}
+
+.launcher-brand-slot .pulse-mark {
+  width: 26px;
+  height: 26px;
+}
+
+.launcher-search-glyph {
+  color: var(--neu-accent);
+  flex: none;
+}
+
+.launcher-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--neu-text-title);
+  font-size: 1.08rem;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+  padding: 2px 0;
+  caret-color: var(--neu-accent);
+}
+
+.launcher-input:focus-visible {
+  outline: none;
+}
+
+.launcher-input::placeholder {
+  color: var(--neu-text-muted);
+  font-weight: 400;
+}
+
+.launcher-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: var(--neu-border-subtle);
+  border-radius: 999px;
+  background: var(--neu-surface);
+  color: var(--neu-text-muted);
+  box-shadow: var(--neu-shadow-raised-xs);
+  cursor: pointer;
+  flex: none;
+  transition: color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.launcher-clear-btn:hover {
+  color: var(--neu-text-title);
+  transform: scale(1.05);
+}
+
+.launcher-clear-btn:active {
+  box-shadow: var(--neu-shadow-inset-xs);
+  transform: scale(0.96);
+}
+
+.launcher-shortcut-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+
+.launcher-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 7px;
+  border: var(--neu-border-subtle);
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-raised-xs);
+  color: var(--neu-text-muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+}
+
+.launcher-kbd-accent {
+  color: var(--neu-accent);
+  background: var(--neu-accent-soft);
+  border: var(--neu-border);
+}
+
+.launcher-kbd-inline {
+  min-width: 18px;
+  padding: 1px 5px;
+  font-size: 0.62rem;
+}
+
+/* Chips de filtro por categoria */
+.launcher-chips {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.launcher-chip {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: var(--neu-border-subtle);
+  background: var(--neu-surface);
+  color: var(--neu-text-secondary);
+  box-shadow: var(--neu-shadow-raised-xs);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.launcher-chip:hover {
+  color: var(--neu-text-title);
+  background: var(--neu-surface-hover);
+  transform: translateY(-1px);
+}
+
+.launcher-chip.is-active {
+  background: var(--neu-accent-soft);
+  color: var(--neu-accent);
+  box-shadow: var(--neu-shadow-inset-xs);
+  border: var(--neu-border);
+  transform: none;
+}
+
+.launcher-tab-hint {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Alerta de erro operacional */
+.launcher-alert {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 16px 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--neu-surface-sunken);
+  border: var(--neu-border-subtle);
+  color: var(--neu-danger);
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+
+.launcher-alert-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--neu-danger);
+  cursor: pointer;
+}
+
+/* Corpo rolável fluido */
+.launcher-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  scrollbar-color: var(--neu-scroll-thumb) var(--neu-scroll-track);
+  scrollbar-width: thin;
+}
+
+.launcher-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.launcher-section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  color: var(--neu-text-muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Cartão destacado da Calculadora Instantânea */
+.launcher-calc-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: var(--neu-border);
+  border-left: 3px solid var(--neu-accent);
+  background: var(--neu-surface-card);
+  box-shadow: var(--neu-shadow-raised-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+
+.launcher-calc-card:hover,
+.launcher-calc-card.is-selected {
+  background: var(--neu-surface-hover);
+  box-shadow: var(--neu-shadow-raised), var(--neu-accent-glow);
+  transform: translateY(-1px);
+}
+
+.launcher-calc-expr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--neu-text-secondary);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+.launcher-calc-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--neu-accent-soft);
+  color: var(--neu-accent);
+  font-weight: 700;
+}
+
+.launcher-calc-value-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.launcher-calc-result {
+  color: var(--neu-text-title);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: clamp(1.45rem, 2.8vw, 1.95rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher-calc-copy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: var(--neu-accent-soft);
+  color: var(--neu-accent);
+  border: var(--neu-border-subtle);
+  font-size: 0.72rem;
+  font-weight: 700;
+  flex: none;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.launcher-calc-copy-pill.is-copied {
+  background: var(--neu-surface-sunken);
+  color: var(--neu-success);
+  box-shadow: var(--neu-shadow-inset-xs);
+}
+
+/* Lista de resultados */
+.launcher-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.launcher-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--neu-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+}
+
+.launcher-row:hover {
+  background: var(--neu-surface-hover);
+}
+
+.launcher-row.is-selected {
+  background: var(--neu-surface-card);
+  border: var(--neu-border);
+  box-shadow: var(--neu-shadow-raised-sm);
+}
+
+.launcher-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  flex: none;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-inset-xs);
+  color: var(--neu-signal-secondary);
+}
+
+.launcher-row.is-selected .launcher-row-icon {
+  box-shadow: var(--neu-shadow-raised-xs);
+}
+
+.launcher-row-icon.tone-pulse {
+  color: var(--neu-accent);
+  background: var(--neu-accent-soft);
+}
+
+.launcher-row-icon.tone-app {
+  color: var(--neu-info);
+}
+
+.launcher-row-icon.tone-file {
+  color: var(--neu-signal-secondary);
+}
+
+.launcher-row-icon.tone-system {
+  color: var(--neu-text-title);
+}
+
+.launcher-row-icon.tone-danger {
+  color: var(--neu-danger);
+}
+
+.launcher-row-icon.tone-calc {
+  color: var(--neu-accent);
+  background: var(--neu-accent-soft);
+}
+
+.launcher-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.launcher-row-title {
+  color: var(--neu-text-title);
+  font-size: 0.88rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher-row-subtitle {
+  color: var(--neu-text-muted);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher-row-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.launcher-badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--neu-surface-sunken);
+  border: var(--neu-border-subtle);
+  color: var(--neu-text-secondary);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 600;
+}
+
+.launcher-enter-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--neu-accent-soft);
+  color: var(--neu-accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+/* Dica de calculadora no estado inicial */
+.launcher-calc-tip {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px 13px;
+  border-radius: 14px;
+  background: var(--neu-surface-sunken);
+  border: var(--neu-border-subtle);
+  box-shadow: var(--neu-shadow-inset-xs);
+}
+
+.launcher-calc-tip-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--neu-text-secondary);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.launcher-calc-tip-head svg {
+  color: var(--neu-accent);
+}
+
+.launcher-calc-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.launcher-example-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: var(--neu-border-subtle);
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-raised-xs);
+  color: var(--neu-text-primary);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.launcher-example-pill:hover {
+  color: var(--neu-accent);
+  transform: translateY(-1px);
+  box-shadow: var(--neu-shadow-raised-sm);
+}
+
+/* Estado vazio */
+.launcher-empty {
+  flex: 1;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 20px;
+  color: var(--neu-text-muted);
+}
+
+.launcher-empty strong {
+  color: var(--neu-text-title);
+  font-size: 0.92rem;
+}
+
+.launcher-empty p {
+  margin: 0;
+  max-width: 380px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--neu-text-secondary);
+}
+
+.launcher-empty code {
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--neu-surface-sunken);
+  color: var(--neu-accent);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.74rem;
+}
+
+/* Rodapé de atalhos e estado do índice */
+.launcher-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 16px;
+  background: var(--neu-surface);
+  border-top: var(--neu-border-subtle);
+  font-size: 0.68rem;
+  color: var(--neu-text-muted);
+}
+
+.launcher-footer-hints {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.launcher-footer-hints > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.launcher-footer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.launcher-index-meta {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.65rem;
+  color: var(--neu-text-muted);
+}
+
+.launcher-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 8px;
+  border: var(--neu-border-subtle);
+  background: var(--neu-surface);
+  color: var(--neu-text-secondary);
+  box-shadow: var(--neu-shadow-raised-xs);
+  cursor: pointer;
+  transition: color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.launcher-refresh-btn:hover {
+  color: var(--neu-accent);
+}
+
+.launcher-refresh-btn.is-spinning svg {
+  animation: launcher-spin 0.8s linear infinite;
+}
+
+@keyframes launcher-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
