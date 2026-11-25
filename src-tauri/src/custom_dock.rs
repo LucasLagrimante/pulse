@@ -5,7 +5,9 @@
 use crate::beta_features::BetaFeaturesConfig;
 use serde::Serialize;
 use std::sync::{Mutex, OnceLock};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
+#[cfg(windows)]
+use tauri::Manager;
 
 #[cfg(windows)]
 pub mod appbar;

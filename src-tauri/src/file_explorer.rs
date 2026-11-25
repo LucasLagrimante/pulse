@@ -1678,7 +1678,7 @@ pub fn trash_entry_sync(raw_path: &str) -> Result<(), String> {
         let abs = if target.is_absolute() {
             target.clone()
         } else {
-            env::current_dir()
+            std::env::current_dir()
                 .map(|cwd| cwd.join(&target))
                 .unwrap_or_else(|_| target.clone())
         };
