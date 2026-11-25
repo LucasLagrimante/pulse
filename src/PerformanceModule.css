@@ -1,0 +1,1100 @@
+/* ==========================================================================
+   Módulo Desempenho — Gráficos minerais suaves, cards clicáveis/reordenáveis,
+   seletor de métricas e diagnóstico de sensores/ventoinhas.
+   100% tokens semânticos do Design System Mineral (--neu-*), sem cores fixas.
+   ========================================================================== */
+
+/* ---------- Gráficos suaves com superfície recuada (inset well) ---------- */
+
+.sparkline-container {
+  display: block;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+  contain: content;
+  border-radius: 12px;
+  padding: 4px 6px;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-inset-xs);
+  border: var(--neu-border-subtle);
+  will-change: transform;
+}
+
+.sparkline-container.is-interactive {
+  cursor: crosshair;
+}
+
+.sparkline-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  shape-rendering: geometricPrecision;
+}
+
+.sparkline-area,
+.sparkline-line,
+.sparkline-point,
+.sparkline-single-ref,
+.sparkline-current-indicator,
+.sparkline-crosshair-group {
+  pointer-events: none;
+}
+
+.sparkline-grid line {
+  stroke: var(--neu-divider);
+  stroke-width: 1;
+}
+
+.chart-unavailable {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.62rem;
+  color: var(--neu-text-muted);
+  pointer-events: none;
+}
+
+.detailed-chart-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+  background: var(--neu-surface) !important;
+  border-radius: 16px !important;
+  padding: 10px 12px !important;
+  box-shadow: var(--neu-shadow-inset-xs) !important;
+  border: var(--neu-border-subtle) !important;
+  margin-bottom: 4px;
+}
+
+.detailed-chart-y-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.56rem;
+  color: var(--neu-text-muted);
+  padding-right: 8px;
+  border-right: 0;
+  text-align: right;
+  min-width: 44px;
+  user-select: none;
+}
+
+.detailed-chart-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.stat-badge {
+  font-variant-numeric: tabular-nums;
+}
+
+.detailed-chart-plot {
+  position: relative;
+  flex: 1;
+  min-height: 68px;
+  width: 100%;
+  display: flex;
+  align-items: stretch;
+  border-radius: 12px;
+  padding: 4px 6px;
+  background: var(--neu-surface-sunken);
+  box-shadow: var(--neu-shadow-inset-sm);
+  border: var(--neu-border-subtle);
+  overflow: hidden;
+}
+
+.detailed-chart-plot .sparkline-container {
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+}
+
+.detailed-chart-tooltip {
+  position: absolute;
+  top: 6px;
+  z-index: 3;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 9px;
+  border-radius: 10px;
+  background: var(--neu-surface);
+  border: var(--neu-border);
+  box-shadow: var(--neu-shadow-raised-xs);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.64rem;
+}
+
+.detailed-chart-tooltip.align-right {
+  right: 8px;
+}
+
+.detailed-chart-tooltip.align-left {
+  left: 8px;
+}
+
+.detailed-chart-tooltip strong {
+  font-weight: 700;
+}
+
+.detailed-chart-tooltip span {
+  color: var(--neu-text-muted);
+  font-size: 0.58rem;
+}
+
+.detailed-chart-timeline {
+  border-top: 1px dashed var(--neu-divider);
+  padding-top: 4px;
+}
+
+/* ---------- Toolbar e Cards Clicáveis/Reordenáveis ---------- */
+
+.perf-overview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.perf-overview-hint {
+  font-size: 0.72rem;
+  color: var(--neu-text-muted);
+}
+
+.perf-sensors-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: var(--neu-border);
+  background: var(--neu-surface);
+  color: var(--neu-text-primary);
+  box-shadow: var(--neu-shadow-raised-xs);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+
+.perf-sensors-shortcut:hover {
+  color: var(--neu-accent);
+  border-color: color-mix(in srgb, var(--neu-accent) 45%, var(--neu-divider));
+  transform: translateY(-1px);
+  box-shadow: var(--neu-shadow-raised-sm);
+}
+
+[data-theme] .focused-card.is-interactive {
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease, opacity 0.16s ease;
+}
+
+[data-theme] .focused-card.is-interactive:hover {
+  background: var(--neu-surface-hover) !important;
+  border-color: color-mix(in srgb, var(--neu-accent) 45%, var(--neu-divider)) !important;
+  box-shadow: var(--neu-shadow-raised-lg) !important;
+  transform: translateY(-2px);
+}
+
+[data-theme] .focused-card.is-interactive:focus-visible {
+  outline: 2px solid var(--neu-accent);
+  outline-offset: 2px;
+}
+
+[data-theme] .focused-card.is-interactive.is-dragging {
+  opacity: 0.58;
+  transform: scale(0.985);
+}
+
+[data-theme] .focused-card.is-interactive.is-drag-over {
+  border-color: var(--neu-accent) !important;
+  box-shadow: var(--neu-shadow-raised-lg), var(--neu-accent-glow) !important;
+}
+
+.perf-card-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.perf-card-title-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.perf-card-drag-grip {
+  color: var(--neu-text-caption);
+  flex-shrink: 0;
+  cursor: grab;
+  transition: color 0.15s ease;
+}
+
+.focused-card.is-interactive:hover .perf-card-drag-grip {
+  color: var(--neu-text-muted);
+}
+
+.perf-card-title-cluster > p {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--neu-text-muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+.perf-card-head-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.perf-card-move-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 8px;
+  border: var(--neu-border-subtle);
+  background: var(--neu-surface-sunken);
+  color: var(--neu-text-muted);
+  cursor: pointer;
+  opacity: 0.72;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.focused-card.is-interactive:hover .perf-card-move-btn,
+.perf-card-move-btn:focus-visible {
+  opacity: 1;
+}
+
+.perf-card-move-btn:hover:not(:disabled) {
+  background: var(--neu-surface);
+  color: var(--neu-accent);
+  border-color: color-mix(in srgb, var(--neu-accent) 45%, var(--neu-divider));
+}
+
+.perf-card-move-btn:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+}
+
+.perf-card-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  color: var(--neu-text-muted);
+  transition: transform 0.18s ease, color 0.18s ease, background 0.18s ease;
+}
+
+.focused-card.is-interactive:hover .perf-card-chevron {
+  color: var(--neu-accent);
+  background: var(--neu-accent-soft);
+  transform: translateX(2px);
+}
+
+.perf-card-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.perf-metric-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: var(--neu-surface-sunken);
+  border: var(--neu-border-subtle);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.62rem;
+}
+
+.perf-metric-pill-label {
+  color: var(--neu-text-muted);
+}
+
+.perf-metric-pill strong {
+  color: var(--neu-text-title);
+  font-weight: 700;
+}
+
+/* ---------- Vista Expandida (com botão Voltar) ---------- */
+
+.perf-expanded-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.perf-expanded-header {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px !important;
+}
+
+.perf-expanded-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.perf-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 14px;
+  border: var(--neu-border);
+  background: var(--neu-surface);
+  color: var(--neu-text-title);
+  box-shadow: var(--neu-shadow-raised-xs);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+}
+
+.perf-back-btn:hover {
+  color: var(--neu-accent);
+  box-shadow: var(--neu-shadow-raised-sm);
+  transform: translateY(-1px);
+}
+
+.perf-back-btn:active {
+  box-shadow: var(--neu-shadow-inset-xs);
+  transform: translateY(0);
+}
+
+.perf-expanded-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.perf-expanded-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--neu-accent);
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+.perf-expanded-title-group h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--neu-text-title);
+}
+
+.perf-expanded-title-group p {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--neu-text-muted);
+}
+
+.perf-expanded-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.perf-tray-counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: var(--neu-surface-sunken);
+  border: var(--neu-border-subtle);
+  color: var(--neu-text-secondary);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.perf-picker-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 12px;
+  border: var(--neu-border);
+  background: var(--neu-surface);
+  color: var(--neu-text-title);
+  box-shadow: var(--neu-shadow-raised-xs);
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.perf-picker-toggle.is-active {
+  color: var(--neu-accent);
+  box-shadow: var(--neu-shadow-inset-xs);
+}
+
+/* Abas rápidas de subsistema */
+.perf-group-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.perf-group-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  border: var(--neu-border-subtle);
+  background: var(--neu-surface);
+  color: var(--neu-text-secondary);
+  box-shadow: var(--neu-shadow-raised-xs);
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.perf-group-tab:hover {
+  color: var(--neu-text-title);
+}
+
+.perf-group-tab.is-active {
+  color: var(--neu-accent);
+  box-shadow: var(--neu-shadow-inset-xs);
+}
+
+/* Seletor de métricas */
+.perf-metric-picker {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px !important;
+}
+
+.perf-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.perf-picker-head strong {
+  display: block;
+  font-size: 0.84rem;
+  color: var(--neu-text-title);
+}
+
+.perf-picker-head small {
+  color: var(--neu-text-muted);
+  font-size: 0.72rem;
+}
+
+.perf-picker-limit-note {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--neu-warning);
+}
+
+.perf-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 8px;
+}
+
+.perf-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--neu-surface-sunken);
+  border: var(--neu-border-subtle);
+}
+
+.perf-picker-item.is-selected {
+  background: var(--neu-surface);
+  box-shadow: var(--neu-shadow-raised-xs);
+}
+
+.perf-picker-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.perf-picker-item-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--neu-text-title);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.perf-picker-item-meta {
+  font-size: 0.64rem;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--neu-text-muted);
+}
+
+.perf-picker-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.perf-toggle-chip,
+.perf-pin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: var(--neu-border-subtle);
+  background: var(--neu-surface);
+  color: var(--neu-text-secondary);
+  font-size: 0.65rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.perf-toggle-chip.is-on {
+  color: var(--neu-success);
+  box-shadow: var(--neu-shadow-inset-xs);
+}
+
+.perf-pin-chip.is-pinned {
+  color: var(--neu-accent);
+  box-shadow: var(--neu-shadow-inset-xs);
+}
+
+.perf-toggle-chip:disabled,
+.perf-pin-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Especificações */
+.perf-specs-strip {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  padding: 12px 16px !important;
+}
+
+.perf-spec-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.perf-spec-cell span {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  color: var(--neu-text-muted);
+}
+
+.perf-spec-cell strong {
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--neu-text-title);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Grade de gráficos expandidos */
+.perf-expanded-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 12px;
+}
+
+.perf-expanded-chart-card {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px !important;
+}
+
+.perf-expanded-chart-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.perf-expanded-chart-source {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.62rem;
+  color: var(--neu-text-muted);
+  text-transform: uppercase;
+}
+
+/* Núcleos da CPU */
+.perf-cores-panel,
+.perf-detail-table-panel,
+.perf-sensors-panel {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px !important;
+}
+
+.perf-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.perf-section-head h4 {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--neu-text-title);
+}
+
+.perf-section-head small {
+  color: var(--neu-text-muted);
+  font-size: 0.72rem;
+}
+
+.perf-cores-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 8px;
+}
+
+.perf-core-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--neu-surface-sunken);
+  border: var(--neu-border-subtle);
+}
+
+.perf-core-head {
+  display: flex;
+  justify-content: space-between;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.68rem;
+}
+
+.perf-core-head span {
+  color: var(--neu-text-muted);
+}
+
+.perf-core-head strong {
+  color: var(--neu-text-title);
+}
+
+/* Lista detalhada (Rede) */
+.perf-detail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.perf-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--neu-surface-sunken);
+  border: var(--neu-border-subtle);
+}
+
+.perf-detail-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.perf-detail-main strong {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--neu-text-title);
+}
+
+.perf-detail-main small {
+  color: var(--neu-text-muted);
+  font-size: 0.7rem;
+}
+
+.perf-detail-values {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.perf-detail-rate {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--neu-text-title);
+}
+
+/* Sensores estilo HWiNFO + Diagnóstico de Ventoinhas */
+.perf-sensor-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.perf-filter-pill {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: var(--neu-border-subtle);
+  background: var(--neu-surface-sunken);
+  color: var(--neu-text-secondary);
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.perf-filter-pill.is-active {
+  background: var(--neu-surface);
+  color: var(--neu-accent);
+  box-shadow: var(--neu-shadow-raised-xs);
+}
+
+.perf-fan-empty-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--neu-surface-sunken);
+  border: 1px solid color-mix(in srgb, var(--neu-info) 28%, var(--neu-divider));
+  box-shadow: var(--neu-shadow-inset-xs);
+}
+
+.perf-fan-empty-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.perf-fan-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: var(--neu-surface);
+  border: var(--neu-border);
+  box-shadow: var(--neu-shadow-raised-xs);
+  color: var(--neu-info);
+  flex-shrink: 0;
+}
+
+.perf-fan-empty-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.perf-fan-empty-title strong {
+  font-size: 0.86rem;
+  color: var(--neu-text-title);
+}
+
+.perf-fan-empty-title small {
+  font-size: 0.74rem;
+  color: var(--neu-text-muted);
+}
+
+.perf-fan-mode-badge {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--neu-surface);
+  border: var(--neu-border-subtle);
+  color: var(--neu-info);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.perf-fan-empty-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.perf-fan-checked,
+.perf-fan-howto {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--neu-surface);
+  border: var(--neu-border-subtle);
+  font-size: 0.74rem;
+  color: var(--neu-text-secondary);
+}
+
+.perf-fan-checked > span,
+.perf-fan-howto strong {
+  color: var(--neu-text-title);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.perf-fan-checked ul {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.perf-fan-checked code {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.68rem;
+  color: var(--neu-text-primary);
+}
+
+.perf-fan-howto p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.perf-sensors-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.perf-sensor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--neu-surface-sunken);
+  border: var(--neu-border-subtle);
+}
+
+.perf-sensor-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.perf-sensor-name {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--neu-text-title);
+}
+
+.perf-sensor-source {
+  font-size: 0.62rem;
+  color: var(--neu-text-muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+.perf-sensor-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.perf-sensor-right strong {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  color: var(--neu-text-title);
+}
+
+.perf-empty-hint {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--neu-text-muted);
+}
+
+/* ---------- Personalização inline do Tray Flyout ---------- */
+
+.flyout-metrics-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.flyout-metrics-header span {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--neu-text-muted);
+}
+
+.flyout-customize-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: var(--neu-border-subtle);
+  background: var(--neu-surface);
+  color: var(--neu-text-secondary);
+  font-size: 0.58rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.flyout-customize-btn:hover,
+.flyout-customize-btn.is-active {
+  color: var(--neu-accent);
+  box-shadow: var(--neu-shadow-inset-xs);
+}
+
+.flyout-customize-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--neu-surface-sunken);
+  border: var(--neu-border-subtle);
+  margin-bottom: 4px;
+}
+
+.flyout-customize-slots {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.flyout-slot-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.flyout-slot-field span {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.52rem;
+  color: var(--neu-text-muted);
+}
+
+.flyout-slot-field select {
+  width: 100%;
+  font-size: 0.62rem;
+  padding: 3px 5px;
+  border-radius: 8px;
+  height: 24px;
+  background: var(--neu-surface);
+  color: var(--neu-text-primary);
+  border: var(--neu-border-subtle);
+}
+
+.flyout-customize-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.flyout-customize-footer small {
+  font-size: 0.56rem;
+  color: var(--neu-text-muted);
+}
+
+.flyout-reset-btn {
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: var(--neu-border-subtle);
+  background: var(--neu-surface);
+  color: var(--neu-text-secondary);
+  font-size: 0.58rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.flyout-reset-btn:hover {
+  color: var(--neu-accent);
+}
