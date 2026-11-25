@@ -177,6 +177,7 @@ fn set_tray_icon<R: tauri::Runtime>(app: &AppHandle<R>, theme: &str) -> Result<(
 pub fn set_tray_icon_theme(app: AppHandle, theme: String) -> Result<(), String> {
     let normalized = if theme == "dark" { "dark" } else { "light" };
     apply_window_theme(&app, normalized);
+    crate::beta_features::sync_theme(normalized);
     set_tray_icon(&app, normalized)
 }
 
@@ -414,6 +415,8 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
                     let _ = crate::self_update::set_auto_self_update_sync(next, Some(app));
                 }
                 "exit" => {
+                    crate::launcher::shutdown();
+                    crate::custom_dock::shutdown();
                     app.exit(0);
                 }
                 "dev_ports_refresh" => {
@@ -795,12 +798,17 @@ fn toggle_flyout_internal(app: &AppHandle) -> Result<(), String> {
             let _ = flyout.hide();
         } else {
             // Posiciona a janela no canto inferior direito próximo à barra de tarefas
+            let _ = flyout.emit("pulse://flyout-mode", "full");
+            let custom_dock_on = crate::beta_features::load().custom_dock;
+            let flyout_h = if custom_dock_on { 560.0 } else { 740.0 };
+            let _ = flyout.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+                390.0, flyout_h,
+            )));
             #[cfg(windows)]
             if let Ok(Some(monitor)) = flyout.current_monitor() {
                 let size = monitor.size();
                 let scale = monitor.scale_factor();
                 let flyout_w = 390.0;
-                let flyout_h = 740.0;
                 let margin_right = 16.0;
                 let margin_bottom = 56.0; // Espaço para a barra de tarefas do Windows
 
@@ -892,8 +900,88 @@ pub fn hide_tray_flyout(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Ajusta dinamicamente a altura da janela `tray-flyout` ao conteúdo real do popup
+/// modular (Áudio, Cotas de IA, Data e Hora, Periféricos), evitando espaço vazio
+/// sobrando ou corte de conteúdo.
+#[tauri::command]
+pub fn resize_tray_flyout(app: AppHandle, logical_height: f64) -> Result<(), String> {
+    if !logical_height.is_finite() {
+        return Ok(());
+    }
+    let Some(flyout) = app.get_webview_window("tray-flyout") else {
+        return Ok(());
+    };
+    if !flyout.is_visible().unwrap_or(false) {
+        return Ok(());
+    }
+    let scale = flyout.scale_factor().unwrap_or(1.0);
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    let max_logical_h = flyout
+        .current_monitor()
+        .ok()
+        .flatten()
+        .map(|m| (f64::from(m.work_area().size.height) / scale - 24.0).clamp(240.0, 740.0))
+        .unwrap_or(700.0);
+    let target_h = logical_height.clamp(150.0, max_logical_h).ceil();
+
+    let current_size = flyout.inner_size().map_err(|e| e.to_string())?;
+    let current_w = (f64::from(current_size.width) / scale).round().max(320.0);
+    let current_h = (f64::from(current_size.height) / scale).round();
+    if (current_h - target_h).abs() <= 2.0 {
+        return Ok(());
+    }
+    flyout
+        .set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+            current_w, target_h,
+        )))
+        .map_err(|e| e.to_string())
+}
+
+/// Abre ou foca a janela independente do Explorador de Arquivos do Pulse (`"files"`).
+#[tauri::command]
+pub fn show_files_window(app: AppHandle, initial_path: Option<String>) -> Result<(), String> {
+    if let Some(flyout) = app.get_webview_window("tray-flyout") {
+        let _ = flyout.hide();
+    }
+    if let Some(window) = app.get_webview_window("files") {
+        window.show().map_err(|e| e.to_string())?;
+        window.unminimize().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+        let _ = window.emit("pulse://foreground-changed", true);
+        if let Some(path) = initial_path {
+            let _ = window.emit("pulse://files-navigate", path);
+        }
+        return Ok(());
+    }
+    // Fallback para módulo integrado caso a janela dedicada não exista.
+    show_main_module(app, "Arquivos".to_owned())
+}
+
+/// Abre as configurações nativas de Data e Hora do sistema operacional.
+#[tauri::command]
+pub fn open_windows_date_time_settings() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        tauri_plugin_opener::open_url("ms-settings:dateandtime", None::<&str>)
+            .map_err(|e| format!("Não foi possível abrir Data e Hora do Windows: {e}"))
+    }
+    #[cfg(not(windows))]
+    {
+        Err(
+            "Configurações nativas de Data e Hora do Windows disponíveis apenas no Windows."
+                .to_owned(),
+        )
+    }
+}
+
 #[tauri::command]
 pub fn exit_app(app: AppHandle) {
+    crate::launcher::shutdown();
+    crate::custom_dock::shutdown();
     app.exit(0);
 }
 

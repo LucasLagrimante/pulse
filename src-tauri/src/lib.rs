@@ -3,15 +3,21 @@ pub mod ai_services_advisor;
 pub mod app_icons;
 pub mod app_updates;
 pub mod audio;
+pub mod beta_features;
 pub mod cleanup_os;
+pub mod custom_dock;
 pub mod debug;
 pub mod dev_ports;
 pub mod disk_analyzer;
 pub mod disk_cleanup;
 pub mod domain;
+pub mod file_explorer;
+pub mod hardware_telemetry;
+pub mod launcher;
 pub mod network_security;
 pub mod performance;
 pub mod performance_devices;
+pub mod peripheral_battery;
 pub mod platform_info;
 pub mod privileges;
 pub mod process;
@@ -19,6 +25,7 @@ pub mod process_identity;
 pub mod process_usage;
 pub mod quota_history;
 pub mod recent_files;
+pub mod security_audit;
 pub mod self_update;
 pub mod services;
 pub mod single_instance;
@@ -61,6 +68,16 @@ pub fn run() {
             disk_analyzer::init(app.handle().clone());
             disk_cleanup::init(app.handle().clone());
             self_update::init(app.handle().clone());
+            custom_dock::init(app.handle().clone());
+            launcher::init(app.handle().clone());
+            {
+                let beta = beta_features::load();
+                if beta.pulse_runner && beta.pulse_runner_win_key {
+                    std::thread::spawn(|| {
+                        launcher::apply_win_key_hook(true);
+                    });
+                }
+            }
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -73,7 +90,7 @@ pub fn run() {
                     } else {
                         let _ = window.emit("pulse://close-requested", ());
                     }
-                } else if window.label() == "tray-flyout" {
+                } else if matches!(window.label(), "tray-flyout" | "launcher" | "files") {
                     api.prevent_close();
                     let _ = window.emit("pulse://foreground-changed", false);
                     let _ = window.hide();
@@ -81,8 +98,8 @@ pub fn run() {
             }
             tauri::WindowEvent::Focused(focused) => {
                 let _ = window.emit("pulse://foreground-changed", *focused);
-                if !*focused && window.label() == "tray-flyout" {
-                    // Fecha a barra flutuante automaticamente quando o usuário clica fora
+                if !*focused && matches!(window.label(), "tray-flyout" | "launcher") {
+                    // Fecha o painel rápido e o Pulse Runner automaticamente ao clicar fora
                     let _ = window.hide();
                 }
             }
@@ -113,6 +130,9 @@ pub fn run() {
             system_overview::terminate_process,
             performance::get_performance_details,
             performance_devices::get_performance_devices,
+            hardware_telemetry::get_hardware_telemetry,
+            hardware_telemetry::get_telemetry_preferences,
+            hardware_telemetry::set_telemetry_preferences,
             startup_inventory::list_startup_items,
             startup_inventory::set_startup_item_enabled,
             recent_files::list_recent_files,
@@ -130,8 +150,11 @@ pub fn run() {
             tray::get_minimize_on_close,
             tray::show_main_window,
             tray::show_main_module,
+            tray::show_files_window,
+            tray::open_windows_date_time_settings,
             tray::frontend_ready,
             tray::toggle_tray_flyout,
+            tray::resize_tray_flyout,
             tray::hide_tray_flyout,
             tray::set_tray_icon_theme,
             tray::exit_app,
@@ -162,6 +185,7 @@ pub fn run() {
             services::set_windows_service_state,
             network_security::get_network_connections,
             network_security::get_security_posture,
+            security_audit::run_remote_access_audit,
             app_updates::list_pending_updates,
             app_updates::upgrade_winget_package,
             app_updates::upgrade_all_winget_packages,
@@ -175,6 +199,32 @@ pub fn run() {
             subscription_usage::set_provider_enabled,
             subscription_usage::set_provider_order,
             quota_history::get_quota_history,
+            beta_features::get_beta_features,
+            beta_features::set_beta_feature_enabled,
+            beta_features::update_dock_settings,
+            peripheral_battery::get_peripheral_batteries,
+            peripheral_battery::refresh_peripheral_batteries,
+            peripheral_battery::export_peripheral_diagnostics,
+            peripheral_battery::set_peripheral_alias,
+            peripheral_battery::set_peripheral_kind,
+            launcher::launcher_query,
+            launcher::launcher_execute,
+            launcher::launcher_refresh_index,
+            launcher::launcher_hide,
+            launcher::launcher_toggle,
+            custom_dock::get_dock_status,
+            custom_dock::restore_windows_taskbar,
+            custom_dock::list_dock_candidates,
+            file_explorer::explorer_get_quick_access,
+            file_explorer::explorer_list_directory,
+            file_explorer::explorer_search_in_dir,
+            file_explorer::explorer_preview_file,
+            file_explorer::explorer_open_entry,
+            file_explorer::explorer_open_in_terminal,
+            file_explorer::explorer_create_folder,
+            file_explorer::explorer_rename_entry,
+            file_explorer::explorer_trash_entry,
+            file_explorer::explorer_toggle_pin,
             // Comandos reexportados em `uninstall::mod` nao podem ser
             // registrados: o `#[tauri::command]` gera itens ocultos
             // (`__cmd__*`) no modulo de origem, e o handler so os encontra no

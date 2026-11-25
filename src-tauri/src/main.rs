@@ -48,6 +48,12 @@ fn acquire_instance() -> Result<Option<pulse_windows_lib::single_instance::unix:
 }
 
 fn main() {
+    // Modo sentinela da Dock Beta: não adquire instância única nem abre GUI;
+    // apenas aguarda o término do processo principal para restaurar a taskbar.
+    if pulse_windows_lib::custom_dock::run_watchdog_if_requested() {
+        return;
+    }
+
     #[cfg(any(windows, unix))]
     let Ok(_instance_guard) = acquire_instance() else {
         return;

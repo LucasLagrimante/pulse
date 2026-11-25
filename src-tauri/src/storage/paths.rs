@@ -45,7 +45,9 @@ pub fn user_home() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{local_data_base, pulse_local_dir, user_home};
+    #[cfg(target_os = "linux")]
+    use super::user_home;
+    use super::{local_data_base, pulse_local_dir};
 
     #[test]
     fn pulse_dir_is_absolute_and_named_pulse() {
