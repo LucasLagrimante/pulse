@@ -3,8 +3,8 @@
 > Central nativa de observabilidade, diagnóstico e controle local para Windows 11 e Linux (com port experimental para macOS em desenvolvimento). Reúne monitoramento de CPU, memória, disco e GPU, atividade por grupo de processos, análise de armazenamento TreeSize/Treemap, limpeza segura, desinstalação com resíduos, inventário de inicialização, serviços e atualizações de pacotes, rede e postura de segurança, cotas de assinaturas de IA com histórico de 30 dias em SQLite e flyout na bandeja com mixer de volume por aplicativo. Todo o processamento é 100% local: sem conta, sem telemetria e sem nuvem.
 
 - Versão atual: 1.3.0
-- Instalador Windows 11 x64: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe (instalador NSIS de 3,7 MB)
-- SHA-256 (Windows): `9993861f16e9e21b218948e0f9dd5c0709b5ae941c18a7f1fc68211348a7bad5`
+- Instalador Windows 11 x64: https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe (instalador NSIS de 4,2 MB)
+- SHA-256 (Windows): `af6765aa65a8fc424246ef194f97d2d9e1c3379298565e465aa86bf89017b154`
 - **Linux x86_64**: suporte nativo (.deb e AppImage) pronto no repositório; pacotes oficiais publicados a partir da próxima release em https://github.com/LucasLagrimante/pulse/releases (ou compile localmente com `npm run build:linux`)
 - macOS (em breve · experimental): base em preparação para macOS 11+ (Apple Silicon `.dmg`), ainda não validada em hardware e sem assinatura/notarização
 - Assinatura de código: os instaladores ainda não são assinados, então o SmartScreen no Windows pode avisar ("Mais informações" → "Executar assim mesmo"); confira o SHA-256 publicado. Política: https://github.com/LucasLagrimante/pulse#política-de-assinatura-de-código
@@ -28,7 +28,7 @@ Use o Pulse quando você precisa:
 - Ver conexões de rede e portas em escuta por processo e sinais de postura verificáveis sem rótulos arbitrários de malware.
 - Controlar o volume individual de cada aplicativo e trocar dispositivos de áudio direto pelo flyout da bandeja (Core Audio COM no Windows; PipeWire/PulseAudio no Linux).
 - Ver quais projetos e servidores de desenvolvimento estão rodando agora (Windows + WSL2 ou Linux nativo), em quais portas, com atalho para abrir no navegador, copiar URL ou liberar a porta.
-- Acompanhar localmente limites, janelas de reset (5h/semanal), créditos, cotas separadas por modelo e histórico de 30 dias das suas assinaturas de IA (**Claude Code**, **OpenAI Codex**, **Google Antigravity**, **OpenRouter** e **OpenCode Go**).
+- Acompanhar localmente limites, janelas de reset (5h, semanal e mensal), ritmo de consumo com projeção de autonomia até o reset, alerta de renovação para cotas esgotadas, créditos, cotas separadas por modelo e histórico de 30 dias das suas assinaturas de IA (**Claude Code**, **OpenAI Codex**, **Google Antigravity**, **OpenRouter** e **OpenCode Go**).
 
 Quando NÃO usar:
 
@@ -41,19 +41,21 @@ Quando NÃO usar:
 
 1. **Visão geral** — CPU, memória, disco por volume/montagem, GPU, rede e processos em uma tela.
 2. **Atividade** — processos agrupados por aplicativo com ordenação por RAM, CPU e GPU, filtro por nome/editor, ação de fechar destacada na própria linha, resolução de nome/editor/ícone e encerramento seguro de árvore.
-3. **Desempenho** — gráficos SVG em tempo real e sensores térmicos reais (`Indisponível` com justificativa quando não exposto pelo hardware).
-4. **Armazenamento (TreeSize + Treemap)** — árvore agregada, mapa visual proporcional, arquivos recentes e pastas personalizadas multi-volume com proteção de responsividade (`spawn_blocking` + `yield_now`) e diagnóstico inteligente via terminal de IA (Claude Code, Antigravity e Codex CLI).
+3. **Desempenho** — gráficos SVG em curva suave com preenchimento translúcido e crosshair interativo, cards clicáveis e reordenáveis por subsistema (CPU por núcleo/clock, RAM detalhada, GPU com VRAM global PDH/`nvidia-smi`/fan/watts, Rede, Disco I/O por dispositivo e catálogo de sensores user-mode com suporte automático a LibreHardwareMonitor, HWiNFO Shared Memory e `hwmon`) e seletor de métricas (`Indisponível` com justificativa quando não exposto pelo hardware).
+4. **Armazenamento (TreeSize + Treemap) e Explorador de Arquivos em Rust** — explorador nativo em Rust com múltiplas abas, breadcrumbs editáveis, busca com guardrails de I/O, pré-visualização leve e Lixeira segura, ao lado da árvore agregada, mapa visual proporcional, arquivos recentes, pastas personalizadas multi-volume e diagnóstico inteligente via terminal de IA (Claude Code, Antigravity e Codex CLI).
 5. **Limpeza local controlada** — categorias seguras em whitelist (temporários, navegadores, shaders, caches npm/uv/Gradle, Lixeira) com estimativa antes da ação, preservação de temporários das últimas 24h, limpeza automática opt-in (preserva últimos 7 dias) e recuperação guiada (WSL/Docker e WinSxS no Windows).
 6. **Desinstalação rastreada** — tamanho real medido no disco, cache local de medição, ordenação por tamanho/data/nome, Ponto de Restauração + desinstalador oficial + resíduos de registro/pastas no Windows; pacotes do sistema/Flatpak/Snap + resíduos XDG via `pkexec` no Linux.
 7. **Inicialização e segurança** — `StartupApproved` (0x02/0x03) + impacto de boot em ms no Windows; XDG Autostart + unidades `systemd` no Linux.
 8. **Serviços e atualizações** — `SCM`/WMI + `winget` no Windows; `systemd` + `apt`/`dnf`/`pacman`/`flatpak`/`snap` no Linux; revisão de segurança dos serviços ativos via terminal de IA.
-9. **Rede e segurança** — conexões TCP/UDP e portas em escuta por processo lidas direto do kernel, destaque para `0.0.0.0`/`::` e sinais de postura verificáveis sem rótulo de malware. Não substitui antivírus.
-10. **Cotas de IA** — monitoramento local de Claude Code, OpenAI Codex, Google Antigravity, OpenRouter e OpenCode Go com chaves no cofre nativo (Windows Credential Manager / Linux Secret Service) e histórico de 30 dias em SQLite.
-11. **Áudio, Bandeja e Auditoria** — flyout rápido no tray com mixer por aplicativo (Core Audio / PipeWire / PulseAudio), inspetor de portas e projetos dev ativos e trilha de auditoria local exportável.
+9. **Segurança (auditoria determinística de acesso remoto)** — verifica configuração e porta real do RDP (mesmo customizada fora da 3389), serviço `TermService`, sessões do sistema (`qwinsta` / `who`), conexões TCP do kernel e processos em execução, diferenciando `msrdc.exe` interno do WSLg de agentes externos (AnyDesk, TeamViewer, RustDesk, VNC, Parsec, Chrome Remote Desktop).
+10. **Rede e segurança** — conexões TCP/UDP e portas em escuta por processo lidas direto do kernel, destaque para `0.0.0.0`/`::` e sinais de postura verificáveis sem rótulo de malware. Não substitui antivírus.
+10. **Cotas de IA** — monitoramento local de Claude Code, OpenAI Codex, Google Antigravity, OpenRouter e OpenCode Go com cálculo de ritmo/projeção, alerta de aceleração recente na barra/Tray/Top Bar, chaves no cofre nativo (Windows Credential Manager / Linux Secret Service) e histórico de 30 dias em SQLite.
+11. **Áudio, Bandeja e Auditoria** — flyout rápido no tray com até 4 gráficos personalizáveis de qualquer telemetria, alertas compactos de cotas de IA, mixer por aplicativo (Core Audio / PipeWire / PulseAudio), inspetor de portas e projetos dev ativos e trilha de auditoria local exportável.
+12. **Recursos Beta (opt-in)** — monitor de bateria de periféricos conectados com apelidos personalizados (USB 2.4GHz HID — Logitech HID++ 2.0, HyperX, Razer, SteelSeries, Corsair, DualSense/DS4 — mais Bluetooth Classic/BLE, XInput e `/sys/class/power_supply`), **Pulse Runner** (launcher instantâneo em Rust acionado pela tecla Windows com apps recentes, arquivos e calculadora), **Explorador de Arquivos independente em Rust** com busca acelerada em memória e **Pulse Shell nativo estilo macOS** em Win32 + Direct2D para Windows (Barra Superior reordenável por arraste com popups dedicados de Áudio, Cotas de IA, Calendário/Data e Hora e Periféricos, System Tray proxy + Dock transparente por pixel com reserva de WorkArea via `SHAppBarMessage` e watchdog de restauração automática sem encerrar `explorer.exe`).
 
 ## Como funciona
 
-1. Baixe o pacote do seu sistema em https://pulse.lagrimante.com.br/#download (instalador NSIS de 3,7 MB no Windows 11, ou `.deb` / `AppImage` no Linux x86_64).
+1. Baixe o pacote do seu sistema em https://pulse.lagrimante.com.br/#download (instalador NSIS de 4,2 MB no Windows 11, ou `.deb` / `AppImage` no Linux x86_64).
 2. Instale ou execute — no Windows, a instalação é no escopo do usuário atual (com UAC sob demanda e auto-update validado por SHA-256); no Linux, instale o `.deb` ou execute o `AppImage` (com auto-update atômico + SHA-256; ações privilegiadas pedem senha via `pkexec`).
 3. Abra o Pulse. A telemetria da máquina carrega imediatamente na janela principal e no ícone da bandeja.
 

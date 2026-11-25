@@ -11,9 +11,9 @@
     "filename": "Pulse-latest-x64-setup.exe",
     "url": "https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe",
     "assetUrl": "https://github.com/LucasLagrimante/pulse/releases/download/v1.3.0/Pulse_1.3.0_x64-setup.exe",
-    "sizeBytes": 3931540,
-    "sizeFormatted": "3,7 MB",
-    "sha256": "9993861f16e9e21b218948e0f9dd5c0709b5ae941c18a7f1fc68211348a7bad5"
+    "sizeBytes": 4409579,
+    "sizeFormatted": "4,2 MB",
+    "sha256": "af6765aa65a8fc424246ef194f97d2d9e1c3379298565e465aa86bf89017b154"
   },
-  "updatedAt": "2026-11-20"
+  "updatedAt": "2026-11-25"
 }
