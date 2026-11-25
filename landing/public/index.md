@@ -5,9 +5,9 @@ Central nativa de observabilidade, diagnóstico e controle local para **Windows 
 - **Gratuito**, código aberto (MIT) e sem cadastro
 - **Local por padrão**: sem conta, sem telemetria e sem servidor do Pulse
 - **Windows 11 x64**: instalador NSIS de 4,2 MB · https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe
-- Versão atual: 1.3.0
-- SHA-256 (Windows): `af6765aa65a8fc424246ef194f97d2d9e1c3379298565e465aa86bf89017b154`
-- **Linux x86_64**: suporte nativo (.deb e AppImage) pronto no repositório; pacotes oficiais publicados a partir da próxima release em https://github.com/LucasLagrimante/pulse/releases (ou compile localmente com `npm run build:linux`)
+- Versão atual: 1.4.0
+- SHA-256 (Windows): `8612e03726c5027b6426386e0797bb044a9158f3289208cacddc9b4c19f3484e`
+- **Linux x86_64**: [.deb (7,8 MB)](https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.deb) · SHA-256 `f92000d86ebcd1a51c5f6ce8f72cf5f2bd60796b7ef161437cdeb9d6c4c355a2` | [AppImage (82,0 MB)](https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.AppImage) · SHA-256 `4372fa2edceb0729022ec6e1c7ba3afb7c83e23d2219cae92ad782415d6bc692`
 - **macOS (em breve · experimental)**: port em desenvolvimento para macOS 11+ (Apple Silicon `.dmg`, ainda não validado em hardware e sem assinatura/notarização)
 - Assinatura de código: os instaladores ainda não são assinados, então o SmartScreen no Windows pode avisar ("Mais informações" → "Executar assim mesmo"); confira o SHA-256 publicado. Política: https://github.com/LucasLagrimante/pulse#política-de-assinatura-de-código
 - Site: https://pulse.lagrimante.com.br/
@@ -64,7 +64,7 @@ Flyout compacto na bandeja do sistema com **até 4 gráficos personalizáveis** 
 ## Requisitos
 
 - **Windows 11 x64**: suporte principal (Windows-first), WebView2 Runtime já incluído nas versões atuais do sistema.
-- **Linux x86_64**: suporte nativo (.deb e AppImage) pronto no repositório; pacotes oficiais publicados a partir da próxima release em https://github.com/LucasLagrimante/pulse/releases (ou compile localmente com `npm run build:linux`)
+- **Linux x86_64**: [.deb (7,8 MB)](https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.deb) · SHA-256 `f92000d86ebcd1a51c5f6ce8f72cf5f2bd60796b7ef161437cdeb9d6c4c355a2` | [AppImage (82,0 MB)](https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.AppImage) · SHA-256 `4372fa2edceb0729022ec6e1c7ba3afb7c83e23d2219cae92ad782415d6bc692`
 - **macOS (em breve · experimental)**: base em preparação para macOS 11+ (Apple Silicon `.dmg`), ainda não validada em hardware.
 - Pegada leve: < 80 MB de RAM em uso e ~0% de CPU em repouso.
 
