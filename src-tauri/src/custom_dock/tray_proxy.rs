@@ -154,7 +154,29 @@ struct TrayEntry {
     image: Option<IconImage>,
 }
 
+/// O SndVolSSO do Explorer é o ícone de volume nativo. Nossa Barra Superior
+/// já desenha um widget de volume próprio com o mesmo painel, então exibir os
+/// dois duplica o controle. A identificação exige `is_explorer` **e** uma tip
+/// de volume, para não ocultar rede, Segurança nem ícones de terceiros.
+fn is_shell_audio_tip(tip: &str) -> bool {
+    let lower = tip.to_ascii_lowercase();
+    lower.contains('%')
+        || lower.contains("headset")
+        || lower.contains("speaker")
+        || lower.contains("alto-falante")
+        || lower.contains("volume")
+        || lower.contains("audio")
+        || lower.contains("áudio")
+        || lower.contains("mudo")
+        || lower.contains("muted")
+}
+
 impl TrayEntry {
+    /// Ícone nativo de volume do Windows, já substituído pelo widget do Pulse.
+    fn is_suppressed(&self) -> bool {
+        self.is_explorer && is_shell_audio_tip(&self.tip)
+    }
+
     fn stable_id(&self) -> String {
         match self.guid {
             Some(g) => format!("{g:?}"),
@@ -261,7 +283,7 @@ pub fn reorder_icon(from_id: &str, to_id: &str) -> bool {
         };
         let mut items: Vec<(String, String)> = guard
             .iter()
-            .filter(|e| !e.hidden && e.image.is_some())
+            .filter(|e| !e.hidden && !e.is_suppressed() && e.image.is_some())
             .map(|e| (e.stable_id(), e.persist_key()))
             .collect();
         if let Ok(order) = shared_state().custom_order.lock() {
@@ -299,7 +321,7 @@ pub fn visible_icons() -> Vec<TrayIconView> {
     };
     let mut items: Vec<(String, TrayIconView)> = guard
         .iter()
-        .filter(|e| !e.hidden && e.image.is_some())
+        .filter(|e| !e.hidden && !e.is_suppressed() && e.image.is_some())
         .map(|e| {
             (
                 e.persist_key(),
@@ -373,7 +395,9 @@ pub fn click_icon_by_id(icon_id: &str, button: TrayClickButton, anchor: POINT) {
         };
         guard
             .iter()
-            .find(|e| !e.hidden && e.image.is_some() && e.stable_id() == icon_id)
+            .find(|e| {
+                !e.hidden && !e.is_suppressed() && e.image.is_some() && e.stable_id() == icon_id
+            })
             .map(|e| {
                 (
                     e.hwnd,
@@ -421,16 +445,7 @@ pub fn click_icon_by_id(icon_id: &str, button: TrayClickButton, anchor: POINT) {
         // Ícones internos do Explorer (SndVolSSO / Rede) não possuem callback externo:
         // redireciona volume para o Painel de Áudio do Pulse e rede para Configurações.
         if is_explorer {
-            let is_audio_tip = tip_lower.contains('%')
-                || tip_lower.contains("headset")
-                || tip_lower.contains("speaker")
-                || tip_lower.contains("alto-falante")
-                || tip_lower.contains("volume")
-                || tip_lower.contains("audio")
-                || tip_lower.contains("áudio")
-                || tip_lower.contains("mudo")
-                || tip_lower.contains("muted");
-            if is_audio_tip {
+            if is_shell_audio_tip(&tip) {
                 let bar_rect = shared_state()
                     .topbar_rect
                     .lock()
@@ -1230,6 +1245,7 @@ unsafe fn handle_get_rect(cds: &COPYDATASTRUCT) -> Option<isize> {
             .iter()
             .find(|e| {
                 !e.hidden
+                    && !e.is_suppressed()
                     && e.image.is_some()
                     && if by_guid {
                         e.guid == Some(id.guid)

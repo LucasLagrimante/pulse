@@ -978,6 +978,27 @@ pub fn open_windows_date_time_settings() -> Result<(), String> {
     }
 }
 
+/// Abre o painel de áudio legado do Windows (`mmsys.cpl`), equivalente ao
+/// atalho "Mais controles de som" do painel de volume nativo.
+#[tauri::command]
+pub fn open_legacy_audio_panel() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        std::process::Command::new("control.exe")
+            .arg("mmsys.cpl")
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Não foi possível abrir o painel de áudio do Windows: {e}"))
+    }
+    #[cfg(not(windows))]
+    {
+        Err("Painel de áudio legado disponível apenas no Windows.".to_owned())
+    }
+}
+
 #[tauri::command]
 pub fn exit_app(app: AppHandle) {
     crate::launcher::shutdown();

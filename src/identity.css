@@ -3420,6 +3420,19 @@ body:has(.tray-flyout-container),
   color: var(--neu-text-muted) !important;
 }
 
+.flyout-audio-legacy {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+[data-theme] .flyout-audio-legacy .flyout-mixer-toggle {
+  width: 100%;
+  min-height: 34px;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+
 /* Portas & Projetos Dev no Painel Rápido do Tray */
 .flyout-dev-ports {
   display: grid;

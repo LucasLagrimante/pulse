@@ -1238,6 +1238,7 @@ export function TrayFlyout({
   const [audioDevices, setAudioDevices] = useState<AudioDeviceInventory | null>(null);
   const [audioBusy, setAudioBusy] = useState<"input" | "output" | null>(null);
   const [audioError, setAudioError] = useState("");
+  const [legacyAudioError, setLegacyAudioError] = useState("");
   // Volume Mixer: sempre recolhido por padrão; expande sob demanda e mostra
   // os apps com sessão ativa na saída padrão atual.
   const [mixerOpen, setMixerOpen] = useState(false);
@@ -2670,6 +2671,23 @@ export function TrayFlyout({
                   </button>
                 </>
               )}
+            </div>
+          )}
+          {pc.osLabel === "Windows" && (
+            <div className="flyout-audio-legacy">
+              <button
+                type="button"
+                className="flyout-mixer-toggle"
+                onClick={() => {
+                  setLegacyAudioError("");
+                  void invoke("open_legacy_audio_panel").catch(error => {
+                    setLegacyAudioError(typeof error === "string" ? error : "Não foi possível abrir o painel de áudio do Windows.");
+                  });
+                }}
+              >
+                Abrir painel de áudio clássico do Windows
+              </button>
+              {legacyAudioError && <p className="flyout-audio-error" role="alert">{legacyAudioError}</p>}
             </div>
           )}
         </div>
