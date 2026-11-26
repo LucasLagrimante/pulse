@@ -38,6 +38,56 @@
   line-height: 1.45;
 }
 
+/* Abas dos módulos beta: trilho fixo no topo do painel rolável para deixar
+   explícito qual módulo está em foco. Reaproveita .storage-tab-* de identity.css. */
+.beta-tabs-bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 6px 0 0;
+  background: var(--neu-bg);
+}
+
+.beta-tab-btn {
+  gap: 6px;
+  padding: 8px 12px !important;
+}
+
+.beta-tab-state {
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--neu-divider);
+  background: var(--neu-surface-sunken);
+  color: var(--neu-text-muted);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.beta-tab-state.is-on {
+  border-color: var(--neu-success);
+  color: var(--neu-success);
+}
+
+.storage-tab-btn.active .beta-tab-state.is-on {
+  border-color: var(--neu-accent);
+  color: var(--neu-accent);
+}
+
+.beta-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.beta-panel:focus-visible {
+  outline: 2px solid var(--neu-accent);
+  outline-offset: 2px;
+}
+
 .beta-alert {
   display: flex;
   align-items: center;

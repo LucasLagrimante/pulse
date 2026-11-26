@@ -2389,7 +2389,17 @@ fn resolve_active_app_name(hwnd: HWND, pid: u32) -> String {
             return "Área de Trabalho".to_owned();
         }
         if !stem.is_empty() {
-            return prettify_exe_name(stem);
+            let prettified = prettify_exe_name(stem);
+            let friendly = (!prettified.eq_ignore_ascii_case(stem)).then_some(prettified.as_str());
+            let official = crate::process_identity::official_name_for_path(path);
+            let chosen =
+                crate::process_identity::choose_display_name(stem, official.as_deref(), friendly);
+            // Jogo com exe técnico: o título da janela costuma ser mais fiel
+            // que o nome do arquivo quando o PE não traz um nome oficial.
+            if chosen.eq_ignore_ascii_case(stem) && !title.is_empty() {
+                return title.chars().take(28).collect();
+            }
+            return chosen.chars().take(28).collect();
         }
     }
     if !title.is_empty() {

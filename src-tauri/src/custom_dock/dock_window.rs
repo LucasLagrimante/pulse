@@ -70,32 +70,40 @@ use windows::{
         System::{
             Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED},
             LibraryLoader::GetModuleHandleW,
+            Threading::{
+                AttachThreadInput, GetCurrentThreadId, OpenProcess, QueryFullProcessImageNameW,
+                PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+            },
         },
         UI::{
             Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK},
             HiDpi::GetDpiForWindow,
-            Input::KeyboardAndMouse::{TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT},
+            Input::KeyboardAndMouse::{
+                ReleaseCapture, SetCapture, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
+            },
             Shell::{
                 PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow},
                 ShellExecuteW,
             },
             WindowsAndMessaging::{
-                AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
-                DestroyWindow, DispatchMessageW, EnumWindows, GetClassNameW, GetCursorPos,
-                GetForegroundWindow, GetMessageW, GetWindow, GetWindowLongPtrW, GetWindowRect,
-                GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow,
-                IsWindowVisible, KillTimer, LoadCursorW, MsgWaitForMultipleObjectsEx, PeekMessageW,
-                PostMessageW, PostQuitMessage, RegisterClassW, ReplyMessage, SetForegroundWindow,
-                SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, SwitchToThisWindow,
-                TrackPopupMenu, TranslateMessage, UnregisterClassW, CS_HREDRAW, CS_VREDRAW,
-                EVENT_OBJECT_CREATE, EVENT_OBJECT_DESTROY, EVENT_OBJECT_NAMECHANGE,
-                EVENT_SYSTEM_FOREGROUND, GWLP_USERDATA, GWL_EXSTYLE, GW_OWNER, HWND_TOPMOST,
-                IDC_ARROW, MF_CHECKED, MF_SEPARATOR, MF_STRING, MSG, MWMO_INPUTAVAILABLE,
-                PM_NOREMOVE, QS_SENDMESSAGE, SC_MINIMIZE, SWP_NOACTIVATE, SW_HIDE, SW_MINIMIZE,
-                SW_SHOWNA, SW_SHOWNORMAL, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RETURNCMD, ULW_ALPHA,
-                WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP, WM_CLOSE, WM_DESTROY,
-                WM_DISPLAYCHANGE, WM_DPICHANGED, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE,
-                WM_MOUSEWHEEL, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SYSCOMMAND, WM_TIMER, WNDCLASSW,
+                AppendMenuW, BringWindowToTop, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
+                DestroyMenu, DestroyWindow, DispatchMessageW, EnumWindows, GetClassNameW,
+                GetCursorPos, GetForegroundWindow, GetMessageW, GetWindow, GetWindowLongPtrW,
+                GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+                IsIconic, IsWindow, IsWindowVisible, KillTimer, LoadCursorW,
+                MsgWaitForMultipleObjectsEx, PeekMessageW, PostMessageW, PostQuitMessage,
+                RegisterClassW, ReplyMessage, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
+                SetWindowPos, ShowWindow, SwitchToThisWindow, TrackPopupMenu, TranslateMessage,
+                UnregisterClassW, CS_HREDRAW, CS_VREDRAW, EVENT_OBJECT_CREATE,
+                EVENT_OBJECT_DESTROY, EVENT_OBJECT_NAMECHANGE, EVENT_SYSTEM_FOREGROUND,
+                GWLP_USERDATA, GWL_EXSTYLE, GW_OWNER, HWND_TOPMOST, IDC_ARROW, MF_CHECKED,
+                MF_SEPARATOR, MF_STRING, MSG, MWMO_INPUTAVAILABLE, PM_NOREMOVE, QS_SENDMESSAGE,
+                SC_MINIMIZE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SW_HIDE,
+                SW_MINIMIZE, SW_SHOWNA, SW_SHOWNORMAL, TPM_BOTTOMALIGN, TPM_LEFTALIGN,
+                TPM_RETURNCMD, ULW_ALPHA, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP,
+                WM_CAPTURECHANGED, WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_DPICHANGED,
+                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+                WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SYSCOMMAND, WM_TIMER, WNDCLASSW,
                 WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
                 WS_POPUP,
             },
@@ -110,6 +118,12 @@ const WM_APP_APPLY_CONFIG: u32 = WM_APP + 21;
 const WM_APP_REFRESH_ITEMS: u32 = WM_APP + 22;
 const WM_APP_SHUTDOWN: u32 = WM_APP + 23;
 const WM_APP_RECHECK_APPBAR: u32 = WM_APP + 24;
+const WM_APP_REVEAL: u32 = WM_APP + 25;
+const WM_APP_HOLD: u32 = WM_APP + 26;
+
+/// Tempo em que a Dock permanece visível após um toque na tecla Windows,
+/// mesmo com auto-hide ligado ou com um jogo em tela cheia.
+const HOTKEY_REVEAL_MS: u64 = 2500;
 
 const TIMER_RECONCILE_ID: usize = 1;
 const TIMER_RECONCILE_MS: u32 = 1100;
@@ -169,6 +183,37 @@ pub fn recheck_appbar() {
                 Some(HWND(raw as *mut _)),
                 WM_APP_RECHECK_APPBAR,
                 WPARAM(0),
+                LPARAM(0),
+            );
+        }
+    }
+}
+
+/// Revela a Dock por alguns segundos quando o Pulse Runner é aberto pela tecla
+/// Windows. Não bloqueia: apenas posta uma mensagem na thread da Dock.
+pub fn reveal_from_shortcut() {
+    let raw = DOCK_HWND.load(Ordering::SeqCst);
+    if raw != 0 {
+        unsafe {
+            let _ = PostMessageW(
+                Some(HWND(raw as *mut _)),
+                WM_APP_REVEAL,
+                WPARAM(0),
+                LPARAM(0),
+            );
+        }
+    }
+}
+
+/// Mantém a Dock visível enquanto o Pulse Runner estiver aberto.
+pub fn hold_from_shortcut(hold: bool) {
+    let raw = DOCK_HWND.load(Ordering::SeqCst);
+    if raw != 0 {
+        unsafe {
+            let _ = PostMessageW(
+                Some(HWND(raw as *mut _)),
+                WM_APP_HOLD,
+                WPARAM(usize::from(hold)),
                 LPARAM(0),
             );
         }
@@ -473,7 +518,25 @@ struct DockState {
     last_anim_tick: Instant,
     tracking_mouse: bool,
     hidden_by_autohide: bool,
-    hidden_by_fullscreen: bool,
+    /// Um jogo em tela cheia não esconde mais a Dock: ela passa a operar em
+    /// overlay (só aparece no hot corner / quando revelada pelo atalho).
+    fullscreen_active: bool,
+    /// Protege a Dock do auto-hide enquanto o popup nativo está aberto.
+    menu_open: bool,
+    /// Reveal temporário disparado pela tecla Windows.
+    reveal_until: Option<Instant>,
+    /// Mantém a Dock visível enquanto o Pulse Runner estiver aberto.
+    hold_from_launcher: bool,
+    /// Menu Iniciar nativo em primeiro plano (runner pausado por jogo
+    /// protegido ou desligado): a Dock aparece junto, sem hook de teclado.
+    start_menu_open: bool,
+    /// Cache da última janela em foco verificada: (hwnd, é o Iniciar?).
+    start_probe: (isize, bool),
+    /// Arraste de ícones com botão esquerdo: (chave do app, fixado?, x inicial).
+    /// Guarda a chave em vez do índice para sobreviver ao reconcile de 1,1s.
+    drag_source: Option<(String, bool, f32)>,
+    dragging: bool,
+    drag_x: f32,
     win_x: i32,
     win_y: i32,
     pill_rect: D2D_RECT_F,
@@ -607,18 +670,27 @@ impl DockState {
             });
         }
 
-        // 2. Apps abertos não fixados (na ordem em que apareceram / alfabética estável)
-        for key in seen_order {
-            if consumed.contains(&key) {
-                continue;
-            }
+        // 2. Apps abertos não fixados. A ordem salva por arraste tem prioridade;
+        //    chaves ainda não salvas mantêm a ordem de enumeração (stable sort).
+        let saved_unpinned_order = self.config.dock_unpinned_order.clone();
+        let mut unpinned_keys: Vec<String> = seen_order
+            .into_iter()
+            .filter(|key| !consumed.contains(key))
+            .collect();
+        unpinned_keys.sort_by_key(|key| {
+            saved_unpinned_order
+                .iter()
+                .position(|saved| saved == key)
+                .unwrap_or(usize::MAX)
+        });
+        for key in unpinned_keys {
             let Some((src, wins)) = grouped.remove(&key) else {
                 continue;
             };
             let (windows, active, fg_title) = stabilize_windows(&key, wins);
             let label = src
                 .as_deref()
-                .map(display_name_from_source)
+                .map(|source| display_name_from_source_with_title(source, &fg_title))
                 .filter(|s| !s.is_empty() && !s.eq_ignore_ascii_case("ApplicationFrameHost"))
                 .unwrap_or_else(|| fg_title.chars().take(28).collect());
             items.push(DockItem {
@@ -778,7 +850,7 @@ impl DockState {
                 height,
                 SWP_NOACTIVATE,
             );
-            if self.hidden_by_autohide || self.hidden_by_fullscreen {
+            if self.hidden_by_autohide {
                 let _ = ShowWindow(self.hwnd, SW_HIDE);
             } else {
                 let _ = ShowWindow(self.hwnd, SW_SHOWNA);
@@ -814,7 +886,7 @@ impl DockState {
     }
 
     fn render(&mut self) {
-        if self.hidden_by_autohide || self.hidden_by_fullscreen {
+        if self.hidden_by_autohide {
             return;
         }
         self.compute_layout();
@@ -1077,6 +1149,24 @@ impl DockState {
                     }
                 }
 
+                // Indicador de soltura do arraste (mesma linguagem visual da Barra Superior).
+                if self.dragging {
+                    let gx = self.drag_x.clamp(pill.left + 2.0 * s, pill.right - 2.0 * s);
+                    self.dc_target.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: gx - 1.5 * s,
+                                top: pill.top + 4.0 * s,
+                                right: gx + 1.5 * s,
+                                bottom: pill.bottom - 4.0 * s,
+                            },
+                            radiusX: 1.5 * s,
+                            radiusY: 1.5 * s,
+                        },
+                        &accent_brush,
+                    );
+                }
+
                 // Pílula flutuante de tooltip acima do ícone em foco (ao redor é alpha = 0!)
                 if let Some(hovered_idx) = self.hovered_index {
                     if let Some(item) = items_snapshot.get(hovered_idx) {
@@ -1302,6 +1392,127 @@ impl DockState {
         }
     }
 
+    /// Inicia um candidato a arraste. Ícones sem origem (botão Arquivos) não
+    /// participam: clique neles continua abrindo o módulo.
+    fn start_drag_candidate(&mut self, x: f32, y: f32) {
+        let Some(idx) = self.item_index_at(x, y) else {
+            self.drag_source = None;
+            self.dragging = false;
+            return;
+        };
+        let Some(item) = self.items.get(idx) else {
+            self.drag_source = None;
+            self.dragging = false;
+            return;
+        };
+        if item.is_pulse_files || item.source.is_none() {
+            self.drag_source = None;
+            self.dragging = false;
+            return;
+        }
+        self.drag_source = Some((item.key.clone(), item.pinned, x));
+        self.dragging = false;
+        self.drag_x = x;
+        self.mouse_x_target = None;
+        self.hovered_index = None;
+        self.hover_target = 0.0;
+        unsafe {
+            let _ = SetCapture(self.hwnd);
+        }
+    }
+
+    /// Solta o ícone: arraste confirma a nova ordem, clique simples mantém o
+    /// comportamento original (focar/lançar app).
+    fn finish_drag_or_click(&mut self, x: f32, y: f32) {
+        let was_dragging = self.dragging;
+        let source = self.drag_source.take();
+        self.dragging = false;
+        unsafe {
+            let _ = ReleaseCapture();
+        }
+
+        if was_dragging {
+            if let Some((key, pinned, _)) = source {
+                self.commit_dock_reorder(&key, pinned, x);
+            }
+            self.render();
+            return;
+        }
+        self.handle_left_click(x, y);
+    }
+
+    /// Reordena dentro do próprio grupo (fixados com fixados, abertos com
+    /// abertos). Cruzar a divisória não altera o estado de fixação: a soltura
+    /// é ancorada no ícone do mesmo grupo mais próximo do cursor.
+    fn commit_dock_reorder(&mut self, src_key: &str, src_pinned: bool, drop_x: f32) {
+        let target_key = self
+            .items
+            .iter()
+            .filter(|it| it.pinned == src_pinned && !it.is_pulse_files && it.key != src_key)
+            .map(|it| {
+                let mid = (it.rect.left + it.rect.right) * 0.5;
+                (it.key.clone(), (drop_x - mid).abs())
+            })
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(key, _)| key);
+        let Some(target_key) = target_key else {
+            return;
+        };
+
+        let updated = if src_pinned {
+            let mut entries: Vec<(String, String)> = self
+                .items
+                .iter()
+                .filter(|it| it.pinned && !it.is_pulse_files)
+                .map(|it| {
+                    (
+                        it.key.clone(),
+                        it.source.clone().unwrap_or_else(|| it.key.clone()),
+                    )
+                })
+                .collect();
+            let Some(from) = entries.iter().position(|(key, _)| key == src_key) else {
+                return;
+            };
+            let Some(to) = entries.iter().position(|(key, _)| key == &target_key) else {
+                return;
+            };
+            let moved = entries.remove(from);
+            entries.insert(to, moved);
+            crate::beta_features::save_dock_order(
+                entries.into_iter().map(|(_, src)| src).collect(),
+                self.config.dock_unpinned_order.clone(),
+            )
+        } else {
+            let mut order: Vec<String> = self
+                .items
+                .iter()
+                .filter(|it| !it.pinned)
+                .map(|it| it.key.clone())
+                .collect();
+            let Some(from) = order.iter().position(|key| key == src_key) else {
+                return;
+            };
+            let Some(to) = order.iter().position(|key| key == &target_key) else {
+                return;
+            };
+            let moved = order.remove(from);
+            order.insert(to, moved);
+            crate::beta_features::save_dock_order(self.config.dock_pinned_apps.clone(), order)
+        };
+
+        match updated {
+            Ok(config) => {
+                self.config = config.clone();
+                super::notify_config_changed(&config);
+                self.rebuild_items();
+            }
+            Err(err) => {
+                shell_log::error("dock_reorder", "Falha ao salvar ordem da Dock", &err);
+            }
+        }
+    }
+
     fn handle_wheel(&self, x: f32, y: f32, delta: i16) {
         let Some(idx) = self.item_index_at(x, y) else {
             return;
@@ -1417,6 +1628,10 @@ impl DockState {
             let mut pt = POINT::default();
             let _ = GetCursorPos(&mut pt);
             let _ = SetForegroundWindow(self.hwnd);
+            // O menu modal captura o mouse e dispara WM_MOUSELEAVE na Dock. Sem
+            // esta proteção, o timer de auto-hide escondia a janela enquanto o
+            // usuário escolhia "Fixar"/"Fechar" no popup.
+            self.menu_open = true;
             let selected = TrackPopupMenu(
                 menu,
                 TPM_LEFTALIGN | TPM_BOTTOMALIGN | TPM_RETURNCMD,
@@ -1426,7 +1641,10 @@ impl DockState {
                 self.hwnd,
                 None,
             );
+            self.menu_open = false;
             let _ = DestroyMenu(menu);
+            self.update_visibility_state();
+            self.render();
 
             let cmd = selected.0 as u32;
             if cmd >= MENU_FOCUS_WINDOW_BASE {
@@ -1469,27 +1687,151 @@ impl DockState {
         }
     }
 
+    /// Em tela cheia, jogos em modo exclusivo recolocam a própria janela no
+    /// topo da Z-order. Reafirmar TOPMOST a cada tick mantém a Dock acima deles
+    /// (em jogos borderless isso é suficiente).
+    fn reassert_topmost(&self) {
+        unsafe {
+            let _ = SetWindowPos(
+                self.hwnd,
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+            );
+        }
+    }
+
+    /// Indica se a janela em primeiro plano é o Menu Iniciar/Pesquisa nativos.
+    /// Só lê o foreground (nada de hook), com cache por hwnd.
+    fn probe_start_menu(&mut self) -> bool {
+        let foreground = unsafe { GetForegroundWindow() };
+        let key = foreground.0 as isize;
+        if key == 0 {
+            return false;
+        }
+        if self.start_probe.0 != key {
+            self.start_probe = (key, is_start_menu_window(foreground));
+        }
+        self.start_probe.1
+    }
+
+    /// Aplica a lupa conforme a posição do cursor (coordenadas da janela).
+    fn apply_hover(&mut self, x: f32, y: f32) {
+        let over_item = self.item_index_at(x, y).is_some()
+            || (y >= self.pill_rect.top
+                && y <= self.pill_rect.bottom
+                && x >= self.pill_rect.left
+                && x <= self.pill_rect.right);
+        if over_item {
+            if self.mouse_x_target.is_none() {
+                self.mouse_x_smooth = x;
+            }
+            self.mouse_x_target = Some(x);
+            self.hover_target = 1.0;
+        } else {
+            self.mouse_x_target = None;
+            self.hovered_index = None;
+            self.hover_target = 0.0;
+        }
+        self.start_animation();
+    }
+
+    fn sync_hover_from_cursor(&mut self, cursor: POINT) {
+        if self.dragging || self.menu_open {
+            return;
+        }
+        let mut rect = RECT::default();
+        if unsafe { GetWindowRect(self.hwnd, &mut rect) }.is_err() {
+            return;
+        }
+        let inside = cursor.x >= rect.left
+            && cursor.x < rect.right
+            && cursor.y >= rect.top
+            && cursor.y < rect.bottom;
+        if inside {
+            self.apply_hover((cursor.x - rect.left) as f32, (cursor.y - rect.top) as f32);
+        } else if self.mouse_x_target.is_some() {
+            self.apply_hover(-1.0, -1.0);
+        }
+    }
+
     fn update_visibility_state(&mut self) {
         let fullscreen = is_foreground_fullscreen_on_primary(self.hwnd);
+        let now = Instant::now();
+        if self.reveal_until.is_some_and(|until| now >= until) {
+            self.reveal_until = None;
+        }
+        let start_open = self.probe_start_menu();
+        if start_open != self.start_menu_open {
+            shell_log::info(
+                "dock_visibility",
+                if start_open {
+                    "Menu Iniciar aberto; Dock visível"
+                } else {
+                    "Menu Iniciar fechado; Dock liberada"
+                },
+            );
+            self.start_menu_open = start_open;
+        }
+        let forced_visible =
+            self.reveal_until.is_some() || self.hold_from_launcher || self.start_menu_open;
+
         let mut cursor = POINT::default();
         let has_cursor = unsafe { GetCursorPos(&mut cursor).is_ok() };
+        if self.start_menu_open && has_cursor {
+            // Com o Iniciar aberto a Dock pode não receber WM_MOUSEMOVE; a lupa
+            // segue a posição do cursor lida a cada tick.
+            self.sync_hover_from_cursor(cursor);
+        }
 
+        // Em tela cheia (jogo) a Dock fica sempre oculta, mesmo sem auto-hide,
+        // e a borda inferior NÃO a revela: passar o mouse no fundo da tela
+        // durante o jogo não pode cobrir nada. Só a tecla Windows (runner ou
+        // Menu Iniciar) a mostra. Fora de tela cheia vale o hot corner.
         let mut want_hide_auto = false;
-        if self.config.dock_auto_hide && has_cursor {
-            let near_bottom = cursor.y >= self.monitor.bottom - 4
+        if (self.config.dock_auto_hide || fullscreen)
+            && !forced_visible
+            && !self.menu_open
+            && self.drag_source.is_none()
+            && has_cursor
+        {
+            let zone = (9.0 * self.scale).max(6.0) as i32;
+            let near_bottom = !fullscreen
+                && cursor.y >= self.monitor.bottom - zone
                 && cursor.x >= self.monitor.left
                 && cursor.x < self.monitor.right;
             let inside_pill = self.mouse_x_target.is_some();
             want_hide_auto = !(near_bottom || inside_pill);
         }
 
-        if fullscreen != self.hidden_by_fullscreen || want_hide_auto != self.hidden_by_autohide {
-            self.hidden_by_fullscreen = fullscreen;
+        if fullscreen != self.fullscreen_active || want_hide_auto != self.hidden_by_autohide {
+            if fullscreen != self.fullscreen_active {
+                shell_log::info(
+                    "dock_visibility",
+                    format!(
+                        "Foreground {} tela cheia; Dock em {}",
+                        if fullscreen { "entrou em" } else { "saiu de" },
+                        if want_hide_auto {
+                            "auto-hide"
+                        } else {
+                            "overlay"
+                        }
+                    ),
+                );
+            }
+            self.fullscreen_active = fullscreen;
             self.hidden_by_autohide = want_hide_auto;
             self.reposition_window();
-            if !self.hidden_by_autohide && !self.hidden_by_fullscreen {
+            if !self.hidden_by_autohide {
+                self.reassert_topmost();
                 self.render();
             }
+        } else if !self.hidden_by_autohide && (forced_visible || self.menu_open) {
+            // Enquanto estiver visível por atalho, compete com a Z-order do jogo.
+            self.reassert_topmost();
         }
     }
 }
@@ -1604,7 +1946,15 @@ fn run_dock_loop(
         last_anim_tick: Instant::now(),
         tracking_mouse: false,
         hidden_by_autohide: false,
-        hidden_by_fullscreen: false,
+        fullscreen_active: false,
+        menu_open: false,
+        reveal_until: None,
+        hold_from_launcher: false,
+        start_menu_open: false,
+        start_probe: (0, false),
+        drag_source: None,
+        dragging: false,
+        drag_x: 0.0,
         win_x: 0,
         win_y: 0,
         pill_rect: D2D_RECT_F::default(),
@@ -1723,9 +2073,27 @@ unsafe extern "system" fn dock_wndproc(
 
     match msg {
         WM_MOUSEACTIVATE => LRESULT(MA_NOACTIVATE),
+        WM_LBUTTONDOWN => {
+            let x = (lparam.0 & 0xFFFF) as i16 as f32;
+            let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as f32;
+            state.start_drag_candidate(x, y);
+            LRESULT(0)
+        }
         WM_MOUSEMOVE => {
             let x = (lparam.0 & 0xFFFF) as i16 as f32;
             let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as f32;
+
+            if let Some((_, _, start_x)) = state.drag_source.as_ref() {
+                if state.dragging || (x - *start_x).abs() >= 6.0 * state.scale {
+                    state.dragging = true;
+                    state.drag_x = x;
+                    state.mouse_x_target = None;
+                    state.hovered_index = None;
+                    state.hover_target = 0.0;
+                    state.render();
+                    return LRESULT(0);
+                }
+            }
 
             if !state.tracking_mouse {
                 let mut tme = TRACKMOUSEEVENT {
@@ -1739,19 +2107,12 @@ unsafe extern "system" fn dock_wndproc(
                 }
             }
 
-            let over_item = state.item_index_at(x, y).is_some()
-                || (y >= state.pill_rect.top
-                    && y <= state.pill_rect.bottom
-                    && x >= state.pill_rect.left
-                    && x <= state.pill_rect.right);
-            if over_item {
-                if state.mouse_x_target.is_none() {
-                    state.mouse_x_smooth = x;
-                }
-                state.mouse_x_target = Some(x);
-                state.hover_target = 1.0;
-                state.start_animation();
-            } else {
+            state.apply_hover(x, y);
+            LRESULT(0)
+        }
+        WM_MOUSELEAVE => {
+            state.tracking_mouse = false;
+            if !state.menu_open {
                 state.mouse_x_target = None;
                 state.hovered_index = None;
                 state.hover_target = 0.0;
@@ -1759,18 +2120,19 @@ unsafe extern "system" fn dock_wndproc(
             }
             LRESULT(0)
         }
-        WM_MOUSELEAVE => {
-            state.tracking_mouse = false;
-            state.mouse_x_target = None;
-            state.hovered_index = None;
-            state.hover_target = 0.0;
-            state.start_animation();
+        WM_CAPTURECHANGED => {
+            // Captura perdida (ex.: Alt+Tab): aborta o arraste sem fazer clique.
+            if state.dragging || state.drag_source.is_some() {
+                state.dragging = false;
+                state.drag_source = None;
+                state.render();
+            }
             LRESULT(0)
         }
         WM_LBUTTONUP => {
             let x = (lparam.0 & 0xFFFF) as i16 as f32;
             let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as f32;
-            state.handle_left_click(x, y);
+            state.finish_drag_or_click(x, y);
             LRESULT(0)
         }
         WM_RBUTTONUP => {
@@ -1831,6 +2193,40 @@ unsafe extern "system" fn dock_wndproc(
             state.reposition_window();
             state.sync_appbar();
             state.render();
+            LRESULT(0)
+        }
+        WM_APP_REVEAL => {
+            state.reveal_until = Some(Instant::now() + Duration::from_millis(HOTKEY_REVEAL_MS));
+            state.update_visibility_state();
+            state.reassert_topmost();
+            state.render();
+            shell_log::info(
+                "dock_visibility",
+                format!(
+                    "Revelada pela tecla Windows (fullscreen={})",
+                    state.fullscreen_active
+                ),
+            );
+            LRESULT(0)
+        }
+        WM_APP_HOLD => {
+            let hold = wparam.0 != 0;
+            if state.hold_from_launcher != hold {
+                shell_log::info(
+                    "dock_visibility",
+                    format!(
+                        "Runner {}; Dock {}",
+                        if hold { "aberto" } else { "fechado" },
+                        if hold { "presa" } else { "liberada" }
+                    ),
+                );
+            }
+            state.hold_from_launcher = hold;
+            state.update_visibility_state();
+            if hold && !state.hidden_by_autohide {
+                state.reassert_topmost();
+                state.render();
+            }
             LRESULT(0)
         }
         WM_APP_SHUTDOWN => {
@@ -1908,6 +2304,70 @@ fn focus_window_reliable(hwnd: HWND) {
             return;
         }
         let _ = SetForegroundWindow(hwnd);
+        if GetForegroundWindow() == hwnd {
+            return;
+        }
+        // Com o Iniciar (ou outro processo) em foco, o foreground lock recusa o
+        // pedido. Anexar a fila de entrada à thread em foco libera a troca sem
+        // injetar teclas (nada que um anti-cheat veja como input sintético).
+        let foreground = GetForegroundWindow();
+        let foreground_thread = GetWindowThreadProcessId(foreground, None);
+        let own_thread = GetCurrentThreadId();
+        if foreground_thread != 0 && foreground_thread != own_thread {
+            let attached = AttachThreadInput(own_thread, foreground_thread, true).as_bool();
+            let _ = BringWindowToTop(hwnd);
+            let _ = SetForegroundWindow(hwnd);
+            if attached {
+                let _ = AttachThreadInput(own_thread, foreground_thread, false);
+            }
+        }
+        if GetForegroundWindow() != hwnd {
+            SwitchToThisWindow(hwnd, true);
+        }
+    }
+}
+
+/// Executáveis do Menu Iniciar/Pesquisa nativos do Windows 10/11.
+const START_MENU_HOSTS: &[&str] = &[
+    "startmenuexperiencehost.exe",
+    "searchhost.exe",
+    "searchapp.exe",
+];
+
+fn is_start_menu_window(hwnd: HWND) -> bool {
+    let mut pid = 0u32;
+    unsafe {
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    }
+    if pid == 0 {
+        return false;
+    }
+    let Some(path) = process_image_path(pid) else {
+        return false;
+    };
+    let name = path.rsplit(['\\', '/']).next().unwrap_or(&path);
+    START_MENU_HOSTS
+        .iter()
+        .any(|host| name.eq_ignore_ascii_case(host))
+}
+
+fn process_image_path(pid: u32) -> Option<String> {
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = vec![0u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_WIN32,
+            windows::core::PWSTR(buf.as_mut_ptr()),
+            &mut len,
+        )
+        .is_ok();
+        let _ = windows::Win32::Foundation::CloseHandle(handle);
+        if !ok || len == 0 {
+            return None;
+        }
+        Some(String::from_utf16_lossy(&buf[..len as usize]))
     }
 }
 
@@ -2107,12 +2567,34 @@ fn display_name_from_source(source: &str) -> String {
         let raw = pkg.rsplit('.').next().unwrap_or(pkg);
         return prettify_dock_name(raw);
     }
-    Path::new(source)
+    let stem = Path::new(source)
         .file_stem()
         .and_then(|s| s.to_str())
-        .map(prettify_dock_name)
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| source.to_owned())
+        .unwrap_or("")
+        .trim();
+    if stem.is_empty() {
+        return source.to_owned();
+    }
+    // O stem de jogos costuma ser técnico (`Marvel-Win64-Shipping.exe`);
+    // o nome oficial vem do recurso de versão do PE.
+    let prettified = prettify_dock_name(stem);
+    let friendly = (!prettified.eq_ignore_ascii_case(stem)).then_some(prettified.as_str());
+    let official = crate::process_identity::official_name_for_path(source);
+    crate::process_identity::choose_display_name(stem, official.as_deref(), friendly)
+}
+
+/// Usa o título da janela quando o executável não fornece um nome oficial
+/// (jogos com anti-cheat costumam ter só o nome técnico no recurso de versão).
+fn display_name_from_source_with_title(source: &str, window_title: &str) -> String {
+    let resolved = display_name_from_source(source);
+    let stem = Path::new(source)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    if resolved.eq_ignore_ascii_case(stem) && !window_title.is_empty() {
+        return window_title.chars().take(28).collect();
+    }
+    resolved
 }
 
 fn prettify_dock_name(stem: &str) -> String {

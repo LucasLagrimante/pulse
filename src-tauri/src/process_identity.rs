@@ -15,6 +15,11 @@
 //! (Flatpak, Snap ou o pacote `dpkg` dono do executável).
 
 use crate::system_overview::TopProcess;
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::{Mutex, OnceLock},
+};
 
 /// Identidade conhecida de um processo do Windows sem arquivo legível.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,14 +127,16 @@ pub fn enrich(processes: &mut [TopProcess]) {
         }
 
         if let Some(path) = process.path.clone() {
-            if lacks_display_name(process) || process.publisher.is_none() {
+            let needs_name = lacks_display_name(process);
+            let needs_publisher = process.publisher.is_none();
+            if needs_name || needs_publisher {
                 let (description, company) = native::version_strings(&path);
-                if lacks_display_name(process) {
-                    if let Some(description) = description {
-                        process.display_name = Some(description);
-                    }
+                if needs_name {
+                    // O PowerShell usa `FileDescription`; quando ele devolve o
+                    // nome técnico do exe, `ProductName` tem o nome oficial.
+                    process.display_name = official_name_for_path(&path).or(description);
                 }
-                if process.publisher.is_none() {
+                if needs_publisher {
                     process.publisher = company;
                 }
             }
@@ -151,6 +158,69 @@ pub fn enrich(processes: &mut [TopProcess]) {
 
     #[cfg(target_os = "linux")]
     linux::enrich(processes);
+}
+
+/// Nome oficial de um executável lido do recurso de versão do PE.
+///
+/// Jogos expõem binários técnicos (`Marvel-Win64-Shipping.exe`) enquanto
+/// `ProductName`/`FileDescription` trazem o nome real do produto. `ProductName`
+/// tem prioridade porque em jogos Unreal a descrição costuma ser o nome do exe.
+/// O cache evita reabrir o arquivo a cada reconciliação da Dock na thread de UI.
+pub fn official_name_for_path(path: &str) -> Option<String> {
+    static NAME_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
+    let cache = NAME_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(cached) = cache.lock().ok().and_then(|guard| guard.get(path).cloned()) {
+        return cached;
+    }
+
+    let stem = Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    let resolved = native::version_field(path, "ProductName")
+        .and_then(|value| clean_version_name(&value, stem))
+        .or_else(|| {
+            native::version_field(path, "FileDescription")
+                .and_then(|value| clean_version_name(&value, stem))
+        });
+
+    if let Ok(mut guard) = cache.lock() {
+        if guard.len() > 256 {
+            guard.clear();
+        }
+        guard.insert(path.to_owned(), resolved.clone());
+    }
+    resolved
+}
+
+/// Remove caracteres de controle e devolve o rótulo apenas quando ele acrescenta
+/// informação em relação ao nome do arquivo (nomes técnicos são descartados).
+pub fn clean_version_name(raw: &str, exe_stem: &str) -> Option<String> {
+    let sanitized: String = raw
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let name = sanitized.trim().trim_matches('\0').trim();
+    if name.is_empty() || name.eq_ignore_ascii_case(exe_stem.trim()) {
+        return None;
+    }
+    let lower = name.to_ascii_lowercase();
+    let generic = matches!(lower.as_str(), "shipping" | "unreal engine" | "unity")
+        || lower.contains("-shipping")
+        || lower.starts_with("unity player");
+    (!generic).then(|| name.to_owned())
+}
+
+/// Escolhe o rótulo exibido: apelido conhecido > nome oficial > nome do arquivo.
+pub fn choose_display_name(stem: &str, official: Option<&str>, friendly: Option<&str>) -> String {
+    let stem = stem.trim();
+    [friendly, official]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|candidate| !candidate.is_empty() && !candidate.eq_ignore_ascii_case(stem))
+        .map(str::to_owned)
+        .unwrap_or_else(|| stem.to_owned())
 }
 
 #[cfg(windows)]
@@ -179,6 +249,9 @@ mod win32 {
             .chain(std::iter::once(0))
             .collect()
     }
+
+    /// Bloco binário do recurso de versão + pares idioma/codepage declarados.
+    type VersionBlock = (Vec<u8>, Vec<(u16, u16)>);
 
     /// Caminho do executável com acesso limitado; `None` para PID 0,
     /// processo encerrado, acesso negado ou pseudo-processo sem imagem.
@@ -211,13 +284,13 @@ mod win32 {
         }
     }
 
-    /// `FileDescription` e `CompanyName` do recurso de versão do arquivo.
-    pub fn version_strings(path: &str) -> (Option<String>, Option<String>) {
+    /// Bloco de recurso de versão e os pares idioma/codepage declarados.
+    fn version_block(path: &str) -> Option<VersionBlock> {
         let file = wide(path);
         unsafe {
             let size = GetFileVersionInfoSizeW(PCWSTR(file.as_ptr()), None);
             if size == 0 {
-                return (None, None);
+                return None;
             }
             let mut block = vec![0u8; size as usize];
             if GetFileVersionInfoW(
@@ -228,7 +301,7 @@ mod win32 {
             )
             .is_err()
             {
-                return (None, None);
+                return None;
             }
 
             // Primeiro par idioma/codepage declarado; 0409/04B0 como reserva.
@@ -254,33 +327,55 @@ mod win32 {
             }
             translations.push((0x0409, 0x04B0));
             translations.push((0x0409, 0x04E4));
-
-            let read = |field: &str| -> Option<String> {
-                translations.iter().find_map(|(language, codepage)| {
-                    let key = wide(&format!(
-                        "\\StringFileInfo\\{language:04x}{codepage:04x}\\{field}"
-                    ));
-                    let mut value: *mut c_void = std::ptr::null_mut();
-                    let mut chars = 0u32;
-                    let found = VerQueryValueW(
-                        block.as_ptr() as *const c_void,
-                        PCWSTR(key.as_ptr()),
-                        &mut value,
-                        &mut chars,
-                    )
-                    .as_bool();
-                    if !found || value.is_null() || chars == 0 {
-                        return None;
-                    }
-                    let text = std::slice::from_raw_parts(value as *const u16, chars as usize);
-                    let text = String::from_utf16_lossy(text);
-                    let text = text.trim_end_matches('\0').trim();
-                    (!text.is_empty()).then(|| text.to_owned())
-                })
-            };
-
-            (read("FileDescription"), read("CompanyName"))
+            Some((block, translations))
         }
+    }
+
+    fn read_version_field(
+        block: &[u8],
+        translations: &[(u16, u16)],
+        field: &str,
+    ) -> Option<String> {
+        unsafe {
+            translations.iter().find_map(|(language, codepage)| {
+                let key = wide(&format!(
+                    "\\StringFileInfo\\{language:04x}{codepage:04x}\\{field}"
+                ));
+                let mut value: *mut c_void = std::ptr::null_mut();
+                let mut chars = 0u32;
+                let found = VerQueryValueW(
+                    block.as_ptr() as *const c_void,
+                    PCWSTR(key.as_ptr()),
+                    &mut value,
+                    &mut chars,
+                )
+                .as_bool();
+                if !found || value.is_null() || chars == 0 {
+                    return None;
+                }
+                let text = std::slice::from_raw_parts(value as *const u16, chars as usize);
+                let text = String::from_utf16_lossy(text);
+                let text = text.trim_end_matches('\0').trim();
+                (!text.is_empty()).then(|| text.to_owned())
+            })
+        }
+    }
+
+    /// Campo arbitrário do recurso de versão (`ProductName`, `FileDescription`…).
+    pub fn version_field(path: &str, field: &str) -> Option<String> {
+        let (block, translations) = version_block(path)?;
+        read_version_field(&block, &translations, field)
+    }
+
+    /// `FileDescription` e `CompanyName` do recurso de versão do arquivo.
+    pub fn version_strings(path: &str) -> (Option<String>, Option<String>) {
+        let Some((block, translations)) = version_block(path) else {
+            return (None, None);
+        };
+        (
+            read_version_field(&block, &translations, "FileDescription"),
+            read_version_field(&block, &translations, "CompanyName"),
+        )
     }
 }
 
@@ -338,6 +433,11 @@ mod native {
     /// Executáveis ELF/Mach-O não têm recurso de versão como o PE.
     pub fn version_strings(_path: &str) -> (Option<String>, Option<String>) {
         (None, None)
+    }
+
+    /// Sem recurso de versão PE, o rótulo vem do `.desktop` ou do próprio nome.
+    pub fn version_field(_path: &str, _field: &str) -> Option<String> {
+        None
     }
 }
 
@@ -412,6 +512,41 @@ mod tests {
         enrich(&mut list);
         assert_eq!(list[0].display_name.as_deref(), Some("algo-raro"));
         assert!(list[0].system_kind.is_none());
+    }
+
+    #[test]
+    fn nome_oficial_descarta_nome_tecnico_e_caracteres_de_controle() {
+        assert_eq!(
+            clean_version_name("Marvel's Spider-Man\u{7}", "Marvel-Win64-Shipping").as_deref(),
+            Some("Marvel's Spider-Man")
+        );
+        assert_eq!(
+            clean_version_name("Marvel-Win64-Shipping", "Marvel-Win64-Shipping"),
+            None
+        );
+        assert_eq!(
+            clean_version_name("Unreal Engine", "MeuJogo-Win64-Shipping"),
+            None
+        );
+        assert_eq!(clean_version_name("   ", "jogo"), None);
+    }
+
+    #[test]
+    fn rotulo_prefere_apelido_conhecido_e_depois_nome_oficial() {
+        assert_eq!(
+            choose_display_name("code", Some("Visual Studio Code"), Some("VS Code")),
+            "VS Code"
+        );
+        // Apelido que só muda a caixa não acrescenta informação: usa o nome oficial.
+        assert_eq!(
+            choose_display_name("chrome", Some("Google Chrome"), Some("Chrome")),
+            "Google Chrome"
+        );
+        assert_eq!(
+            choose_display_name("Marvel-Win64-Shipping", Some("Marvel's Spider-Man"), None),
+            "Marvel's Spider-Man"
+        );
+        assert_eq!(choose_display_name("app-raro", None, None), "app-raro");
     }
 
     #[cfg(target_os = "linux")]

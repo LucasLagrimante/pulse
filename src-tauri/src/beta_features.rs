@@ -61,6 +61,8 @@ pub struct BetaFeaturesConfig {
     pub dock_theme: String,
     /// Caminhos absolutos de executáveis (ou IDs `shell:AppsFolder\...`) fixados na dock.
     pub dock_pinned_apps: Vec<String>,
+    /// Chaves dos apps abertos não fixados na ordem escolhida por arraste na dock.
+    pub dock_unpinned_order: Vec<String>,
     /// Widgets fixados na Barra Superior na ordem exibida (`cpu`, `ram`, `gpu`, `network`,
     /// `peripherals`, `quotas`, `tray`, `volume`, `clock`).
     pub top_bar_widgets: Vec<String>,
@@ -83,6 +85,7 @@ impl Default for BetaFeaturesConfig {
             dock_icon_size: DEFAULT_DOCK_ICON_SIZE,
             dock_theme: "light".to_owned(),
             dock_pinned_apps: Vec::new(),
+            dock_unpinned_order: Vec::new(),
             top_bar_widgets: default_top_bar_widgets(),
             top_bar_quota_providers: Vec::new(),
             top_bar_peripheral_devices: Vec::new(),
@@ -122,6 +125,20 @@ impl BetaFeaturesConfig {
             }
         }
         self.dock_pinned_apps = unique_apps;
+
+        let mut unique_unpinned =
+            Vec::with_capacity(self.dock_unpinned_order.len().min(MAX_PINNED_APPS));
+        for raw in self.dock_unpinned_order {
+            let clean = raw.trim().to_lowercase();
+            if clean.is_empty() || unique_unpinned.contains(&clean) {
+                continue;
+            }
+            unique_unpinned.push(clean);
+            if unique_unpinned.len() >= MAX_PINNED_APPS {
+                break;
+            }
+        }
+        self.dock_unpinned_order = unique_unpinned;
 
         let mut unique_widgets =
             Vec::with_capacity(self.top_bar_widgets.len().min(ALL_TOP_BAR_WIDGETS.len()) + 2);
@@ -188,6 +205,7 @@ pub struct DockSettingsPatch {
     pub dock_magnification: Option<bool>,
     pub dock_icon_size: Option<u32>,
     pub dock_pinned_apps: Option<Vec<String>>,
+    pub dock_unpinned_order: Option<Vec<String>>,
     pub top_bar_widgets: Option<Vec<String>>,
     pub top_bar_quota_providers: Option<Vec<String>>,
     pub top_bar_peripheral_devices: Option<Vec<String>>,
@@ -271,6 +289,23 @@ pub fn toggle_pinned_app(exe_path: &str) -> Result<BetaFeaturesConfig, String> {
         sanitized
     };
     Ok(updated)
+}
+
+/// Salva a ordem dos ícones da Dock após drag-and-drop nativo.
+///
+/// `pinned` são os caminhos/IDs fixados (a mesma ordem de `dock_pinned_apps`);
+/// `unpinned` são as chaves dos apps abertos que não estão fixados.
+pub fn save_dock_order(
+    pinned: Vec<String>,
+    unpinned: Vec<String>,
+) -> Result<BetaFeaturesConfig, String> {
+    let _guard = lock().lock().unwrap_or_else(|e| e.into_inner());
+    let mut config = load_unlocked();
+    config.dock_pinned_apps = pinned;
+    config.dock_unpinned_order = unpinned;
+    let sanitized = config.sanitized();
+    save_unlocked(&sanitized)?;
+    Ok(sanitized)
 }
 
 /// Salva uma nova ordem de widgets da Barra Superior a partir do drag-and-drop nativo.
@@ -401,6 +436,9 @@ pub async fn update_dock_settings(
         if let Some(pinned) = patch.dock_pinned_apps {
             config.dock_pinned_apps = pinned;
         }
+        if let Some(unpinned) = patch.dock_unpinned_order {
+            config.dock_unpinned_order = unpinned;
+        }
         if let Some(widgets) = patch.top_bar_widgets {
             config.top_bar_widgets = widgets;
         }
@@ -466,6 +504,12 @@ mod tests {
                 "".to_owned(),
                 "C:\\App\\Two.exe".to_owned(),
             ],
+            dock_unpinned_order: vec![
+                "  AUMID:App.One ".to_owned(),
+                "aumid:app.one".to_owned(),
+                "".to_owned(),
+                "c:\\app\\two.exe".to_owned(),
+            ],
             top_bar_widgets: vec![
                 " CPU ".to_owned(),
                 "quotas".to_owned(),
@@ -483,6 +527,10 @@ mod tests {
         assert_eq!(
             cfg.dock_pinned_apps,
             vec!["C:\\App\\One.exe".to_owned(), "C:\\App\\Two.exe".to_owned()]
+        );
+        assert_eq!(
+            cfg.dock_unpinned_order,
+            vec!["aumid:app.one".to_owned(), "c:\\app\\two.exe".to_owned()]
         );
         assert_eq!(
             cfg.top_bar_widgets,

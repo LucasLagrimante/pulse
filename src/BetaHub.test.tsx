@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BetaHub, DEFAULT_BETA_FEATURES, type BetaFeaturesConfig } from "./BetaHub";
@@ -90,6 +90,50 @@ describe("BetaHub", () => {
     vi.clearAllMocks();
   });
 
+  const selectTab = (name: RegExp) => {
+    fireEvent.click(screen.getByRole("tab", { name }));
+  };
+
+  it("organiza os três módulos em abas com estado visível e um painel por vez", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_dock_status") {
+        return Promise.resolve({
+          supported: true,
+          running: false,
+          nativeTaskbarHidden: false,
+          watchdogActive: false,
+          itemCount: 0,
+          engine: "Win32 + Direct2D (Shell)",
+          unavailableReason: null,
+          lastError: null,
+        }) as never;
+      }
+      return Promise.resolve({}) as never;
+    });
+
+    const config: BetaFeaturesConfig = { ...DEFAULT_BETA_FEATURES, pulseRunner: true };
+    await act(async () => {
+      render(<BetaHub config={config} onConfigChange={vi.fn()} />);
+    });
+
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs).toHaveLength(3);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    expect(tabs[0].textContent).toContain("INATIVO");
+    expect(tabs[2].textContent).toContain("ATIVO");
+    expect(screen.getByText("Bateria de Periféricos Conectados")).toBeInTheDocument();
+    expect(screen.queryByText("Pulse Runner (Launcher Rápido)")).not.toBeInTheDocument();
+
+    selectTab(/PULSE RUNNER/i);
+
+    expect(screen.getByRole("tab", { name: /PULSE RUNNER/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByText("Pulse Runner (Launcher Rápido)")).toBeInTheDocument();
+    expect(screen.queryByText("Bateria de Periféricos Conectados")).not.toBeInTheDocument();
+  });
+
   it("omits redundant taskbar hide toggle, toggles custom dock, and supports emergency restore", async () => {
     let state: BetaFeaturesConfig = { ...DEFAULT_BETA_FEATURES };
     const onConfigChange = vi.fn((next: BetaFeaturesConfig) => {
@@ -142,6 +186,7 @@ describe("BetaHub", () => {
     // Não deve existir checkbox separado para ocultar a barra do Windows
     expect(screen.queryByLabelText("Ocultar barra de tarefas nativa do Windows")).not.toBeInTheDocument();
 
+    selectTab(/PULSE SHELL/i);
     const dockToggle = await screen.findByLabelText("Ativar Dock estilo macOS");
     expect(dockToggle).not.toBeChecked();
 
@@ -198,6 +243,7 @@ describe("BetaHub", () => {
 
     const { rerender } = render(<BetaHub config={state} onConfigChange={onConfigChange} />);
 
+    selectTab(/PULSE SHELL/i);
     const networkCheckbox = await screen.findByLabelText("Exibir widget Rede na Barra Superior");
     expect(networkCheckbox).not.toBeChecked();
     expect(screen.getByText("Ícones de outros apps")).toBeInTheDocument();
@@ -267,6 +313,7 @@ describe("BetaHub", () => {
 
     render(<BetaHub config={state} onConfigChange={onConfigChange} />);
 
+    selectTab(/PULSE SHELL/i);
     const moveBetaUp = await screen.findByRole("button", {
       name: "Mover aplicativo Beta para cima",
     });
@@ -300,6 +347,7 @@ describe("BetaHub", () => {
 
     render(<BetaHub config={DEFAULT_BETA_FEATURES} onConfigChange={vi.fn()} />);
 
+    selectTab(/PULSE SHELL/i);
     const dockToggle = await screen.findByLabelText("Ativar Dock estilo macOS");
     await waitFor(() => {
       expect(dockToggle).toBeDisabled();

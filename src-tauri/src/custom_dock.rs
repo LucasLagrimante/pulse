@@ -5,9 +5,9 @@
 use crate::beta_features::BetaFeaturesConfig;
 use serde::Serialize;
 use std::sync::{Mutex, OnceLock};
-use tauri::{AppHandle, Emitter};
 #[cfg(windows)]
 use tauri::Manager;
+use tauri::{AppHandle, Emitter};
 
 #[cfg(windows)]
 pub mod appbar;
@@ -167,6 +167,28 @@ pub fn open_standalone_files_window() {
         tauri::async_runtime::spawn(async move {
             let _ = crate::tray::show_files_window(app, None);
         });
+    }
+}
+
+/// Revela a Dock quando o Pulse Runner é acionado pela tecla Windows.
+/// No-op fora do Windows ou quando o Pulse Shell está desligado.
+pub fn reveal_dock_from_shortcut() {
+    #[cfg(windows)]
+    {
+        if is_supported() {
+            dock_window::reveal_from_shortcut();
+        }
+    }
+}
+
+/// Mantém a Dock visível enquanto o Pulse Runner estiver aberto (inclusive em
+/// tela cheia), liberando-a quando ele fecha.
+pub fn set_dock_hold(hold: bool) {
+    #[cfg(windows)]
+    {
+        if is_supported() {
+            dock_window::hold_from_shortcut(hold);
+        }
     }
 }
 

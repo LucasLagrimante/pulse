@@ -74,6 +74,7 @@ export type BetaFeaturesConfig = {
   dockIconSize: number;
   dockTheme: string;
   dockPinnedApps: string[];
+  dockUnpinnedOrder?: string[];
   topBarWidgets: TopBarWidgetId[];
   topBarQuotaProviders?: string[];
   topBarPeripheralDevices?: string[];
