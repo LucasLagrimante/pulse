@@ -73,6 +73,10 @@ pub struct LauncherItem {
     pub category: String,
     pub badge: String,
     pub icon_hint: String,
+    /// Data URI PNG do ícone real do app. `None` = sem ícone confiável; o
+    /// frontend cai para o glifo semântico de `icon_hint`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action_label: Option<String>,
     pub is_recent: bool,
@@ -671,10 +675,23 @@ fn builtin_to_item(def: &BuiltinDef, score: i32) -> LauncherItem {
         category: def.category.to_owned(),
         badge: def.badge.to_owned(),
         icon_hint: def.icon_hint.to_owned(),
+        icon: None,
         action_label: Some(def.action_label.to_owned()),
         is_recent: false,
         score,
     }
+}
+
+/// Ícone nativo do alvo de um item do runner. Extração e cache ficam em
+/// `app_icons`; aqui só decidimos a estratégia por formato de alvo.
+fn icon_for_target(target: &str) -> Option<String> {
+    // Apps modernos (AUMID) não têm arquivo que o SHGetFileInfo resolva;
+    // nesses casos o frontend mantém o glifo semântico.
+    if target.starts_with("shell:AppsFolder\\") {
+        return None;
+    }
+    crate::app_icons::icon_for_path(Path::new(target))
+        .or_else(|| crate::app_icons::icon_for_command(target))
 }
 
 /// Reconstrói o índice de aplicativos instalados em memória. Deve ser executado
@@ -778,6 +795,7 @@ pub fn query_sync(raw_query: &str, category_filter: Option<&str>) -> LauncherRes
                         category: "apps".to_owned(),
                         badge: "App".to_owned(),
                         icon_hint: "app".to_owned(),
+                        icon: icon_for_target(&app.target),
                         action_label: Some("Abrir".to_owned()),
                         is_recent: boost > 0,
                         score: base_score + boost,
@@ -894,6 +912,7 @@ fn build_recent_items(
                 category: entry.category.clone(),
                 badge: entry.badge.clone(),
                 icon_hint: entry.icon_hint.clone(),
+                icon: icon_for_target(&entry.target),
                 action_label: Some(action_label_for_kind(&entry.kind).to_owned()),
                 is_recent: true,
                 score: boost,
@@ -931,6 +950,7 @@ fn build_empty_state_items(
                         category: "apps".to_owned(),
                         badge: "App".to_owned(),
                         icon_hint: "app".to_owned(),
+                        icon: icon_for_target(&app.target),
                         action_label: Some("Abrir".to_owned()),
                         is_recent: boost > 0,
                         score: boost,
@@ -1239,6 +1259,7 @@ fn walk_files(
                 } else {
                     "file".to_owned()
                 },
+                icon: None,
                 action_label: Some("Abrir".to_owned()),
                 is_recent: false,
                 score: adjusted,
@@ -1521,7 +1542,11 @@ mod windows_scan {
                 continue;
             }
 
-            let title = humanize_exe_stem(stem);
+            let title = crate::process_identity::choose_display_name(
+                stem,
+                crate::process_identity::official_name_for_path(&cleaned).as_deref(),
+                Some(&humanize_exe_stem(stem)),
+            );
             let name_norm = normalize_text(&title);
             let target_key = cleaned.to_lowercase();
             if !seen_targets.insert(target_key) || !seen_names.insert(name_norm.clone()) {

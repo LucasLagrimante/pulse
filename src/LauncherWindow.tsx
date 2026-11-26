@@ -45,6 +45,8 @@ export interface LauncherItem {
   category: string;
   badge: string;
   iconHint: string;
+  /** Data URI PNG do ícone real do app; ausente cai para o glifo semântico. */
+  icon?: string | null;
   actionLabel?: string | null;
   isRecent: boolean;
   score: number;
@@ -107,6 +109,9 @@ function sanitizeCount(value: unknown): number {
 }
 
 function renderItemIcon(item: LauncherItem) {
+  if (item.icon) {
+    return <img className="launcher-row-app-icon" src={item.icon} alt="" aria-hidden />;
+  }
   const hint = item.iconHint || item.kind;
   const props = { size: 17, strokeWidth: 1.9, "aria-hidden": true as const };
 
@@ -192,6 +197,13 @@ function emptySectionTitle(category: LauncherCategory): string {
   }
 }
 
+/** Máximo de respostas guardadas no cache em memória do runner. */
+const RESPONSE_CACHE_LIMIT = 60;
+
+function responseCacheKey(query: string, category: LauncherCategory): string {
+  return `${category}\u0000${query.trim().toLowerCase()}`;
+}
+
 export function LauncherWindow() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<LauncherCategory>("all");
@@ -223,8 +235,19 @@ export function LauncherWindow() {
     return () => window.removeEventListener("storage", syncThemeFromStorage);
   }, []);
 
+  // Cache em memória das respostas (stale-while-revalidate): a resposta
+  // guardada aparece na hora e a consulta ao backend só a atualiza.
+  const responseCacheRef = useRef<Map<string, LauncherResponse>>(new Map());
+
   const runQuery = useCallback(async (nextQuery: string, nextCategory: LauncherCategory) => {
     const seq = ++requestSeqRef.current;
+    const cacheKey = responseCacheKey(nextQuery, nextCategory);
+    const cache = responseCacheRef.current;
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      setResponse(cached);
+      setSelectedIndex(0);
+    }
     try {
       const data = await invoke<LauncherResponse>("launcher_query", {
         query: nextQuery,
@@ -232,7 +255,7 @@ export function LauncherWindow() {
       });
       if (seq !== requestSeqRef.current) return;
       if (data != null && typeof data === "object") {
-        setResponse({
+        const fresh: LauncherResponse = {
           query: typeof data.query === "string" ? data.query : nextQuery,
           category: typeof data.category === "string" ? data.category : nextCategory,
           calc: data.calc ?? null,
@@ -241,8 +264,16 @@ export function LauncherWindow() {
           indexedAppCount: sanitizeCount(data.indexedAppCount),
           isIndexing: Boolean(data.isIndexing),
           searchElapsedMs: sanitizeCount(data.searchElapsedMs),
-        });
-        setSelectedIndex(0);
+        };
+        // Reinsere no fim para manter a ordem de uso (LRU).
+        cache.delete(cacheKey);
+        cache.set(cacheKey, fresh);
+        if (cache.size > RESPONSE_CACHE_LIMIT) {
+          const oldest = cache.keys().next().value;
+          if (oldest !== undefined) cache.delete(oldest);
+        }
+        setResponse(fresh);
+        if (!cached) setSelectedIndex(0);
         setStatusError(null);
       }
     } catch (error) {
@@ -261,39 +292,56 @@ export function LauncherWindow() {
     return () => window.clearTimeout(timer);
   }, [query, category, runQuery]);
 
+  // Volta ao estado inicial (busca vazia, aba "Tudo"). Roda ao esconder a
+  // janela, para a próxima abertura já surgir zerada, e de novo ao abrir.
+  const resetToIdle = useCallback(() => {
+    setQuery("");
+    setCategory("all");
+    setSelectedIndex(0);
+    setCopiedText(null);
+    setStatusError(null);
+    void runQuery("", "all");
+  }, [runQuery]);
+
   // Foca o input na montagem e sempre que a janela é reaberta via tecla Windows.
   useEffect(() => {
     inputRef.current?.focus();
     let disposed = false;
-    let unlisten: (() => void) | undefined;
+    const unlisteners: Array<() => void> = [];
+    const track = (pending: Promise<() => void>) => {
+      pending
+        .then((cleanup) => {
+          if (disposed) cleanup();
+          else unlisteners.push(cleanup);
+        })
+        .catch(() => undefined);
+    };
 
-    listen("pulse://launcher-opened", () => {
-      if (disposed) return;
-      setQuery("");
-      setCategory("all");
-      setSelectedIndex(0);
-      setCopiedText(null);
-      setStatusError(null);
-      void runQuery("", "all");
-      window.requestAnimationFrame(() => {
-        inputRef.current?.focus();
-        inputRef.current?.select();
-      });
-    })
-      .then((cleanup) => {
-        if (disposed) cleanup();
-        else unlisten = cleanup;
-      })
-      .catch(() => undefined);
+    track(
+      listen("pulse://launcher-opened", () => {
+        if (disposed) return;
+        resetToIdle();
+        window.requestAnimationFrame(() => {
+          inputRef.current?.focus();
+          inputRef.current?.select();
+        });
+      }),
+    );
+    track(
+      listen<boolean>("pulse://foreground-changed", (event) => {
+        if (disposed || event.payload !== false) return;
+        resetToIdle();
+      }),
+    );
 
     return () => {
       disposed = true;
-      if (unlisten) unlisten();
+      unlisteners.forEach((cleanup) => cleanup());
       if (copiedTimerRef.current != null) {
         window.clearTimeout(copiedTimerRef.current);
       }
     };
-  }, [runQuery]);
+  }, [resetToIdle]);
 
   // Lista unificada e ordenada de todos os alvos selecionáveis pelo teclado.
   const entries = useMemo<NavigableEntry[]>(() => {

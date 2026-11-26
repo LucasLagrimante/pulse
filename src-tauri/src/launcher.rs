@@ -5,12 +5,16 @@
 //! `"launcher"` e comandos Tauri para consulta e execução segura.
 
 pub mod calc;
+pub mod game_guard;
 pub mod indexer;
 pub mod win_key;
 
 use indexer::{LauncherActionResult, LauncherResponse};
 use std::{
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex, OnceLock,
+    },
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow};
@@ -46,17 +50,62 @@ pub fn init(app: AppHandle) {
     });
 }
 
-/// Liga ou desliga dinamicamente o hook `WH_KEYBOARD_LL` + `WH_MOUSE_LL` da
-/// tecla Windows. Falhas reais são registradas na trilha de auditoria local.
+/// O usuário quer o runner na tecla Windows (preferência, antes da pausa por jogo).
+static WIN_KEY_WANTED: AtomicBool = AtomicBool::new(false);
+/// Serializa as reconciliações (preferência × jogo protegido).
+static WIN_KEY_RECONCILE: Mutex<()> = Mutex::new(());
+
+fn win_key_wanted() -> bool {
+    WIN_KEY_WANTED.load(Ordering::Acquire)
+}
+
+fn on_win_key_tap() {
+    // Um toque na tecla Windows também revela a Dock (quando ela está em
+    // auto-hide ou sobre um jogo em tela cheia).
+    crate::custom_dock::reveal_dock_from_shortcut();
+    if let Some(app) = clone_app_handle() {
+        tauri::async_runtime::spawn(async move {
+            toggle_launcher_window(&app);
+        });
+    }
+}
+
+/// Liga ou desliga o runner na tecla Windows conforme a preferência do usuário.
+/// Enquanto um jogo protegido por anti-cheat estiver aberto (`game_guard`), o
+/// hook fica desinstalado e a tecla volta a abrir o Iniciar nativo.
 pub fn apply_win_key_hook(enabled: bool) {
+    WIN_KEY_WANTED.store(enabled, Ordering::Release);
+    if enabled {
+        game_guard::start(win_key_wanted, reconcile_win_key_hook);
+    }
+    reconcile_win_key_hook();
+}
+
+/// Aplica o estado efetivo do hook: preferência ligada e nenhum jogo protegido aberto.
+fn reconcile_win_key_hook() {
+    let _lock = WIN_KEY_RECONCILE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let paused_by = game_guard::active();
+    let enabled = win_key_wanted() && paused_by.is_none();
+    if win_key::is_enabled() == enabled {
+        return;
+    }
     let started = Instant::now();
-    let result = win_key::set_enabled(enabled, || {
-        if let Some(app) = clone_app_handle() {
-            tauri::async_runtime::spawn(async move {
-                toggle_launcher_window(&app);
-            });
-        }
-    });
+    let result = win_key::set_enabled(enabled, on_win_key_tap);
+
+    if result.is_ok() && win_key_wanted() {
+        let message = match paused_by {
+            Some(process) => {
+                format!("Runner na tecla Windows pausado: jogo protegido aberto ({process})")
+            }
+            None => "Runner na tecla Windows retomado".to_string(),
+        };
+        #[cfg(windows)]
+        crate::custom_dock::shell_log::info("launcher_game_guard", message);
+        #[cfg(not(windows))]
+        let _ = message;
+    }
 
     if let Err(error) = result {
         crate::debug::record_failure(
@@ -84,6 +133,9 @@ pub fn toggle_launcher_window(app: &AppHandle) {
         return;
     }
 
+    // Enquanto o runner estiver aberto a Dock fica visível, mesmo sobre um
+    // jogo em tela cheia; ao fechar ela volta ao auto-hide.
+    crate::custom_dock::set_dock_hold(true);
     position_launcher_centered(&window);
     let _ = window.unminimize();
     let _ = window.set_always_on_top(true);
@@ -110,6 +162,7 @@ pub fn toggle_launcher_window(app: &AppHandle) {
 
 /// Oculta a janela `"launcher"` e notifica perda de foco.
 pub fn hide_launcher_window(app: &AppHandle) {
+    crate::custom_dock::set_dock_hold(false);
     if let Some(window) = app.get_webview_window(LAUNCHER_WINDOW_LABEL) {
         let _ = window.emit("pulse://foreground-changed", false);
         let _ = window.hide();

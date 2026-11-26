@@ -5,6 +5,11 @@
 //! exibido diretamente no WebView. O resultado é cacheado por caminho de
 //! executável (inclusive falhas) para não repetir trabalho de GDI.
 //!
+//! Atalhos de Internet (`.url`) são resolvidos pelo `IconFile=`/`IconIndex=`
+//! do `[InternetShortcut]`: o shell devolve o ícone genérico da classe
+//! `internetshortcut` e ignora o arquivo de ícone real (caso dos jogos da Steam
+//! no menu Iniciar).
+//!
 //! No Linux o ícone vem da entrada `.desktop` do aplicativo e do tema de
 //! ícones (ver `app_icons/linux.rs`). No macOS ainda não há extração.
 
@@ -88,7 +93,20 @@ fn icon_for_resolved_path(path: &Path) -> Option<String> {
             }
         }
 
-        let icon = extract_icon_data_uri(path);
+        let icon = if path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("url"))
+        {
+            icon_file_from_internet_shortcut(path)
+                .and_then(|(icon_file, index)| {
+                    extract_icon_data_uri_at_index(&icon_file, index)
+                        .or_else(|| extract_icon_data_uri(&icon_file))
+                })
+                .or_else(|| extract_icon_data_uri(path))
+        } else {
+            extract_icon_data_uri(path)
+        };
 
         if let Ok(mut cache) = icon_cache().lock() {
             cache.insert(key, icon.clone());
@@ -205,6 +223,97 @@ fn expand_env_vars(input: &str) -> String {
     }
 
     result
+}
+
+/// Resolve o arquivo de ícone declarado por um atalho `.url`.
+///
+/// `SHGetFileInfoW` trata `.url` pela classe `internetshortcut` e nunca lê o
+/// conteúdo do arquivo, então o ícone do jogo (apontado por `IconFile`) nunca
+/// aparece. Aqui o INI é lido e o caminho é resolvido (variáveis de ambiente e
+/// caminhos relativos ao diretório do atalho). Sem `IconFile` válido, devolve
+/// `None` para o chamador usar o ícone do shell — nunca um ícone inventado.
+#[cfg(windows)]
+fn icon_file_from_internet_shortcut(path: &Path) -> Option<(PathBuf, i32)> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let (icon_file, icon_index) = parse_internet_shortcut(&content)?;
+    let expanded = expand_env_vars(&icon_file);
+    let icon = PathBuf::from(expanded);
+    let icon = if icon.is_absolute() {
+        icon
+    } else {
+        path.parent()?.join(icon)
+    };
+
+    if !icon.is_file() {
+        return None;
+    }
+    Some((icon, icon_index))
+}
+
+/// Parser puro do INI de Internet Shortcut, sem dependência de plataforma.
+fn parse_internet_shortcut(content: &str) -> Option<(String, i32)> {
+    let mut icon_file = None;
+    let mut icon_index = 0;
+    let mut inside_section = false;
+
+    for raw in content.lines() {
+        let line = raw.trim().trim_start_matches('\u{feff}');
+        if line.starts_with('[') && line.ends_with(']') {
+            inside_section = line.eq_ignore_ascii_case("[InternetShortcut]");
+            continue;
+        }
+        if !inside_section {
+            continue;
+        }
+
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim();
+        if key.trim().eq_ignore_ascii_case("IconFile") && !value.is_empty() {
+            icon_file = Some(value.to_string());
+        } else if key.trim().eq_ignore_ascii_case("IconIndex") {
+            icon_index = value.parse::<i32>().unwrap_or(0);
+        }
+    }
+
+    icon_file.map(|file| (file, icon_index))
+}
+
+/// Extrai um ícone de arquivo/executável respeitando o índice do recurso.
+#[cfg(windows)]
+fn extract_icon_data_uri_at_index(path: &Path, index: i32) -> Option<String> {
+    use windows::{
+        core::HSTRING,
+        Win32::{
+            Foundation::S_OK,
+            UI::{
+                Shell::SHDefExtractIconW,
+                WindowsAndMessaging::{DestroyIcon, HICON},
+            },
+        },
+    };
+
+    let mut icon = HICON::default();
+    let result = unsafe {
+        SHDefExtractIconW(
+            &HSTRING::from(path.as_os_str().to_string_lossy().as_ref()),
+            index,
+            0,
+            Some(&mut icon),
+            None,
+            32,
+        )
+    };
+    if result != S_OK || icon.is_invalid() {
+        return None;
+    }
+
+    unsafe {
+        let png = icon_to_png(icon);
+        let _ = DestroyIcon(icon);
+        png
+    }
 }
 
 #[cfg(windows)]
@@ -447,5 +556,42 @@ mod tests {
             "C:\\Apps\\app.exe"
         );
         assert_eq!(expand_env_vars("C:\\fixo\\app.exe"), "C:\\fixo\\app.exe");
+    }
+
+    #[test]
+    fn parse_atalho_internet_steam() {
+        let ini = [
+            "[{000214A0-0000-0000-C000-000000000046}]",
+            "Prop3=19,0",
+            "[InternetShortcut]",
+            "IDList=",
+            "IconIndex=0",
+            "URL=steam://rungameid/2767030",
+            "IconFile=C:\\Program Files (x86)\\Steam\\steam\\games\\abc.ico",
+        ]
+        .join("\r\n");
+
+        assert_eq!(
+            parse_internet_shortcut(&ini),
+            Some((
+                "C:\\Program Files (x86)\\Steam\\steam\\games\\abc.ico".to_string(),
+                0
+            ))
+        );
+    }
+
+    #[test]
+    fn parse_atalho_internet_ignora_outras_secoes_e_indices_negativos() {
+        let ini = "[InternetShortcut]\r\nIconFile=%LOCALAPPDATA%\\jogo.ico\r\nIconIndex=-12\r\n";
+        assert_eq!(
+            parse_internet_shortcut(ini),
+            Some(("%LOCALAPPDATA%\\jogo.ico".to_string(), -12))
+        );
+    }
+
+    #[test]
+    fn parse_atalho_internet_sem_icon_file() {
+        let ini = "[InternetShortcut]\r\nURL=https://example.com\r\n";
+        assert_eq!(parse_internet_shortcut(ini), None);
     }
 }

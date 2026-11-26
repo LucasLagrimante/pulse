@@ -410,6 +410,13 @@
   box-shadow: var(--neu-shadow-raised-xs);
 }
 
+.launcher-row-app-icon {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  border-radius: 5px;
+}
+
 .launcher-row-icon.tone-pulse {
   color: var(--neu-accent);
   background: var(--neu-accent-soft);

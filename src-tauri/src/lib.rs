@@ -98,8 +98,12 @@ pub fn run() {
             }
             tauri::WindowEvent::Focused(focused) => {
                 let _ = window.emit("pulse://foreground-changed", *focused);
-                if !*focused && matches!(window.label(), "tray-flyout" | "launcher") {
-                    // Fecha o painel rápido e o Pulse Runner automaticamente ao clicar fora
+                if !*focused && window.label() == "launcher" {
+                    // Fecha o Pulse Runner ao perder o foco e libera a Dock presa
+                    // por ele (senão ela ficava visível sozinha, sem o runner).
+                    launcher::hide_launcher_window(window.app_handle());
+                } else if !*focused && window.label() == "tray-flyout" {
+                    // Fecha o painel rápido automaticamente ao clicar fora
                     let _ = window.hide();
                 }
             }
@@ -152,6 +156,7 @@ pub fn run() {
             tray::show_main_module,
             tray::show_files_window,
             tray::open_windows_date_time_settings,
+            tray::open_legacy_audio_panel,
             tray::frontend_ready,
             tray::toggle_tray_flyout,
             tray::resize_tray_flyout,
