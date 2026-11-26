@@ -1,6 +1,6 @@
 {
   "product": "Pulse",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "platform": "Windows 11 x64",
   "platforms": [
     "Windows 11 x64",
@@ -10,27 +10,27 @@
   "installer": {
     "filename": "Pulse-latest-x64-setup.exe",
     "url": "https://pulse.lagrimante.com.br/download/Pulse-latest-x64-setup.exe",
-    "assetUrl": "https://github.com/LucasLagrimante/pulse/releases/download/v1.4.1/Pulse_1.4.1_x64-setup.exe",
-    "sizeBytes": 4423245,
+    "assetUrl": "https://github.com/LucasLagrimante/pulse/releases/download/v1.5.0/Pulse_1.5.0_x64-setup.exe",
+    "sizeBytes": 4441313,
     "sizeFormatted": "4,2 MB",
-    "sha256": "e21ae9e29e21e443612ee30a1e526035887e687371ab4b0e9bcf67f0d270c6c5"
+    "sha256": "f9de33cad20ffb58d10bef91099d2344bcb679dddf0f9517225162a766273c0a"
   },
   "linux": {
     "deb": {
       "filename": "Pulse-latest-amd64.deb",
       "url": "https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.deb",
-      "assetUrl": "https://github.com/LucasLagrimante/pulse/releases/download/v1.4.1/Pulse_1.4.1_amd64.deb",
-      "sizeBytes": 8181276,
+      "assetUrl": "https://github.com/LucasLagrimante/pulse/releases/download/v1.5.0/Pulse_1.5.0_amd64.deb",
+      "sizeBytes": 8165264,
       "sizeFormatted": "7,8 MB",
-      "sha256": "132abbc4d7b455fb1080fcf93757f8aab7b2a31426ce1d1ab8bda4ca6ab9f262"
+      "sha256": "71b86c79e43ca062cc4e554538ff23950a3a1bf471d87c51c163c122e44d4c4f"
     },
     "appimage": {
       "filename": "Pulse-latest-amd64.AppImage",
       "url": "https://pulse.lagrimante.com.br/download/Pulse-latest-amd64.AppImage",
-      "assetUrl": "https://github.com/LucasLagrimante/pulse/releases/download/v1.4.1/Pulse_1.4.1_amd64.AppImage",
-      "sizeBytes": 86030840,
+      "assetUrl": "https://github.com/LucasLagrimante/pulse/releases/download/v1.5.0/Pulse_1.5.0_amd64.AppImage",
+      "sizeBytes": 86006264,
       "sizeFormatted": "82,0 MB",
-      "sha256": "33b83e26c73b93075349b557fa14686753bcfbb4eb5ea9f1d489defda5839a5a"
+      "sha256": "7da9bdcc98b9328e44b4a7cff183cb8ec92be0cd2cb096dd35c270bf29363b24"
     }
   },
   "macos": {
@@ -38,10 +38,10 @@
     "dmg": {
       "filename": "Pulse-latest-macos.dmg",
       "url": "https://pulse.lagrimante.com.br/download/Pulse-latest-macos.dmg",
-      "assetUrl": "https://github.com/LucasLagrimante/pulse/releases/download/v1.4.1/Pulse_1.4.1_aarch64.dmg",
-      "sizeBytes": 6579837,
+      "assetUrl": "https://github.com/LucasLagrimante/pulse/releases/download/v1.5.0/Pulse_1.5.0_aarch64.dmg",
+      "sizeBytes": 6590998,
       "sizeFormatted": "6,3 MB",
-      "sha256": "d73738ff9f4425147e45a0879883eac01e12445f57ba8340b1f478c102f82759"
+      "sha256": "6f03f51463264e3b038817ad4f023c0a10fa45d087196ff19405cdca7bdaf39e"
     }
   },
   "updatedAt": "2026-11-26"
