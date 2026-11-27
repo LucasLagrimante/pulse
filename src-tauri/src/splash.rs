@@ -11,6 +11,31 @@
 //! está pronto (`boot_complete`) ou quando qualquer fluxo abre a janela `main`.
 //! Um watchdog de [`WATCHDOG_MS`] garante que o app nunca fique invisível.
 
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+
+/// A splash foi decidida no início do `run()`, antes de qualquer janela existir.
+/// O frontend pode chamar `frontend_ready` ANTES de o `setup` terminar de subir a
+/// splash nativa (corrida); sem este marcador o Rust mostraria a `main` nesse
+/// intervalo e o `setup` a esconderia ~70 ms depois (a piscada do arranque).
+static EXPECTED: AtomicBool = AtomicBool::new(false);
+
+/// Marca que o arranque terá splash (chamar antes de criar as janelas).
+pub fn expect() {
+    // Só o Windows tem splash nativa; nos demais a `main` segue o fluxo antigo.
+    if cfg!(windows) {
+        EXPECTED.store(true, AtomicOrdering::SeqCst);
+    }
+}
+
+/// `true` enquanto a splash é esperada ou está ativa: a `main` deve ficar oculta.
+pub fn is_expected() -> bool {
+    EXPECTED.load(AtomicOrdering::SeqCst)
+}
+
+fn clear_expected() {
+    EXPECTED.store(false, AtomicOrdering::SeqCst);
+}
+
 /// Tempo máximo de vida da splash antes de forçar a abertura da janela principal.
 pub const WATCHDOG_MS: u64 = 10_000;
 
@@ -18,11 +43,12 @@ pub const WATCHDOG_MS: u64 = 10_000;
 mod anim {
     pub const ENTER_MS: f32 = 450.0;
     pub const EXIT_MS: f32 = 220.0;
-    pub const SIGNAL_LOOP_MS: f32 = 1800.0;
     /// Início do traço do sinal, depois que a entrada já avançou.
-    pub const SIGNAL_DELAY_MS: f32 = 200.0;
-    /// Fração do ciclo em que o sinal termina de se desenhar (`signal-trace`).
-    pub const SIGNAL_DRAW_FRACTION: f32 = 0.55;
+    pub const SIGNAL_DELAY_MS: f32 = 250.0;
+    /// Duração do traço do sinal; depois disso ele fica inteiro (sem loop).
+    pub const SIGNAL_DRAW_MS: f32 = 800.0;
+    /// Período da respiração do brilho depois que a marca está completa.
+    pub const BREATH_MS: f32 = 2400.0;
 
     pub type Point = (f32, f32);
 
@@ -147,21 +173,22 @@ mod anim {
             }
         } else {
             let t = (elapsed_ms - SIGNAL_DELAY_MS).max(0.0);
-            let phase = (t % SIGNAL_LOOP_MS) / SIGNAL_LOOP_MS;
-            let draw = (phase / SIGNAL_DRAW_FRACTION).min(1.0);
+            let draw = (t / SIGNAL_DRAW_MS).min(1.0);
             let started = elapsed_ms >= SIGNAL_DELAY_MS;
             Frame {
                 alpha: enter,
                 scale: 0.92 + 0.08 * enter,
                 rail: enter,
                 signal: if started { ease_in_out(draw) } else { 0.0 },
-                signal_opacity: if started { 0.4 + 0.6 * draw } else { 0.0 },
+                signal_opacity: if started { 0.5 + 0.5 * draw } else { 0.0 },
                 glow: if !started {
                     0.0
-                } else if phase < SIGNAL_DRAW_FRACTION {
+                } else if draw < 1.0 {
                     1.0
                 } else {
-                    (1.0 - (phase - SIGNAL_DRAW_FRACTION) / 0.25).max(0.0)
+                    // Respiração leve: 0.45 ± 0.25.
+                    let phase = (t - SIGNAL_DRAW_MS) / BREATH_MS * std::f32::consts::TAU;
+                    0.45 + 0.25 * phase.sin()
                 },
             }
         };
@@ -243,7 +270,16 @@ mod anim {
         #[test]
         fn sinal_so_comeca_depois_do_atraso() {
             assert_eq!(frame(100.0, None, false).signal, 0.0);
-            assert!(frame(1000.0, None, false).signal > 0.0);
+            assert!(frame(600.0, None, false).signal > 0.0);
+        }
+
+        #[test]
+        fn sinal_fica_inteiro_depois_de_desenhado() {
+            for ms in [1100.0, 2000.0, 5000.0, 9000.0] {
+                let f = frame(ms, None, false);
+                assert_eq!((f.signal, f.signal_opacity), (1.0, 1.0), "em {ms} ms");
+                assert!(f.glow > 0.0 && f.glow < 1.0);
+            }
         }
     }
 }
@@ -264,14 +300,18 @@ mod win {
     use windows::{
         core::w,
         Win32::{
-            Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM},
+            Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM},
             Graphics::{
                 Direct2D::{
-                    Common::{D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT},
-                    D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1StrokeStyle, D2D1_CAP_STYLE_ROUND,
-                    D2D1_DASH_STYLE_SOLID, D2D1_ELLIPSE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
-                    D2D1_LINE_JOIN_ROUND, D2D1_RENDER_TARGET_PROPERTIES,
-                    D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_STROKE_STYLE_PROPERTIES,
+                    Common::{
+                        D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_HOLLOW,
+                        D2D1_FIGURE_END_OPEN, D2D1_PIXEL_FORMAT,
+                    },
+                    D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1Factory, ID2D1PathGeometry,
+                    ID2D1StrokeStyle, D2D1_CAP_STYLE_ROUND, D2D1_DASH_STYLE_SOLID, D2D1_ELLIPSE,
+                    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_LINE_JOIN_ROUND,
+                    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+                    D2D1_STROKE_STYLE_PROPERTIES,
                 },
                 Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM,
                 Gdi::{
@@ -302,9 +342,9 @@ mod win {
     use windows_numerics::Vector2;
 
     /// Lado lógico da janela: marca de ~140 px + folga para o halo.
-    const WINDOW_LOGICAL: f32 = 200.0;
+    const WINDOW_LOGICAL: f32 = 250.0;
     /// Lado lógico da marca (viewBox 48 escalado para isto).
-    const MARK_LOGICAL: f32 = 140.0;
+    const MARK_LOGICAL: f32 = 176.0;
     const TIMER_ID: usize = 1;
     const TIMER_MS: u32 = 16;
     const WM_APP_DISMISS: u32 = WM_APP + 41;
@@ -322,7 +362,7 @@ mod win {
     struct Palette {
         accent: (f32, f32, f32),
         rail: (f32, f32, f32),
-        halo: (f32, f32, f32),
+        shadow: (f32, f32, f32),
     }
 
     fn rgb(hex: u32) -> (f32, f32, f32) {
@@ -338,13 +378,13 @@ mod win {
             Palette {
                 accent: rgb(0xd97706),
                 rail: rgb(0x4b6b88),
-                halo: rgb(0xe6edf5),
+                shadow: rgb(0x1b2430),
             }
         } else {
             Palette {
                 accent: rgb(0xf59e0b),
                 rail: rgb(0x8da9bf),
-                halo: rgb(0x181b20),
+                shadow: rgb(0x000000),
             }
         }
     }
@@ -431,21 +471,27 @@ mod win {
         }
     }
 
-    struct Splash {
-        hwnd: HWND,
+    /// Desenho puro do quadro (sem janela): permite renderizar fora da tela nos testes.
+    struct Renderer {
+        factory: ID2D1Factory,
         target: ID2D1DCRenderTarget,
         stroke: ID2D1StrokeStyle,
         surface: DibSurface,
         scale: f32,
-        origin: (i32, i32),
         palette: Palette,
+        rail: Vec<anim::Point>,
+        signal: Vec<anim::Point>,
+    }
+
+    struct Splash {
+        hwnd: HWND,
+        renderer: Renderer,
+        origin: (i32, i32),
         reduce_motion: bool,
         started: Instant,
         exit_started: Option<Instant>,
         timed_out: bool,
         on_timeout: Box<dyn Fn()>,
-        rail: Vec<anim::Point>,
-        signal: Vec<anim::Point>,
     }
 
     fn color(c: (f32, f32, f32), a: f32) -> D2D1_COLOR_F {
@@ -457,28 +503,104 @@ mod win {
         }
     }
 
-    impl Splash {
-        /// Desenha um quadro. Retorna `true` quando a saída terminou.
-        fn render(&mut self) -> bool {
-            let elapsed = self.started.elapsed().as_secs_f32() * 1000.0;
-            let exit_ms = self
-                .exit_started
-                .map(|t| t.elapsed().as_secs_f32() * 1000.0);
-            let f = anim::frame(elapsed, exit_ms, self.reduce_motion);
+    impl Renderer {
+        fn new(scale: f32, light: bool) -> Result<Self, String> {
+            let factory: ID2D1Factory = unsafe {
+                D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)
+                    .map_err(|e| format!("D2D1CreateFactory (splash) falhou: {e}"))?
+            };
+            let props = D2D1_RENDER_TARGET_PROPERTIES {
+                r#type: D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+                pixelFormat: D2D1_PIXEL_FORMAT {
+                    format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                    alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+                },
+                dpiX: 96.0,
+                dpiY: 96.0,
+                ..Default::default()
+            };
+            let target = unsafe {
+                factory
+                    .CreateDCRenderTarget(&props)
+                    .map_err(|e| format!("CreateDCRenderTarget (splash) falhou: {e}"))?
+            };
+            let stroke = unsafe {
+                factory
+                    .CreateStrokeStyle(
+                        &D2D1_STROKE_STYLE_PROPERTIES {
+                            startCap: D2D1_CAP_STYLE_ROUND,
+                            endCap: D2D1_CAP_STYLE_ROUND,
+                            dashCap: D2D1_CAP_STYLE_ROUND,
+                            lineJoin: D2D1_LINE_JOIN_ROUND,
+                            miterLimit: 10.0,
+                            dashStyle: D2D1_DASH_STYLE_SOLID,
+                            dashOffset: 0.0,
+                        },
+                        None,
+                    )
+                    .map_err(|e| format!("CreateStrokeStyle (splash) falhou: {e}"))?
+            };
+            let side = (WINDOW_LOGICAL * scale).round() as i32;
+            Ok(Self {
+                factory,
+                target,
+                stroke,
+                surface: DibSurface::new(side)?,
+                scale,
+                palette: palette(light),
+                rail: anim::rail_points(),
+                signal: anim::signal_points(),
+            })
+        }
+
+        /// Uma única geometria aberta por traço: sem sobreposição de segmentos,
+        /// então a transparência do traço fica uniforme.
+        fn path(&self, pts: &[Vector2]) -> Option<ID2D1PathGeometry> {
+            if pts.len() < 2 {
+                return None;
+            }
+            unsafe {
+                let geo = self.factory.CreatePathGeometry().ok()?;
+                let sink = geo.Open().ok()?;
+                sink.BeginFigure(pts[0], D2D1_FIGURE_BEGIN_HOLLOW);
+                sink.AddLines(&pts[1..]);
+                sink.EndFigure(D2D1_FIGURE_END_OPEN);
+                sink.Close().ok()?;
+                Some(geo)
+            }
+        }
+
+        fn stroke_path(&self, pts: &[Vector2], c: D2D1_COLOR_F, width: f32) {
+            let Some(geo) = self.path(pts) else { return };
+            unsafe {
+                if let Ok(brush) = self.target.CreateSolidColorBrush(&c, None) {
+                    self.target.DrawGeometry(&geo, &brush, width, &self.stroke);
+                }
+            }
+        }
+
+        /// Pinta o quadro no DIB. `false` se o alvo não pôde ser vinculado.
+        fn paint(&mut self, f: &anim::Frame) -> bool {
             let side = self.surface.side;
             let half = side as f32 / 2.0;
             // Unidade do viewBox 48 em pixels físicos, já com a escala do quadro.
             let unit = MARK_LOGICAL * self.scale / 48.0 * f.scale;
-            let ox = half - 24.0 * unit;
-            let oy = half - 24.0 * unit;
-            let map = |p: anim::Point| Vector2 {
-                X: ox + p.0 * unit,
-                Y: oy + p.1 * unit,
+            let (ox, oy) = (half - 24.0 * unit, half - 24.0 * unit);
+            let map = |pts: Vec<anim::Point>| -> Vec<Vector2> {
+                pts.into_iter()
+                    .map(|p| Vector2 {
+                        X: ox + p.0 * unit,
+                        Y: oy + p.1 * unit,
+                    })
+                    .collect()
             };
+            let rail = map(anim::partial(&self.rail, f.rail));
+            let sig = map(anim::partial(&self.signal, f.signal));
+            let (rail_w, sig_w) = (2.2 * unit, 3.4 * unit);
 
             self.surface.clear();
             unsafe {
-                let bind = windows::Win32::Foundation::RECT {
+                let bind = RECT {
                     left: 0,
                     top: 0,
                     right: side,
@@ -490,70 +612,66 @@ mod win {
                 self.target.BeginDraw();
                 self.target.Clear(Some(&color((0.0, 0.0, 0.0), 0.0)));
 
-                // Halo: elipses concêntricas de baixa opacidade (queda suave),
-                // na cor do fundo do tema para a marca ler em qualquer papel de parede.
-                let halo_r = half * 0.98;
-                for i in 0..14 {
-                    let k = i as f32 / 14.0;
-                    let r = halo_r * (1.0 - k * 0.85);
-                    if let Ok(b) = self
-                        .target
-                        .CreateSolidColorBrush(&color(self.palette.halo, 0.07), None)
-                    {
+                // Sombra curta da própria marca (sem disco de fundo): descola do
+                // papel de parede sem parecer uma janela.
+                let drop = |pts: &[Vector2]| -> Vec<Vector2> {
+                    pts.iter()
+                        .map(|p| Vector2 {
+                            X: p.X,
+                            Y: p.Y + 0.9 * unit,
+                        })
+                        .collect()
+                };
+                let shadow = color(self.palette.shadow, 0.16);
+                self.stroke_path(&drop(&rail), shadow, rail_w * 1.5);
+                self.stroke_path(&drop(&sig), shadow, sig_w * 1.4 * f.signal_opacity);
+
+                self.stroke_path(&rail, color(self.palette.rail, 1.0), rail_w);
+                // Brilho do sinal: o mesmo traço, mais largo e bem translúcido.
+                if f.glow > 0.0 {
+                    self.stroke_path(
+                        &sig,
+                        color(self.palette.accent, 0.16 * f.glow * f.signal_opacity),
+                        sig_w * 2.2,
+                    );
+                }
+                self.stroke_path(&sig, color(self.palette.accent, f.signal_opacity), sig_w);
+
+                // Faísca na ponta enquanto o sinal ainda se desenha.
+                if f.signal < 1.0 && f.signal > 0.0 {
+                    if let (Some(&tip), Ok(b)) = (
+                        sig.last(),
+                        self.target
+                            .CreateSolidColorBrush(&color(self.palette.accent, f.glow), None),
+                    ) {
                         let e = D2D1_ELLIPSE {
-                            point: Vector2 { X: half, Y: half },
-                            radiusX: r,
-                            radiusY: r,
+                            point: tip,
+                            radiusX: sig_w * 0.75,
+                            radiusY: sig_w * 0.75,
                         };
                         self.target.FillEllipse(&e, &b);
                     }
                 }
-
-                let rail_w = 2.2 * unit;
-                let sig_w = 3.4 * unit;
-                if let Ok(b) = self
-                    .target
-                    .CreateSolidColorBrush(&color(self.palette.rail, 1.0), None)
-                {
-                    let pts = anim::partial(&self.rail, f.rail);
-                    for w in pts.windows(2) {
-                        self.target
-                            .DrawLine(map(w[0]), map(w[1]), &b, rail_w, &self.stroke);
-                    }
-                }
-                let sig = anim::partial(&self.signal, f.signal);
-                if let Ok(b) = self
-                    .target
-                    .CreateSolidColorBrush(&color(self.palette.accent, f.signal_opacity), None)
-                {
-                    for w in sig.windows(2) {
-                        self.target
-                            .DrawLine(map(w[0]), map(w[1]), &b, sig_w, &self.stroke);
-                    }
-                }
-                // Brilho na ponta do sinal.
-                if f.glow > 0.0 {
-                    if let Some(&tip) = sig.last() {
-                        let c = map(tip);
-                        for i in 0..8 {
-                            let r = (1.2 + i as f32 * 0.9) * unit;
-                            if let Ok(b) = self.target.CreateSolidColorBrush(
-                                &color(self.palette.accent, 0.10 * f.glow),
-                                None,
-                            ) {
-                                let e = D2D1_ELLIPSE {
-                                    point: c,
-                                    radiusX: r,
-                                    radiusY: r,
-                                };
-                                self.target.FillEllipse(&e, &b);
-                            }
-                        }
-                    }
-                }
                 let _ = self.target.EndDraw(None, None);
                 let _ = GdiFlush();
+            }
+            true
+        }
+    }
 
+    impl Splash {
+        /// Desenha um quadro. Retorna `true` quando a saída terminou.
+        fn render(&mut self) -> bool {
+            let elapsed = self.started.elapsed().as_secs_f32() * 1000.0;
+            let exit_ms = self
+                .exit_started
+                .map(|t| t.elapsed().as_secs_f32() * 1000.0);
+            let f = anim::frame(elapsed, exit_ms, self.reduce_motion);
+            if !self.renderer.paint(&f) {
+                return false;
+            }
+            let side = self.renderer.surface.side;
+            unsafe {
                 let size = SIZE { cx: side, cy: side };
                 let pos = POINT {
                     x: self.origin.0,
@@ -570,7 +688,7 @@ mod win {
                     None,
                     Some(&pos),
                     Some(&size),
-                    Some(self.surface.memdc),
+                    Some(self.renderer.surface.memdc),
                     Some(&POINT::default()),
                     COLORREF(0),
                     Some(&blend),
@@ -664,42 +782,6 @@ mod win {
         on_timeout: Box<dyn Fn()>,
         ready: &mpsc::Sender<Result<(), String>>,
     ) -> Result<(), String> {
-        let factory: windows::Win32::Graphics::Direct2D::ID2D1Factory = unsafe {
-            D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)
-                .map_err(|e| format!("D2D1CreateFactory (splash) falhou: {e}"))?
-        };
-        let props = D2D1_RENDER_TARGET_PROPERTIES {
-            r#type: D2D1_RENDER_TARGET_TYPE_SOFTWARE,
-            pixelFormat: D2D1_PIXEL_FORMAT {
-                format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-            },
-            dpiX: 96.0,
-            dpiY: 96.0,
-            ..Default::default()
-        };
-        let target = unsafe {
-            factory
-                .CreateDCRenderTarget(&props)
-                .map_err(|e| format!("CreateDCRenderTarget (splash) falhou: {e}"))?
-        };
-        let stroke = unsafe {
-            factory
-                .CreateStrokeStyle(
-                    &D2D1_STROKE_STYLE_PROPERTIES {
-                        startCap: D2D1_CAP_STYLE_ROUND,
-                        endCap: D2D1_CAP_STYLE_ROUND,
-                        dashCap: D2D1_CAP_STYLE_ROUND,
-                        lineJoin: D2D1_LINE_JOIN_ROUND,
-                        miterLimit: 10.0,
-                        dashStyle: D2D1_DASH_STYLE_SOLID,
-                        dashOffset: 0.0,
-                    },
-                    None,
-                )
-                .map_err(|e| format!("CreateStrokeStyle (splash) falhou: {e}"))?
-        };
-
         let hinstance =
             unsafe { GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW falhou: {e}"))? };
         let class_name = w!("PulseSplashLayeredClass");
@@ -739,23 +821,17 @@ mod win {
         let side = (WINDOW_LOGICAL * scale).round() as i32;
         let (cx, cy) = center.unwrap_or_else(primary_monitor_center);
         let origin = anim::centered_origin(cx, cy, side);
-        let surface = DibSurface::new(side)?;
+        let renderer = Renderer::new(scale, system_uses_light_theme())?;
 
         let mut splash = Splash {
             hwnd,
-            target,
-            stroke,
-            surface,
-            scale,
+            renderer,
             origin,
-            palette: palette(system_uses_light_theme()),
             reduce_motion: reduce_motion(),
             started: Instant::now(),
             exit_started: None,
             timed_out: false,
             on_timeout,
-            rail: anim::rail_points(),
-            signal: anim::signal_points(),
         };
         // Primeiro quadro (alpha 0) antes de mostrar: nada pisca.
         splash.render();
@@ -787,6 +863,7 @@ mod win {
     }
 
     pub fn dismiss() {
+        super::clear_expected();
         let raw = SPLASH_HWND.load(Ordering::SeqCst);
         if raw != 0 {
             unsafe {
@@ -815,6 +892,7 @@ mod win {
                 }
             });
         let Ok(handle) = handle else {
+            super::clear_expected();
             return false;
         };
         let ok = match rx.recv_timeout(Duration::from_millis(1500)) {
@@ -835,6 +913,47 @@ mod win {
             .unwrap() = Some(handle);
         ok
     }
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// Renderiza quadros fora da tela. Com `PULSE_SPLASH_PREVIEW=<pasta>` grava
+        /// BMPs 32bpp (alpha premultiplicado) para inspeção visual.
+        #[test]
+        fn renderiza_quadros_sem_falhar() {
+            let dir = std::env::var("PULSE_SPLASH_PREVIEW").ok();
+            for (light, scale) in [(false, 1.0f32), (true, 1.5)] {
+                let mut r = Renderer::new(scale, light).expect("renderer");
+                for ms in [150.0f32, 450.0, 800.0, 1100.0, 1500.0, 2200.0] {
+                    let f = anim::frame(ms, None, false);
+                    assert!(r.paint(&f), "paint falhou em {ms} ms");
+                    if let Some(dir) = &dir {
+                        let side = r.surface.side as usize;
+                        let px =
+                            unsafe { std::slice::from_raw_parts(r.surface.bits, side * side * 4) };
+                        let mut out = Vec::with_capacity(54 + px.len());
+                        out.extend_from_slice(b"BM");
+                        out.extend_from_slice(&((54 + px.len()) as u32).to_le_bytes());
+                        out.extend_from_slice(&[0; 4]);
+                        out.extend_from_slice(&54u32.to_le_bytes());
+                        out.extend_from_slice(&40u32.to_le_bytes());
+                        out.extend_from_slice(&(side as i32).to_le_bytes());
+                        out.extend_from_slice(&(-(side as i32)).to_le_bytes());
+                        out.extend_from_slice(&1u16.to_le_bytes());
+                        out.extend_from_slice(&32u16.to_le_bytes());
+                        out.extend_from_slice(&[0; 24]);
+                        out.extend_from_slice(px);
+                        let name = format!(
+                            "{dir}\\splash-{}-{}.bmp",
+                            if light { "claro" } else { "escuro" },
+                            ms as u32
+                        );
+                        std::fs::write(name, out).expect("gravar bmp");
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -846,7 +965,9 @@ pub fn is_active() -> bool {
 }
 
 #[cfg(not(windows))]
-pub fn dismiss() {}
+pub fn dismiss() {
+    clear_expected();
+}
 
 #[cfg(not(windows))]
 pub fn show(_center: Option<(i32, i32)>, _on_timeout: impl Fn() + Send + 'static) -> bool {

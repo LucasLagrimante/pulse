@@ -3233,7 +3233,12 @@ function App() {
   );
 
   const visibleNavigationItems = useMemo(
-    () => ALL_NAVIGATION_ITEMS.filter(item => item !== "Debug" || debugEnabled),
+    () =>
+      ALL_NAVIGATION_ITEMS.filter(
+        // "Arquivos" saiu do menu: o gerenciador é janela própria (`files`) e
+        // abriria a mesma tela duas vezes dentro do painel.
+        item => (item !== "Debug" || debugEnabled) && item !== "Arquivos",
+      ),
     [debugEnabled],
   );
 
@@ -4225,39 +4230,44 @@ function App() {
             </ul>
           </nav>
           <div className="sidebar-foot">
-            <button
-              type="button"
-              className={`about-nav ${activeArea === "Recursos Beta" ? "active" : ""}`}
-              aria-current={activeArea === "Recursos Beta" ? "page" : undefined}
-              onClick={() => setActiveArea("Recursos Beta")}
-            >
-              <span aria-hidden="true">β</span>
-              Recursos Beta
-              {(betaFeatures.peripheralBattery || betaFeatures.customDock || betaFeatures.pulseRunner) && (
-                <small className="beta-nav-count">
-                  {Number(betaFeatures.peripheralBattery) +
-                    Number(betaFeatures.customDock) +
-                    Number(betaFeatures.pulseRunner)}
-                </small>
-              )}
-            </button>
-            <button
-              type="button"
-              className={`about-nav ${activeArea === "Informações" ? "active" : ""}`}
-              aria-current={activeArea === "Informações" ? "page" : undefined}
-              onClick={() => setActiveArea("Informações")}
-            >
-              <span aria-hidden="true">i</span>
-              Sobre o Pulse
-            </button>
-            <button
-              type="button"
-              className="about-nav"
-              onClick={() => void handleExitApp()}
-            >
-              <span aria-hidden="true">⏻</span>
-              Sair do Pulse
-            </button>
+            <div className="sidebar-actions">
+              <button
+                type="button"
+                className={`about-nav ${activeArea === "Recursos Beta" ? "active" : ""}`}
+                aria-current={activeArea === "Recursos Beta" ? "page" : undefined}
+                aria-label="Recursos Beta"
+                title="Recursos Beta"
+                onClick={() => setActiveArea("Recursos Beta")}
+              >
+                <span aria-hidden="true">β</span>
+                {(betaFeatures.peripheralBattery || betaFeatures.customDock || betaFeatures.pulseRunner) && (
+                  <small className="beta-nav-count">
+                    {Number(betaFeatures.peripheralBattery) +
+                      Number(betaFeatures.customDock) +
+                      Number(betaFeatures.pulseRunner)}
+                  </small>
+                )}
+              </button>
+              <button
+                type="button"
+                className={`about-nav ${activeArea === "Informações" ? "active" : ""}`}
+                aria-current={activeArea === "Informações" ? "page" : undefined}
+                aria-label="Sobre o Pulse"
+                title="Sobre o Pulse"
+                onClick={() => setActiveArea("Informações")}
+              >
+                <span aria-hidden="true">i</span>
+              </button>
+              <button
+                type="button"
+                className="about-nav"
+                aria-label="Sair do Pulse"
+                title="Sair do Pulse"
+                onClick={() => void handleExitApp()}
+              >
+                <span aria-hidden="true">⏻</span>
+              </button>
+            </div>
             <div className="sidebar-status">
               <span className="connection-state">LOCAL</span>
               <p>

@@ -777,6 +777,22 @@ fn format_celsius(value: f64) -> String {
     }
 }
 
+/// Aplica o tamanho/posição/maximizado salvos na `main` uma única vez, logo antes
+/// do primeiro show (o plugin não a restaura na criação; ver `lib.rs`).
+fn restore_main_state_once(window: &tauri::WebviewWindow) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tauri_plugin_window_state::{StateFlags, WindowExt};
+    static RESTORED: AtomicBool = AtomicBool::new(false);
+    if !RESTORED.swap(true, Ordering::SeqCst) {
+        let _ = window.restore_state(
+            StateFlags::SIZE
+                | StateFlags::POSITION
+                | StateFlags::MAXIMIZED
+                | StateFlags::FULLSCREEN,
+        );
+    }
+}
+
 fn show_main_internal(app: &AppHandle) -> Result<(), String> {
     // Qualquer caminho que abre a `main` (tray, 2ª instância, boot_complete)
     // encerra a splash; o fade roda por cima da janela já visível.
@@ -785,6 +801,7 @@ fn show_main_internal(app: &AppHandle) -> Result<(), String> {
         let _ = flyout.hide();
     }
     if let Some(window) = app.get_webview_window("main") {
+        restore_main_state_once(&window);
         window.show().map_err(|e| e.to_string())?;
         window.unminimize().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
@@ -887,7 +904,7 @@ pub fn frontend_ready(app: AppHandle) -> Result<bool, String> {
         return Ok(false);
     }
     // Com a splash nativa ativa, a `main` só aparece em `boot_complete`.
-    if crate::splash::is_active() {
+    if crate::splash::is_expected() {
         return Ok(true);
     }
     show_main_internal(&app)?;
@@ -898,7 +915,7 @@ pub fn frontend_ready(app: AppHandle) -> Result<bool, String> {
 /// Idempotente; sem splash ativa não faz nada.
 #[tauri::command]
 pub fn boot_complete(app: AppHandle) -> Result<(), String> {
-    if crate::splash::is_active() {
+    if crate::splash::is_expected() {
         show_main_internal(&app)?;
     }
     Ok(())

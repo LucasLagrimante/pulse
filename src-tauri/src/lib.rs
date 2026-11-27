@@ -45,6 +45,12 @@ use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Decide a splash ANTES de criar janelas: o frontend pode chamar
+    // `frontend_ready` antes do `setup` terminar (ver `splash::expect`).
+    #[cfg(desktop)]
+    if !startup::should_start_minimized(&std::env::args().collect::<Vec<_>>()) {
+        splash::expect();
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(
@@ -59,6 +65,10 @@ pub fn run() {
                         | tauri_plugin_window_state::StateFlags::FULLSCREEN,
                 )
                 .with_filter(|label| matches!(label, "main" | "files"))
+                // A `main` NÃO é restaurada na criação: maximizar uma janela oculta
+                // a mostra no Windows (piscada antes da splash). O estado salvo é
+                // aplicado por `tray::show_main_internal` no instante do primeiro show.
+                .skip_initial_state("main")
                 .build(),
         )
         .setup(|app| {
@@ -73,17 +83,22 @@ pub fn run() {
                     }
                 } else {
                     // Splash nativa (só a marca, sem janela) até o painel ficar pronto.
-                    let center = app.get_webview_window("main").and_then(|w| {
-                        let p = w.outer_position().ok()?;
-                        let s = w.outer_size().ok()?;
-                        (s.width > 0 && s.height > 0)
-                            .then(|| (p.x + s.width as i32 / 2, p.y + s.height as i32 / 2))
-                    });
+                    // Garantia extra: a `main` fica oculta até `boot_complete`.
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
                     let handle = app.handle().clone();
-                    splash::show(center, move || {
-                        // Watchdog: o app nunca pode ficar invisível.
-                        let _ = tray::show_main_window(handle.clone());
+                    let shown = splash::show(None, {
+                        let handle = handle.clone();
+                        move || {
+                            // Watchdog: o app nunca pode ficar invisível.
+                            let _ = tray::show_main_window(handle.clone());
+                        }
                     });
+                    if !shown {
+                        // Sem splash o frontend pode já ter recebido `true`: abre a main.
+                        let _ = tray::show_main_window(handle);
+                    }
                 }
             }
             for label in ["launcher", "tray-flyout"] {
