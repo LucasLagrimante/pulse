@@ -188,8 +188,9 @@ src/          Interface React 19 + TypeScript
 src-tauri/    Backend nativo Rust + Tauri 2 (Windows, Linux e preparo macOS)
 landing/      Landing page oficial (espelhada em ../pulse-lp para Cloudflare Workers)
 scripts/      Build local, verificação Rust, sincronização da landing e release
-memory/       Decisões e lições arquiteturais do projeto
 ```
+
+A memória de engenharia e as auditorias internas não são versionadas aqui: vivem no repositório privado `pulse-docs`, montado localmente com `npm run docs:mount`.
 
 ## Princípios do projeto
 

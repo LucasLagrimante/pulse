@@ -219,9 +219,10 @@ pulse/
 │   ├── sync-landing.mjs          # Sincroniza instaladores (Windows + Linux + macOS), SHA-256 e espelha em ../pulse-lp
 │   ├── kill-running-app.mjs      # Encerra pulse-windows antes do build (Windows, WSL, Linux e macOS)
 │   └── run-installer.mjs         # Abre o instalador NSIS gerado (Windows e WSL)
-├── memory/                       # Memória contínua com lições arquiteturais
 └── AGENTS.md                     # Este documento canônico de referência
 ```
+
+`memory/` (lições por módulo) e as auditorias internas (`docs/audit-*`, `docs/visual-review/`) **não são versionados neste repositório público**: vivem no repositório privado `pulse-docs`, montado por `npm run docs:mount` (clone em `../pulse-docs` + symlink local `memory`, ignorado pelo Git).
 
 ### 6.0. Multiplataforma
 - Textos visíveis que citam o SO vêm de `platformCopy()` em `src/platform.ts`; no Windows o texto é idêntico ao histórico. Ação que só existe no Windows (UAC, winget, ponto de restauração) é escondida ou mostrada como indisponível com motivo, nunca simulada.
@@ -277,6 +278,6 @@ Antes de entregar qualquer tarefa no Pulse, verifique:
 - [ ] Valores numéricos recebidos do IPC são sanitizados contra `null`/`undefined`/`NaN`?
 - [ ] Novas funcionalidades ou módulos foram refletidos na Landing Page (`landing/`) e sincronizados com `npm run lp:sync` / `npm run build:native`?
 - [ ] `npm test`, `npm run typecheck`, `npm run lint` e `npm run lp:check` executam com 100% de aprovação e zero alertas?
-- [ ] Novas lições ou restrições foram registradas em `memory/<modulo>/<slug>.md`?
+- [ ] Novas lições ou restrições foram registradas em `../pulse-docs/memory/<modulo>/<slug>.md` (repo privado; texto pode conter detalhe interno)?
 - [ ] Falhas novas no backend registram o erro real (`debug::record_failure` / `record_result`), nunca só uma mensagem genérica?
 

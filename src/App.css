@@ -1,6 +1,6 @@
 :root {
-  color: #e8e9e3;
-  background: #141619;
+  color: var(--neu-text-primary);
+  background: var(--neu-bg);
   font-family: Bahnschrift, "Arial Narrow", "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -16,7 +16,7 @@ html, body, #root {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background: #141619;
+  background: var(--neu-bg);
 }
 
 body {
@@ -45,7 +45,7 @@ ul, ol {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  background-color: #141619;
+  background-color: var(--neu-bg);
 }
 
 /* Sidebar */
@@ -55,8 +55,8 @@ ul, ol {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  border-right: 1px solid #343a42;
-  background: #191c20;
+  border-right: 1px solid var(--neu-divider);
+  background: var(--neu-surface);
 }
 
 .brand {
@@ -66,7 +66,7 @@ ul, ol {
   height: 80px;
   padding: 0 24px;
   flex-shrink: 0;
-  border-bottom: 1px solid #343a42;
+  border-bottom: 1px solid var(--neu-divider);
 }
 
 .brand-mark {
@@ -76,13 +76,13 @@ ul, ol {
   width: 30px;
   height: 30px;
   padding: 5px;
-  border: 1px solid #dda76d;
+  border: 1px solid var(--neu-accent);
 }
 
 .brand-mark i {
   display: block;
   flex: 1;
-  background: #dda76d;
+  background: var(--neu-accent);
 }
 
 .brand-mark i:nth-child(1) { height: 40%; }
@@ -90,14 +90,14 @@ ul, ol {
 .brand-mark i:nth-child(3) { height: 100%; }
 
 h1 {
-  color: #f0ede6;
+  color: var(--neu-text-title);
   font-size: 1.25rem;
   font-weight: 600;
   letter-spacing: -0.03em;
 }
 
 .brand p, .sidebar-foot p {
-  color: #a4aab1;
+  color: var(--neu-text-muted);
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .62rem;
   letter-spacing: .08em;
@@ -113,7 +113,7 @@ h1 {
 
 .nav-label {
   padding: 0 24px 10px;
-  color: #9099a3;
+  color: var(--neu-text-muted);
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .62rem;
   letter-spacing: .13em;
@@ -128,7 +128,7 @@ h1 {
   gap: 14px;
   padding: 0 24px;
   border: 0;
-  color: #aeb4ae;
+  color: var(--neu-text-secondary);
   line-height: 1;
   text-align: left;
   background: transparent;
@@ -137,7 +137,7 @@ h1 {
 }
 
 .nav-index {
-  color: #9099a3;
+  color: var(--neu-text-muted);
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: .67rem;
   transition: color 220ms ease;
@@ -148,18 +148,18 @@ h1 {
 }
 
 .nav-item:hover {
-  color: #f0ede6;
-  background: #1d211e;
+  color: var(--neu-text-title);
+  background: var(--neu-surface-hover);
 }
 
 .nav-item.active {
-  color: #f0ede6;
-  background: #272e36;
+  color: var(--neu-text-title);
+  background: var(--neu-surface-active);
   font-weight: 600;
 }
 
 .nav-item.active .nav-index {
-  color: #dda76d;
+  color: var(--neu-accent);
 }
 
 .sidebar-foot {
@@ -170,7 +170,7 @@ h1 {
   margin-top: auto;
   padding: 18px 24px;
   flex-shrink: 0;
-  border-top: 1px solid #343a42;
+  border-top: 1px solid var(--neu-divider);
 }
 
 .about-nav {
@@ -179,7 +179,7 @@ h1 {
   gap: 9px;
   padding: 7px 0;
   border: 0;
-  color: #89929c;
+  color: var(--neu-text-muted);
   background: transparent;
   font-size: .72rem;
   text-align: left;
@@ -192,19 +192,19 @@ h1 {
   width: 18px;
   height: 18px;
   place-items: center;
-  border: 1px solid #48515b;
+  border: 1px solid var(--neu-divider);
   border-radius: 50%;
   font: .66rem Georgia, serif;
 }
 
 .about-nav:hover,
 .about-nav.active {
-  color: #f0ede6;
+  color: var(--neu-text-title);
 }
 
 .about-nav.active > span {
-  border-color: #dda76d;
-  color: #dda76d;
+  border-color: var(--neu-accent);
+  color: var(--neu-accent);
 }
 
 .sidebar-status {

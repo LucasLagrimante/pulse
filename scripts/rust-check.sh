@@ -13,7 +13,7 @@
 # Os testes rodam com --test-threads=1: em paralelo a suíte derruba o processo
 # com STATUS_ACCESS_VIOLATION de forma intermitente (pendência aberta).
 # Testes conhecidos como dependentes da máquina (não bloqueiam release, ver
-# memory/build/rust-check-testes-de-maquina.md):
+# ../pulse-docs/memory/build/rust-check-testes-de-maquina.md):
 #   services::tests::real_enumeration_reads_start_name_and_classifies
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -143,7 +143,7 @@ for step in "${STEPS[@]}"; do
       ;;
     test)
       # Em série: em paralelo a suíte cai com STATUS_ACCESS_VIOLATION de forma
-      # intermitente (já no v1.5.0; ver memory/build/rust-check-testes-de-maquina.md).
+      # intermitente (já no v1.5.0; ver ../pulse-docs/memory/build/rust-check-testes-de-maquina.md).
       echo "==> cargo test --lib (em série)"
       SKIPS=""
       for t in "${MACHINE_TESTS[@]}"; do SKIPS="$SKIPS --skip $t"; done

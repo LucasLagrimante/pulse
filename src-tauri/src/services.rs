@@ -28,7 +28,7 @@
 //! "revisão" e a palavra malware não existe em lugar nenhum deste módulo.
 //!
 //! O `CompanyName` do version info é **auto-declarado** pelo fabricante — não é
-//! assinatura validada (ver `docs/audit-2026-09-11/README.md`). Por isso ele
+//! assinatura validada. Por isso ele
 //! nunca aparece sozinho como motivo de suspeita: ausente, só pesa quando
 //! combinado com um executável fora das pastas do Windows.
 //!

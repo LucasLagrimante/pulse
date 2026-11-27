@@ -22,3 +22,8 @@ src-tauri/target/
 
 # Instalador gerado pelo build (distribuído pela landing/GitHub Releases, não versionado)
 landing/public/download/*.exe
+
+# Documentação interna: vive no repo privado ../pulse-docs (npm run docs:mount)
+memory
+docs/audit-2026-09-11/
+docs/visual-review/
