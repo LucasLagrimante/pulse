@@ -30,8 +30,8 @@ Fila única do ciclo diário (skill `pulse-evolution`, worktree `~/projects/puls
   `peripheral_battery.rs` (2.668): extrair submódulos coesos, sem mudar comportamento.
 
 - [ ] **P0-6 · Profundidade cortada: sombra clipada por container com `overflow`.**
-  Regra em AGENTS.md §4.5. Runner já corrigido (wrapper de 34px + janela transparente
-  `748×588` + `scrollbar-gutter`); falta varrer o resto: `.panel`/`.tall-panel` (App.css),
+  Regra em AGENTS.md §4.5. Runner já corrigido (janela opaca `680×520` recortada pelo DWM com
+  bisel interno); flyout também. Falta varrer o resto: `.panel`/`.tall-panel` (App.css),
   `.fe-main`/`.fe-sidebar` (FileExplorer), `.dt-table` (DataTable), `.un-modal`,
   `.quota-modal-card`, `.disk-tree-section`, `.tray-flyout-container`.
   Pronto quando: nenhum filho com `--neu-shadow-raised*` estiver em container cujo padding seja

@@ -157,13 +157,19 @@ visual mais recorrente do produto.
 - **Scroll**: além do padding, `scrollbar-gutter: stable` para o item não encostar na barra.
 - **Preferir `overflow: clip`** a `hidden` quando o recorte não é rolagem (mantém o `border-radius`
   sem criar contexto extra de recorte). `overflow-clip-margin` só com valor explícito.
-- **Janelas flutuantes (Runner, Flyout) são opacas e recortadas**, não transparentes. O WebView2
-  158 ignora `DefaultBackgroundColor` alpha=0 (WebView2Feedback #5752) e pinta uma base opaca
-  atrás da página: com `transparent: true`, os cantos arredondados revelam uma moldura escura e
-  nenhum CSS resolve. A janela tem o tamanho exato do painel e é recortada por
-  `window_shape::apply_rounded` (`SetWindowRgn` + `CreateRoundRectRgn`) no início, no resize e a
-  cada `toggle_shell_popup_at`. A profundidade vem do bisel interno
-  (`inset 0 1px 0 var(--neu-bevel-light)` / `inset 0 -1px 0 var(--neu-bevel-dark)`).
+- **Janelas flutuantes (Runner, Flyout) são opacas**, não transparentes. O WebView2 158 ignora
+  `DefaultBackgroundColor` alpha=0 (WebView2Feedback #5752) e pinta uma base opaca atrás da página:
+  com `transparent: true`, o painel ganha uma moldura escura e nenhum CSS resolve. A janela tem o
+  tamanho exato do painel (Runner `680×520`, flyout `420×740`) e a curva é responsabilidade da
+  janela, não do conteúdo:
+  - `window_shape::apply_rounded` aplica `DWMWA_WINDOW_CORNER_PREFERENCE` (`DWMWCP_ROUND`) para o
+    DWM compor o canto com antialiasing; `SetWindowRgn` + `CreateRoundRectRgn` fica só como
+    fallback (Windows 10), porque região binária deixa degrau de 1px.
+  - recorte é reaplicado no início, em `WindowEvent::Resized` e em cada `toggle_shell_popup_at`.
+  - **painel com `border-radius: 0` e `border: 0`**: um raio próprio cria segunda curva, mais
+    aberta que a do sistema, e a borda reta morre no recorte virando fio solto.
+  - profundidade = bisel interno (`inset 0 1px 0 var(--neu-bevel-light)` /
+    `inset 0 -1px 0 var(--neu-bevel-dark)`).
   Não reintroduza `transparent: true` nessas janelas sem antes revalidar a transparência no
   runtime instalado.
 - **Nunca** "consertar" sombra cortada aumentando o blur: o corte continua. Reserva de espaço ou
