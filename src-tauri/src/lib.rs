@@ -48,11 +48,16 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
+                // POSITION faltava: a janela reabria sempre centralizada, no
+                // tamanho salvo. O filtro cobria só `main`, então o gerenciador
+                // de arquivos (`files`) não persistia nada.
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::SIZE
-                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED
+                        | tauri_plugin_window_state::StateFlags::FULLSCREEN,
                 )
-                .with_filter(|label| label == "main")
+                .with_filter(|label| matches!(label, "main" | "files"))
                 .build(),
         )
         .setup(|app| {
