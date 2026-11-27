@@ -3196,6 +3196,10 @@ body:has(.tray-flyout-container),
   width: 100%;
   height: 100%;
   overflow: hidden !important;
+  /* O painel tem cantos de 20px sobre uma janela retangular: se o documento
+     usar uma cor diferente da superfície, cada canto vira um quadradinho com
+     "fundo". Igualando à superfície do painel, o arredondamento desaparece. */
+  background: var(--neu-surface) !important;
 }
 
 .tray-flyout-container {
