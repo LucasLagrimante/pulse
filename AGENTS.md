@@ -145,6 +145,26 @@ A interface do Pulse segue as diretrizes do **Windows 11 Fluent Design**: foco e
 - **SVGs Inline e Gráficos**:
   - Elementos vetoriais devem utilizar `currentColor`, `var(--neu-divider)`, `var(--neu-surface)` ou variáveis dedicadas com fallbacks semânticos em vez de valores estáticos em `stroke` e `fill`.
 
+### 4.5. Profundidade sem Clipping (sombras cortadas)
+
+O neumorfismo depende de sombra difusa **fora** da caixa. Todo container com `overflow` corta a
+sombra dos filhos na borda — o resultado parece "mal encaixado", sem profundidade, e é o defeito
+visual mais recorrente do produto.
+
+- **Regra de reserva**: container com `overflow: hidden|auto|scroll` só pode ter filhos com sombra
+  `raised` se o `padding` interno cobrir `|offset| + blur` da maior sombra em uso (2px de folga).
+  `raised-sm` (4/10) pede 18px; `raised` (8/18) pede 28px; `raised-lg` (14/30) pede 46px.
+- **Scroll**: além do padding, `scrollbar-gutter: stable` para o item não encostar na barra.
+- **Preferir `overflow: clip`** a `hidden` quando o recorte não é rolagem (mantém o `border-radius`
+  sem criar contexto extra de recorte). `overflow-clip-margin` só com valor explícito.
+- **Janela transparente** (Runner, Flyout): o `#root` precisa ser transparente — `identity.css`
+  pinta `html, body, #root` com `background: var(--neu-bg) !important`, então a janela é marcada em
+  `<html data-window="...">` por `App.tsx` e sobrescrita com `!important`. O elemento que recebe a
+  sombra externa tem um wrapper com `padding` igual à reserva; a janela nativa é dimensionada
+  conteúdo + reserva (Runner: 680×520 + 34px por lado = 748×588, `transparent: true`).
+- **Nunca** "consertar" sombra cortada aumentando o blur: o corte continua. Reserva de espaço ou
+  troca de `overflow` é a correção.
+
 ---
 
 ## 5. Regras do Sistema Operacional (Windows Internals)
