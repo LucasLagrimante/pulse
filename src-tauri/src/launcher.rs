@@ -202,6 +202,7 @@ pub fn toggle_launcher_window(app: &AppHandle) {
         crate::custom_dock::set_dock_hold(true);
     }
     position_launcher_centered(&window);
+    crate::window_shape::apply_rounded(&window, 20.0);
     let _ = window.unminimize();
     let _ = window.set_always_on_top(true);
     if diag.no_focus {

@@ -157,11 +157,15 @@ visual mais recorrente do produto.
 - **Scroll**: além do padding, `scrollbar-gutter: stable` para o item não encostar na barra.
 - **Preferir `overflow: clip`** a `hidden` quando o recorte não é rolagem (mantém o `border-radius`
   sem criar contexto extra de recorte). `overflow-clip-margin` só com valor explícito.
-- **Janela transparente** (Runner, Flyout): o `#root` precisa ser transparente — `identity.css`
-  pinta `html, body, #root` com `background: var(--neu-bg) !important`, então a janela é marcada em
-  `<html data-window="...">` por `App.tsx` e sobrescrita com `!important`. O elemento que recebe a
-  sombra externa tem um wrapper com `padding` igual à reserva; a janela nativa é dimensionada
-  conteúdo + reserva (Runner: 680×520 + 34px por lado = 748×588, `transparent: true`).
+- **Janelas flutuantes (Runner, Flyout) são opacas e recortadas**, não transparentes. O WebView2
+  158 ignora `DefaultBackgroundColor` alpha=0 (WebView2Feedback #5752) e pinta uma base opaca
+  atrás da página: com `transparent: true`, os cantos arredondados revelam uma moldura escura e
+  nenhum CSS resolve. A janela tem o tamanho exato do painel e é recortada por
+  `window_shape::apply_rounded` (`SetWindowRgn` + `CreateRoundRectRgn`) no início, no resize e a
+  cada `toggle_shell_popup_at`. A profundidade vem do bisel interno
+  (`inset 0 1px 0 var(--neu-bevel-light)` / `inset 0 -1px 0 var(--neu-bevel-dark)`).
+  Não reintroduza `transparent: true` nessas janelas sem antes revalidar a transparência no
+  runtime instalado.
 - **Nunca** "consertar" sombra cortada aumentando o blur: o corte continua. Reserva de espaço ou
   troca de `overflow` é a correção.
 

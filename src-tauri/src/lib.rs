@@ -38,6 +38,7 @@ pub mod subscription_usage;
 pub mod system_overview;
 pub mod tray;
 pub mod uninstall;
+pub mod window_shape;
 
 use tauri::{Emitter, Manager};
 
@@ -64,6 +65,11 @@ pub fn run() {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.hide();
                     }
+                }
+            }
+            for label in ["launcher", "tray-flyout"] {
+                if let Some(window) = app.get_webview_window(label) {
+                    window_shape::apply_to_known_window(&window);
                 }
             }
             subscription_usage::init(app.handle().clone());
@@ -96,6 +102,13 @@ pub fn run() {
                     api.prevent_close();
                     let _ = window.emit("pulse://foreground-changed", false);
                     let _ = window.hide();
+                }
+            }
+            tauri::WindowEvent::Resized(_) => {
+                // O Shell redimensiona `tray-flyout` por modo; o recorte precisa
+                // acompanhar, senão os cantos voltam a aparecer no novo tamanho.
+                if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
+                    window_shape::apply_to_known_window(&webview);
                 }
             }
             tauri::WindowEvent::Focused(focused) => {

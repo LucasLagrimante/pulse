@@ -24,6 +24,7 @@ html, body, #root {
 html:has(.launcher-window),
 html:has(.launcher-window) body,
 html:has(.launcher-window) #root {
+  /* Mesma cor da superfície do shell: os cantos de 20px não revelam fundo. */
   background: var(--neu-bg) !important;
 }
 

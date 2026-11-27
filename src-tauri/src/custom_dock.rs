@@ -293,6 +293,8 @@ pub fn toggle_shell_popup_at(
         let pos_y = (bar_bottom_y + margin).min(max_y);
 
         let _ = flyout.emit("pulse://flyout-mode", mode);
+        // O tamanho muda por modo: recorta de novo antes de mostrar.
+        crate::window_shape::apply_rounded(&flyout, 20.0);
         let _ = flyout.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
             pos_x, pos_y,
         )));
