@@ -63,3 +63,12 @@ Fila única do ciclo diário (skill `pulse-evolution`, worktree `~/projects/puls
 ## Descobertas
 
 (itens novos entram aqui com data, evidência e impacto estimado; não promova sozinho)
+
+- **2026-11-26 · P0-2 etapa 1 (4740bb0).** App.css linhas 1–208 (shell, sidebar, brand, nav,
+  sidebar-foot, about-nav): 25 hex → tokens `--neu-*`. Contador `hex_hardcoded` 821 → 796.
+  Achado: `identity.css` já sobrescreve `.app-shell`/`.sidebar`/`.brand`/`.nav-item`, mas
+  `.nav-label`, `.nav-index`, `.brand-mark` e `.about-nav` ficavam só com a cor escura legada —
+  eram ilegíveis no tema claro. Restam 632 hex em App.css (maioria em blocos de comando/shell);
+  cada bloco de ~50 linhas fecha numa fatia.
+- **2026-11-26 · QA visual.** `scripts/browser-fixture.js` não inclui `get_launcher_state`; a tela
+  inicial "Continuar para o painel" precisa ser clicada para medir o shell real no headless.
