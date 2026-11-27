@@ -334,8 +334,21 @@ export function LauncherWindow() {
       }),
     );
 
+    // Os eventos do backend são emitidos com a janela ainda oculta — e o
+    // WebView2 suspende o renderer nesse estado, então o `emit` pode ser
+    // perdido (o Runner reabria com a busca anterior preenchida). O
+    // `visibilitychange` é disparado pelo próprio Chromium no mesmo instante
+    // em que a janela volta a ser visível, sem depender de IPC.
+    const handleVisibility = () => {
+      if (disposed || document.visibilityState !== "visible") return;
+      resetToIdle();
+      window.requestAnimationFrame(() => inputRef.current?.focus());
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
     return () => {
       disposed = true;
+      document.removeEventListener("visibilitychange", handleVisibility);
       unlisteners.forEach((cleanup) => cleanup());
       if (copiedTimerRef.current != null) {
         window.clearTimeout(copiedTimerRef.current);
