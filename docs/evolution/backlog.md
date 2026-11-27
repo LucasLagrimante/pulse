@@ -72,3 +72,7 @@ Fila única do ciclo diário (skill `pulse-evolution`, worktree `~/projects/puls
   cada bloco de ~50 linhas fecha numa fatia.
 - **2026-11-26 · QA visual.** `scripts/browser-fixture.js` não inclui `get_launcher_state`; a tela
   inicial "Continuar para o painel" precisa ser clicada para medir o shell real no headless.
+- **2026-11-26 · Contraste no tema claro (reforça P1-5).** Sidebar light 1440: itens principais
+  legíveis, mas subtítulo da marca, rótulo "MÓDULOS" e rodapé ("SEM NUVEM"/"SEM CONTA")
+  ficaram com contraste abaixo de 4.5:1. Evidência: captura light-1440 do run smoke.
+  Candidato: token de texto secundário mais escuro no tema claro + teste de contraste.
