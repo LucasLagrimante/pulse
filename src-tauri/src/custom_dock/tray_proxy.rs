@@ -523,6 +523,16 @@ pub fn click_icon_by_id(icon_id: &str, button: TrayClickButton, anchor: POINT) {
         }
     };
 
+    // Diagnóstico: sem isso, "clique no ícone não faz nada" não deixa rastro —
+    // o proxy precisa registrar qual hwnd/callback/versão/uid recebeu o evento.
+    shell_log::info(
+        "tray_click",
+        format!(
+            "clique {:?} em '{tip}' (exe={exe_key} hwnd={raw_hwnd:#x} cb={callback:#x} ver={version} uid={uid})",
+            button
+        ),
+    );
+
     let mut failed = false;
     for &m in msgs {
         let (wp, lp) = if version >= NOTIFYICON_VERSION_4 {

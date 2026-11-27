@@ -4239,7 +4239,7 @@ function App() {
                 title="Recursos Beta"
                 onClick={() => setActiveArea("Recursos Beta")}
               >
-                <span aria-hidden="true">β</span>
+                <span aria-hidden="true" className="beta-mark">β</span>
                 {(betaFeatures.peripheralBattery || betaFeatures.customDock || betaFeatures.pulseRunner) && (
                   <small className="beta-nav-count">
                     {Number(betaFeatures.peripheralBattery) +
@@ -4260,10 +4260,10 @@ function App() {
               </button>
               <button
                 type="button"
-                className="about-nav"
+                className="about-nav about-nav-exit"
                 aria-label="Sair do Pulse"
                 title="Sair do Pulse"
-                onClick={() => void handleExitApp()}
+                onClick={() => setShowCloseDialog(true)}
               >
                 <span aria-hidden="true">⏻</span>
               </button>

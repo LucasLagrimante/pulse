@@ -201,8 +201,23 @@ h1 {
 .sidebar-actions .beta-nav-count {
   position: absolute;
   top: 2px;
-  right: 6px;
+  right: 4px;
   margin-left: 0;
+  z-index: 1;
+}
+
+/* Atalho beta: a marca precisa se distinguir dos outros dois (i e power) —
+   sem cor, o β fica parecendo um ícone qualquer do rodapé. */
+.sidebar-actions .beta-mark {
+  border-color: var(--neu-accent);
+  color: var(--neu-accent);
+  background: color-mix(in srgb, var(--neu-accent) 14%, transparent);
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.sidebar-actions .about-nav-exit:hover {
+  color: var(--neu-danger, #e5484d);
 }
 
 .about-nav {
