@@ -48,7 +48,7 @@ node scripts/release.mjs check     # mostra "Decisão: PATCH|MINOR|MAJOR → X.Y
 ## 1. Pré-condições
 
 1. Sessão única commitando: se houver outras sessões no repo (`ListAgents`), siga
-   `memory/feedback/release-unico-committer-multissessao.md` antes de continuar.
+   `../pulse-docs/memory/feedback/release-unico-committer-multissessao.md` antes de continuar.
 2. Todo o trabalho do release já commitado pela skill **`commit`** (commits por assunto; nunca misturar o bump com código).
 3. `node scripts/release.mjs check` → precisa terminar com `Pré-condições OK.`
    (main, sincronizada com origin, `gh` autenticado, versões coerentes).
@@ -63,7 +63,7 @@ bash scripts/rust-check.sh        # rustfmt (por arquivo alterado) + clippy -D w
 
 - O `rust-check.sh` roda os testes em série (em paralelo a suíte cai com ACCESS_VIOLATION, pendência
   aberta) e roda à parte, só com aviso, os testes que dependem do estado do Windows
-  (`MACHINE_TESTS`; ver `memory/build/rust-check-testes-de-maquina.md`). Aviso vai no relatório;
+  (`MACHINE_TESTS`; ver `../pulse-docs/memory/build/rust-check-testes-de-maquina.md`). Aviso vai no relatório;
   qualquer outra falha **para o release**.
 - O CI só roda `typecheck` + `npm test`: o gate Rust é responsabilidade local.
 

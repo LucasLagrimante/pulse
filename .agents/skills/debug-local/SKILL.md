@@ -62,7 +62,7 @@ resultado entre sua execução e a do app costumam vir daí.
 4. Se a falha não deixou rastro útil no log, **melhore o log na mesma tarefa**: use
    `crate::debug::record_failure(op, ms, Failure::new(msg).stage(..).detail(..).context(..))` ou
    `record_result(op, ms, &result, msg)`. Nunca descarte o erro real com `map_err(|_| "Falha")`.
-5. Registre a lição em `memory/<modulo>/<slug>.md` e reindexe.
+5. Registre a lição em `../pulse-docs/memory/<modulo>/<slug>.md` e reindexe.
 
 ## 5. Entregar
 
