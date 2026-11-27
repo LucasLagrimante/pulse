@@ -1064,6 +1064,12 @@ unsafe extern "system" fn proxy_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LP
             }
         }
         m if m == WM_SYSCOMMAND && (wp.0 & 0xFFF0) == SC_TASKLIST => {
+            // SC_TASKLIST é o pedido "abrir o Menu Iniciar" entregue à
+            // Shell_TrayWnd. Com o runner na tecla Windows ativo ele não chega
+            // ao Explorer: o runner substitui o Iniciar.
+            if crate::launcher::intercept_shell_start_request() {
+                return LRESULT(0);
+            }
             if (InSendMessageEx(None) & (ISMEX_SEND | ISMEX_NOTIFY)) == ISMEX_SEND {
                 forward_other_to_explorer(msg, wp, lp)
                     .unwrap_or_else(|| DefWindowProcW(hwnd, msg, wp, lp))

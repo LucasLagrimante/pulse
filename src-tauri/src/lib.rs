@@ -28,6 +28,8 @@ pub mod recent_files;
 pub mod security_audit;
 pub mod self_update;
 pub mod services;
+#[cfg(windows)]
+pub mod shell_launch;
 pub mod single_instance;
 pub mod startup;
 pub mod startup_inventory;
@@ -101,7 +103,7 @@ pub fn run() {
                 if !*focused && window.label() == "launcher" {
                     // Fecha o Pulse Runner ao perder o foco e libera a Dock presa
                     // por ele (senão ela ficava visível sozinha, sem o runner).
-                    launcher::hide_launcher_window(window.app_handle());
+                    launcher::on_launcher_focus_lost(window.app_handle());
                 } else if !*focused && window.label() == "tray-flyout" {
                     // Fecha o painel rápido automaticamente ao clicar fora
                     let _ = window.hide();
@@ -217,6 +219,9 @@ pub fn run() {
             launcher::launcher_refresh_index,
             launcher::launcher_hide,
             launcher::launcher_toggle,
+            launcher::win_key_admin::win_key_admin_status,
+            launcher::win_key_admin::win_key_admin_enable,
+            launcher::win_key_admin::win_key_admin_disable,
             custom_dock::get_dock_status,
             custom_dock::restore_windows_taskbar,
             custom_dock::list_dock_candidates,
@@ -244,6 +249,18 @@ pub fn run() {
             uninstall::session::cleanup_uninstall_residue,
             uninstall::session::cancel_uninstall_session
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Pulse");
+        .build(tauri::generate_context!())
+        .expect("error while running Pulse")
+        .run(|_app, event| {
+            // Qualquer saída do app (Sair, reinício como admin, autoatualização)
+            // devolve o sistema como era: hook da tecla Windows removido, barra
+            // nativa e área útil restauradas.
+            if let tauri::RunEvent::Exit = event {
+                launcher::shutdown();
+                let shell = custom_dock::status();
+                if shell.running || shell.native_taskbar_hidden {
+                    custom_dock::shutdown();
+                }
+            }
+        });
 }

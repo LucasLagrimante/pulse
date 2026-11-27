@@ -27,4 +27,12 @@
   ; Garante que o exe não esteja travado ao remover os arquivos.
   !insertmacro PULSE_KILL_HIDDEN "pulse-windows.exe"
   !insertmacro PULSE_KILL_HIDDEN "Pulse.exe"
+  ; Desinstalação de verdade (não atualização): remove o modo administrador da
+  ; tecla Windows — tarefa agendada PulseWinKeyHook e a cópia protegida em
+  ; Arquivos de Programas. Fica fora da pasta do Pulse e exige administrador
+  ; (um aviso do UAC, só se o modo estiver instalado).
+  ${If} $UpdateMode <> 1
+  ${AndIf} ${FileExists} "$PROGRAMFILES64\Pulse WinKey\pulse-windows.exe"
+    ExecShellWait "runas" "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $\"Get-ScheduledTask -TaskName 'PulseWinKeyHook' -ErrorAction SilentlyContinue | Stop-ScheduledTask -ErrorAction SilentlyContinue; Get-Process -Name 'pulse-windows' -ErrorAction SilentlyContinue | Where-Object { $$_.Path -like '*\Pulse WinKey\*' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 300; Unregister-ScheduledTask -TaskName 'PulseWinKeyHook' -Confirm:$$false -ErrorAction SilentlyContinue; Remove-Item -LiteralPath '$PROGRAMFILES64\Pulse WinKey' -Recurse -Force -ErrorAction SilentlyContinue$\"" SW_HIDE
+  ${EndIf}
 !macroend

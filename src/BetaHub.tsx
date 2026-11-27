@@ -24,6 +24,8 @@ import {
   type DockAppCandidate,
   type DockStatus,
   type TopBarWidgetId,
+  type WinKeyAdminState,
+  type WinKeyAdminStatus,
 } from "./betaFeatures";
 import "./BetaHub.css";
 
@@ -99,6 +101,7 @@ export function BetaHub({
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [dockStatus, setDockStatus] = useState<DockStatus | null>(null);
+  const [winKeyAdmin, setWinKeyAdmin] = useState<WinKeyAdminState>("unsupported");
   const [candidates, setCandidates] = useState<DockAppCandidate[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [quotaOptions, setQuotaOptions] = useState<{ id: string; provider: string }[]>([]);
@@ -108,6 +111,46 @@ export function BetaHub({
   const [dragOverWidget, setDragOverWidget] = useState<TopBarWidgetId | null>(null);
   const [dragPinned, setDragPinned] = useState<string | null>(null);
   const [dragOverPinned, setDragOverPinned] = useState<string | null>(null);
+
+  const loadWinKeyAdmin = useCallback(async (): Promise<WinKeyAdminState> => {
+    try {
+      const status = await invoke<WinKeyAdminStatus>("win_key_admin_status");
+      setWinKeyAdmin(status.state);
+      return status.state;
+    } catch {
+      setWinKeyAdmin("unsupported");
+      return "unsupported";
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadWinKeyAdmin();
+  }, [loadWinKeyAdmin]);
+
+  // Instala/atualiza (um aviso do UAC) ou remove o processo da tecla elevado.
+  const handleWinKeyAdmin = async (enable: boolean) => {
+    setBusyKey("winKeyAdmin");
+    setError(null);
+    setStatusMessage(null);
+    try {
+      const status = await invoke<WinKeyAdminStatus>(
+        enable ? "win_key_admin_enable" : "win_key_admin_disable",
+      );
+      setWinKeyAdmin(status.state);
+      setStatusMessage(
+        enable
+          ? "Tecla Windows ativa também sobre janelas abertas como administrador."
+          : "Modo administrador removido; janelas elevadas voltam a abrir o Iniciar.",
+      );
+    } catch (err) {
+      setError(
+        typeof err === "string" ? err : "Não foi possível alterar o modo administrador da tecla Windows.",
+      );
+      void loadWinKeyAdmin();
+    } finally {
+      setBusyKey(null);
+    }
+  };
 
   const loadDockStatus = useCallback(async () => {
     try {
@@ -279,6 +322,15 @@ export function BetaHub({
             ? "Pulse Runner ativado. Pressione a tecla Windows para abrir a busca rápida."
             : "Pulse Runner desativado e comportamento padrão da tecla Windows restaurado.",
         );
+      }
+      // Ao ligar a tecla Windows, pede uma única vez o administrador para que
+      // ela funcione também sobre janelas elevadas (ex.: VS Code como admin).
+      const winKeyOn = updated.pulseRunner && updated.pulseRunnerWinKey;
+      if (enabled && winKeyOn && (feature === "pulseRunner" || feature === "pulseRunnerWinKey")) {
+        const adminState = await loadWinKeyAdmin();
+        if (adminState === "off") {
+          await handleWinKeyAdmin(true);
+        }
       }
     } catch (err) {
       setError(typeof err === "string" ? err : "Não foi possível alterar este recurso Beta.");
@@ -1036,6 +1088,42 @@ export function BetaHub({
                     onChange={e => void handleToggleFeature("pulseRunnerWinKey", e.target.checked)}
                   />
                 </label>
+                {winKeyAdmin !== "unsupported" && (
+                  <div className="beta-option-row">
+                    <div>
+                      <strong>Funcionar sobre janelas de administrador</strong>
+                      <span>
+                        {winKeyAdmin === "ready"
+                          ? "Ativo. O processo da tecla roda como administrador por uma tarefa agendada, sem aviso ao abrir o Pulse."
+                          : winKeyAdmin === "outdated"
+                            ? "O Pulse foi atualizado e a cópia protegida ficou antiga; até atualizar, janelas elevadas abrem o Iniciar."
+                            : "Sem isso, o Windows não entrega a tecla ao Pulse quando a janela em foco foi aberta como administrador, e o Iniciar abre. Pede permissão de administrador uma vez."}
+                      </span>
+                    </div>
+                    <div className="beta-dock-actions">
+                      {winKeyAdmin !== "ready" && (
+                        <button
+                          type="button"
+                          className="beta-btn-small"
+                          disabled={busyKey != null}
+                          onClick={() => void handleWinKeyAdmin(true)}
+                        >
+                          {winKeyAdmin === "outdated" ? "Atualizar" : "Ativar"}
+                        </button>
+                      )}
+                      {winKeyAdmin !== "off" && (
+                        <button
+                          type="button"
+                          className="beta-btn-small"
+                          disabled={busyKey != null}
+                          onClick={() => void handleWinKeyAdmin(false)}
+                        >
+                          Desativar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="beta-dock-actions">
                 <button

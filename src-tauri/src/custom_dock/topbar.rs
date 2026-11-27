@@ -128,6 +128,7 @@ const MENU_SLEEP: u32 = 2011;
 const MENU_RESTART: u32 = 2012;
 const MENU_SHUTDOWN: u32 = 2013;
 const MENU_RESTORE_TASKBAR: u32 = 2020;
+const MENU_EXIT_PULSE: u32 = 2021;
 
 const BASE_HEIGHT_DIP: f32 = 32.0;
 const MAX_TRAY_ICONS_BAR: usize = 10;
@@ -1572,6 +1573,12 @@ impl TopBarState {
                 MENU_RESTORE_TASKBAR as usize,
                 w!("Restaurar barra do Windows e desligar Pulse Shell"),
             );
+            let _ = AppendMenuW(
+                menu,
+                MF_STRING,
+                MENU_EXIT_PULSE as usize,
+                w!("Sair do Pulse"),
+            );
 
             let _ = SetForegroundWindow(self.hwnd);
             let cmd = TrackPopupMenu(
@@ -1600,6 +1607,7 @@ impl TopBarState {
                     }
                 }
                 MENU_RESTORE_TASKBAR => super::trigger_emergency_restore_from_shell(),
+                MENU_EXIT_PULSE => super::exit_pulse_from_shell(),
                 _ => {}
             }
         }
@@ -1658,6 +1666,12 @@ impl TopBarState {
                 MENU_RESTORE_TASKBAR as usize,
                 w!("Restaurar barra do Windows e desligar Pulse Shell"),
             );
+            let _ = AppendMenuW(
+                menu,
+                MF_STRING,
+                MENU_EXIT_PULSE as usize,
+                w!("Sair do Pulse"),
+            );
 
             let _ = SetForegroundWindow(self.hwnd);
             let cmd = TrackPopupMenu(
@@ -1683,6 +1697,7 @@ impl TopBarState {
                 MENU_RESTART => power::restart_with_confirm(self.hwnd),
                 MENU_SHUTDOWN => power::shutdown_with_confirm(self.hwnd),
                 MENU_RESTORE_TASKBAR => super::trigger_emergency_restore_from_shell(),
+                MENU_EXIT_PULSE => super::exit_pulse_from_shell(),
                 _ => {}
             }
         }

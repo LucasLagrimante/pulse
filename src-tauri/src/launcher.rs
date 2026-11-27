@@ -8,6 +8,7 @@ pub mod calc;
 pub mod game_guard;
 pub mod indexer;
 pub mod win_key;
+pub mod win_key_admin;
 
 use indexer::{LauncherActionResult, LauncherResponse};
 use std::{
@@ -59,10 +60,52 @@ fn win_key_wanted() -> bool {
     WIN_KEY_WANTED.load(Ordering::Acquire)
 }
 
+/// Diagnóstico temporário do conflito com o Iniciar: chaves lidas a cada toque
+/// de `%LOCALAPPDATA%\Pulse\runner-diag.txt` (sem o arquivo, tudo ligado).
+#[derive(Clone, Copy, Debug, Default)]
+struct RunnerDiag {
+    /// `sem-runner`: o toque é engolido e nada mais acontece.
+    no_runner: bool,
+    /// `sem-foco`: o runner aparece sem ser ativado.
+    no_focus: bool,
+    /// `sem-dock`: o toque não revela nem segura a Dock.
+    no_dock: bool,
+    /// `sem-anterior`: não guarda nem devolve o foco à janela anterior.
+    no_previous: bool,
+}
+
+impl RunnerDiag {
+    fn parse(text: &str) -> Self {
+        let text = text.to_lowercase();
+        Self {
+            no_runner: text.contains("sem-runner"),
+            no_focus: text.contains("sem-foco"),
+            no_dock: text.contains("sem-dock"),
+            no_previous: text.contains("sem-anterior"),
+        }
+    }
+
+    fn load() -> Self {
+        let path = crate::storage::paths::pulse_local_dir().join("runner-diag.txt");
+        std::fs::read_to_string(path)
+            .map(|text| Self::parse(&text))
+            .unwrap_or_default()
+    }
+}
+
 fn on_win_key_tap() {
+    let diag = RunnerDiag::load();
+    #[cfg(windows)]
+    crate::custom_dock::shell_log::info("launcher_diag", format!("Toque Win com {diag:?}"));
     // Um toque na tecla Windows também revela a Dock (quando ela está em
     // auto-hide ou sobre um jogo em tela cheia).
-    crate::custom_dock::reveal_dock_from_shortcut();
+    if !diag.no_dock {
+        crate::custom_dock::reveal_dock_from_shortcut();
+    }
+    mark_win_tap();
+    if diag.no_runner {
+        return;
+    }
     if let Some(app) = clone_app_handle() {
         tauri::async_runtime::spawn(async move {
             toggle_launcher_window(&app);
@@ -118,6 +161,20 @@ fn reconcile_win_key_hook() {
     }
 }
 
+/// Reinstala o hook (troca entre o processo comum e o elevado) se ele estiver ativo.
+pub fn restart_win_key_hook() {
+    {
+        let _lock = WIN_KEY_RECONCILE
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if !win_key::is_enabled() {
+            return;
+        }
+        let _ = win_key::set_enabled(false, || {});
+    }
+    reconcile_win_key_hook();
+}
+
 /// Encerra o hook da tecla Windows com segurança ao fechar o aplicativo.
 pub fn shutdown() {
     let _ = win_key::set_enabled(false, || {});
@@ -129,35 +186,297 @@ pub fn toggle_launcher_window(app: &AppHandle) {
         return;
     };
     if window.is_visible().unwrap_or(false) {
-        hide_launcher_window(app);
+        dismiss_launcher_window(app);
         return;
+    }
+
+    let diag = RunnerDiag::load();
+    #[cfg(windows)]
+    if !diag.no_previous {
+        focus::remember_previous();
     }
 
     // Enquanto o runner estiver aberto a Dock fica visível, mesmo sobre um
     // jogo em tela cheia; ao fechar ela volta ao auto-hide.
-    crate::custom_dock::set_dock_hold(true);
+    if !diag.no_dock {
+        crate::custom_dock::set_dock_hold(true);
+    }
     position_launcher_centered(&window);
     let _ = window.unminimize();
     let _ = window.set_always_on_top(true);
-    let _ = window.show();
+    if diag.no_focus {
+        show_launcher_without_activation(&window);
+    } else {
+        let _ = window.show();
+        bring_launcher_to_front(&window);
+    }
+    let _ = window.emit("pulse://foreground-changed", true);
+    let _ = window.emit(EVENT_LAUNCHER_OPENED, ());
+}
+
+/// Instante do último toque na tecla Windows engolido pelo runner e quantas
+/// vezes o runner já retomou o foco do Iniciar depois dele.
+static LAST_WIN_TAP: Mutex<Option<(Instant, u8)>> = Mutex::new(None);
+/// Janela em que o Iniciar nativo ainda reage a um toque que o hook engoliu.
+const START_STEAL_WINDOW: Duration = Duration::from_millis(1500);
+/// Limite de retomadas por toque (evita disputa infinita com o shell).
+const MAX_FOCUS_RETAKES: u8 = 2;
+
+fn mark_win_tap() {
+    if let Ok(mut slot) = LAST_WIN_TAP.lock() {
+        *slot = Some((Instant::now(), 0));
+    }
+}
+
+/// Se o toque recente ainda permite retomar o foco, consome uma retomada e
+/// devolve há quanto tempo foi o toque.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn claim_focus_retake() -> Option<Duration> {
+    let mut slot = LAST_WIN_TAP.lock().ok()?;
+    let (at, retakes) = slot.as_mut()?;
+    let elapsed = at.elapsed();
+    if elapsed > START_STEAL_WINDOW || *retakes >= MAX_FOCUS_RETAKES {
+        return None;
+    }
+    *retakes += 1;
+    Some(elapsed)
+}
+
+/// Pedido do sistema para abrir o Menu Iniciar (`SC_TASKLIST` na
+/// `Shell_TrayWnd` do Pulse Shell). Com o runner ativo na tecla Windows, o
+/// pedido é consumido: logo após um toque já tratado ele é descartado; sem
+/// toque recente (janela elevada fora do alcance do hook, Ctrl+Esc) abre o
+/// runner no lugar do Iniciar. Devolve `true` quando consumiu.
+pub fn intercept_shell_start_request() -> bool {
+    if !win_key::is_enabled() {
+        // Runner desligado ou pausado por jogo protegido: Iniciar nativo.
+        return false;
+    }
+    let recent_tap = LAST_WIN_TAP
+        .lock()
+        .ok()
+        .and_then(|slot| slot.map(|(at, _)| at.elapsed()))
+        .filter(|elapsed| *elapsed <= START_STEAL_WINDOW);
+    #[cfg(windows)]
+    crate::custom_dock::shell_log::info(
+        "launcher_focus",
+        match recent_tap {
+            Some(elapsed) => format!(
+                "SC_TASKLIST (abrir Iniciar) descartado {}ms após toque já tratado",
+                elapsed.as_millis()
+            ),
+            None => "SC_TASKLIST (abrir Iniciar) sem toque visto pelo hook; runner abre no lugar"
+                .to_string(),
+        },
+    );
+    if recent_tap.is_none() {
+        on_win_key_tap();
+    }
+    true
+}
+
+/// Diagnóstico `sem-foco`: mostra o runner sem ativá-lo (`SW_SHOWNOACTIVATE`).
+fn show_launcher_without_activation(window: &WebviewWindow) {
     #[cfg(windows)]
     {
         if let Ok(raw_hwnd) = window.hwnd() {
             use windows::Win32::Foundation::HWND;
-            use windows::Win32::UI::WindowsAndMessaging::{
-                AllowSetForegroundWindow, BringWindowToTop, SetForegroundWindow, ASFW_ANY,
-            };
-            let hwnd = HWND(raw_hwnd.0);
+            use windows::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_SHOWNOACTIVATE};
             unsafe {
-                let _ = AllowSetForegroundWindow(ASFW_ANY);
+                let _ = ShowWindow(HWND(raw_hwnd.0), SW_SHOWNOACTIVATE);
+            }
+            return;
+        }
+    }
+    let _ = window.show();
+}
+
+/// Traz a janela do runner para o primeiro plano com foco no teclado.
+fn bring_launcher_to_front(window: &WebviewWindow) {
+    #[cfg(windows)]
+    {
+        if let Ok(raw_hwnd) = window.hwnd() {
+            use windows::Win32::Foundation::HWND;
+            use windows::Win32::UI::WindowsAndMessaging::{BringWindowToTop, SetForegroundWindow};
+            let hwnd = HWND(raw_hwnd.0);
+            // Sem AllowSetForegroundWindow(ASFW_ANY): com o Pulse em primeiro
+            // plano ele liberava o foco para QUALQUER processo, inclusive o
+            // Iniciar (SearchHost) com ativação pendente.
+            unsafe {
                 let _ = BringWindowToTop(hwnd);
                 let _ = SetForegroundWindow(hwnd);
             }
         }
     }
     let _ = window.set_focus();
-    let _ = window.emit("pulse://foreground-changed", true);
-    let _ = window.emit(EVENT_LAUNCHER_OPENED, ());
+}
+
+/// Fecha o runner pelo usuário (tecla Windows / Esc): devolve o foco à janela
+/// que estava em primeiro plano antes de abrir. Sem isso o Windows escolhe a
+/// próxima da Z-order, que muitas vezes é a Pesquisa/Iniciar (sempre carregada
+/// e oculta) — o Iniciar "abria sozinho" sem nenhuma tecla.
+pub fn dismiss_launcher_window(app: &AppHandle) {
+    #[cfg(windows)]
+    if !RunnerDiag::load().no_previous {
+        focus::restore_previous();
+    }
+    hide_launcher_window(app);
+}
+
+/// Janela do runner perdeu o foco. O WebView2 às vezes emite `Focused(false)`
+/// ao trocar o foco interno logo após abrir; se o foco continua no próprio
+/// Pulse, o aviso é ignorado (fechar aí deixava o Windows ativar o Iniciar).
+pub fn on_launcher_focus_lost(app: &AppHandle) {
+    #[cfg(windows)]
+    {
+        if let Some(owner) = focus::foreground_owner_if_own() {
+            crate::custom_dock::shell_log::info(
+                "launcher_focus",
+                format!("Perda de foco ignorada: foco segue no Pulse ({owner})"),
+            );
+            return;
+        }
+        // O Iniciar do Windows 11 (SearchHost) às vezes toma o foco ~0,25–0,6s
+        // depois de um toque que o hook engoliu. Nunca se injeta tecla para
+        // fechá-lo (um Esc simulado pode cair em outro app); o runner só tenta
+        // retomar o foco.
+        if focus::foreground_is_start_menu() {
+            if let Some(elapsed) = claim_focus_retake() {
+                crate::custom_dock::shell_log::info(
+                    "launcher_focus",
+                    format!(
+                        "Iniciar tomou o foco {}ms após o toque; runner tenta retomar",
+                        elapsed.as_millis()
+                    ),
+                );
+                if let Some(window) = app.get_webview_window(LAUNCHER_WINDOW_LABEL) {
+                    bring_launcher_to_front(&window);
+                }
+                return;
+            }
+        }
+        crate::custom_dock::shell_log::info(
+            "launcher_focus",
+            format!(
+                "Runner perdeu o foco para {}",
+                focus::foreground_description()
+            ),
+        );
+    }
+    hide_launcher_window(app);
+}
+
+#[cfg(windows)]
+mod focus {
+    use std::sync::atomic::{AtomicIsize, Ordering};
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetClassNameW, GetForegroundWindow, GetWindowThreadProcessId, IsIconic, IsWindow,
+        IsWindowVisible, SetForegroundWindow,
+    };
+
+    /// Janela (de outro processo) em primeiro plano quando o runner abriu.
+    static PREVIOUS: AtomicIsize = AtomicIsize::new(0);
+
+    fn owner_pid(hwnd: HWND) -> u32 {
+        let mut pid = 0u32;
+        unsafe {
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        }
+        pid
+    }
+
+    fn class_name(hwnd: HWND) -> String {
+        let mut buf = [0u16; 128];
+        let len = unsafe { GetClassNameW(hwnd, &mut buf) };
+        String::from_utf16_lossy(&buf[..len.max(0) as usize])
+    }
+
+    pub fn remember_previous() {
+        let foreground = unsafe { GetForegroundWindow() };
+        let value = if foreground.is_invalid() || owner_pid(foreground) == std::process::id() {
+            0
+        } else {
+            foreground.0 as isize
+        };
+        PREVIOUS.store(value, Ordering::Release);
+    }
+
+    /// Classe da janela em foco se ela pertence ao próprio Pulse.
+    pub fn foreground_owner_if_own() -> Option<String> {
+        let foreground = unsafe { GetForegroundWindow() };
+        if foreground.is_invalid() || owner_pid(foreground) != std::process::id() {
+            return None;
+        }
+        Some(class_name(foreground))
+    }
+
+    /// A janela em foco é o Iniciar/Pesquisa nativos do Windows.
+    pub fn foreground_is_start_menu() -> bool {
+        use windows::Win32::System::Threading::{
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+            PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+        const HOSTS: &[&str] = &[
+            "startmenuexperiencehost.exe",
+            "searchhost.exe",
+            "searchapp.exe",
+        ];
+        let foreground = unsafe { GetForegroundWindow() };
+        if foreground.is_invalid() {
+            return false;
+        }
+        let pid = owner_pid(foreground);
+        if pid == 0 {
+            return false;
+        }
+        unsafe {
+            let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+                return false;
+            };
+            let mut buf = [0u16; 512];
+            let mut len = buf.len() as u32;
+            let ok = QueryFullProcessImageNameW(
+                process,
+                PROCESS_NAME_WIN32,
+                windows::core::PWSTR(buf.as_mut_ptr()),
+                &mut len,
+            )
+            .is_ok();
+            let _ = windows::Win32::Foundation::CloseHandle(process);
+            if !ok {
+                return false;
+            }
+            let path = String::from_utf16_lossy(&buf[..len as usize]);
+            let name = path.rsplit(['\\', '/']).next().unwrap_or(&path);
+            HOSTS.iter().any(|host| name.eq_ignore_ascii_case(host))
+        }
+    }
+
+    pub fn foreground_description() -> String {
+        let foreground = unsafe { GetForegroundWindow() };
+        if foreground.is_invalid() {
+            return "nenhuma janela".to_string();
+        }
+        format!("pid {} ({})", owner_pid(foreground), class_name(foreground))
+    }
+
+    /// Devolve o foco à janela anterior, só se o runner ainda for o
+    /// primeiro plano (se outro app já tomou o foco, não interfere).
+    pub fn restore_previous() {
+        let previous = HWND(PREVIOUS.swap(0, Ordering::AcqRel) as *mut _);
+        if previous.is_invalid() || foreground_owner_if_own().is_none() {
+            return;
+        }
+        unsafe {
+            if IsWindow(Some(previous)).as_bool()
+                && IsWindowVisible(previous).as_bool()
+                && !IsIconic(previous).as_bool()
+            {
+                let _ = SetForegroundWindow(previous);
+            }
+        }
+    }
 }
 
 /// Oculta a janela `"launcher"` e notifica perda de foco.
@@ -354,7 +673,7 @@ pub async fn launcher_refresh_index() -> Result<usize, String> {
 
 #[tauri::command]
 pub fn launcher_hide(app: AppHandle) {
-    hide_launcher_window(&app);
+    dismiss_launcher_window(&app);
 }
 
 #[tauri::command]
@@ -565,6 +884,10 @@ mod windows_exec {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     pub fn open_target(target: &str) -> Result<(), String> {
+        // Pulse elevado: o app abre pelo Explorer, sem herdar o administrador.
+        if crate::shell_launch::try_open_unelevated(target, None) {
+            return Ok(());
+        }
         if target.starts_with("shell:AppsFolder\\") {
             return open_shell_apps_folder_item(target);
         }

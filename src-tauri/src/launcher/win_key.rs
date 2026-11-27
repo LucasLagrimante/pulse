@@ -304,10 +304,16 @@ mod platform {
     use std::cell::Cell;
     use std::mem::size_of;
     use windows::core::Result;
-    use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{CloseHandle, HANDLE, LPARAM, LRESULT, WAIT_OBJECT_0, WPARAM};
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::System::Shutdown::LockWorkStation;
-    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::System::Threading::{
+        CreateEventW, GetCurrentThread, GetCurrentThreadId, OpenEventW, OpenProcess,
+        QueryFullProcessImageNameW, SetEvent, SetThreadPriority, WaitForMultipleObjects,
+        WaitForSingleObject, INFINITE, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+        PROCESS_SYNCHRONIZE, SYNCHRONIZATION_SYNCHRONIZE, THREAD_PRIORITY_TIME_CRITICAL,
+    };
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT,
         KEYEVENTF_EXTENDEDKEY, MOUSEEVENTF_HWHEEL, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_MIDDLEDOWN,
@@ -315,7 +321,7 @@ mod platform {
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, DispatchMessageW, GetMessageW, PeekMessageW, PostThreadMessageW,
-        SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, LLKHF_EXTENDED,
+        SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_EXTENDED,
         LLKHF_INJECTED, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, PM_NOREMOVE, WH_KEYBOARD_LL,
         WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_MOUSEHWHEEL,
         WM_MOUSEWHEEL, WM_QUIT, WM_RBUTTONDOWN, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_USER,
@@ -325,6 +331,7 @@ mod platform {
     const WM_PULSE_WIN_TAP: u32 = WM_USER + 0x41;
     const WM_PULSE_WIN_LOCK: u32 = WM_USER + 0x42;
     const WM_PULSE_WIN_TRACE: u32 = WM_USER + 0x43;
+    const WM_PULSE_HOOK_READY: u32 = WM_USER + 0x44;
 
     // Códigos de trace (wParam de WM_PULSE_WIN_TRACE; lParam = vk).
     const TRACE_RETAIN: usize = 1;
@@ -333,6 +340,8 @@ mod platform {
     const TRACE_CHORD: usize = 4;
     const TRACE_MOUSE_CHORD: usize = 5;
     const TRACE_LOCK: usize = 6;
+    const TRACE_ELEVATED_START: usize = 7;
+    const TRACE_START_FOREGROUND: usize = 8;
 
     thread_local! {
         static ARBITER: Cell<Arbiter> = Cell::new(Arbiter::default());
@@ -347,6 +356,10 @@ mod platform {
             TRACE_CHORD => "CHORD (Win reinjetada + tecla)",
             TRACE_MOUSE_CHORD => "MOUSE_CHORD (Win reinjetada + mouse)",
             TRACE_LOCK => "WIN_L -> LockWorkStation",
+            TRACE_ELEVATED_START => "ELEVATED_START -> runner (janela elevada; hook sem acesso)",
+            TRACE_START_FOREGROUND => {
+                "START_FOREGROUND (Iniciar/Pesquisa nativos em primeiro plano)"
+            }
             _ => "?",
         }
     }
@@ -434,27 +447,217 @@ mod platform {
         }
     }
 
+    /// Contorno do UIPI: com uma janela elevada em foco (ex.: "Administrator:
+    /// PowerShell") o `WH_KEYBOARD_LL` de um processo comum não recebe a tecla,
+    /// e o Iniciar nativo abre. Um `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)`
+    /// (passivo, sem tocar no teclado) percebe o Iniciar ganhando foco logo
+    /// após uma janela elevada e abre o runner por cima; o Iniciar se fecha
+    /// sozinho ao perder o foco.
+    mod elevated {
+        use super::*;
+        use std::cell::RefCell;
+        use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND};
+        use windows::Win32::Security::{
+            GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+        };
+        use windows::Win32::System::Threading::{
+            OpenProcess, OpenProcessToken, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+            PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+        use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetWindowThreadProcessId, EVENT_SYSTEM_FOREGROUND, WINEVENT_OUTOFCONTEXT,
+            WINEVENT_SKIPOWNPROCESS,
+        };
+
+        const START_MENU_HOSTS: &[&str] = &[
+            "startmenuexperiencehost.exe",
+            "searchhost.exe",
+            "searchapp.exe",
+        ];
+
+        thread_local! {
+            static ON_TAP: RefCell<Option<Arc<dyn Fn() + Send + Sync>>> = const { RefCell::new(None) };
+            /// A última janela em foco (fora do Pulse) era elevada.
+            static LAST_ELEVATED: Cell<bool> = const { Cell::new(false) };
+        }
+
+        pub struct Watch(HWINEVENTHOOK);
+
+        impl Drop for Watch {
+            fn drop(&mut self) {
+                unsafe {
+                    let _ = UnhookWinEvent(self.0);
+                }
+                ON_TAP.with(|slot| slot.borrow_mut().take());
+            }
+        }
+
+        /// Instala o observador na thread atual (que precisa bombear mensagens).
+        pub fn watch(on_tap: Arc<dyn Fn() + Send + Sync>) -> Option<Watch> {
+            ON_TAP.with(|slot| *slot.borrow_mut() = Some(on_tap));
+            LAST_ELEVATED.with(|last| last.set(false));
+            let hook = unsafe {
+                SetWinEventHook(
+                    EVENT_SYSTEM_FOREGROUND,
+                    EVENT_SYSTEM_FOREGROUND,
+                    None,
+                    Some(on_foreground),
+                    0,
+                    0,
+                    WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+                )
+            };
+            if hook.is_invalid() {
+                crate::debug::record_failure(
+                    "launcher_win_key_elevated",
+                    0,
+                    crate::debug::Failure::new(
+                        "Não foi possível observar o foco para janelas elevadas",
+                    )
+                    .stage("SetWinEventHook"),
+                );
+                return None;
+            }
+            Some(Watch(hook))
+        }
+
+        unsafe extern "system" fn on_foreground(
+            _hook: HWINEVENTHOOK,
+            _event: u32,
+            hwnd: HWND,
+            _id_object: i32,
+            _id_child: i32,
+            _thread: u32,
+            _time: u32,
+        ) {
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            if pid == 0 {
+                return;
+            }
+            let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+                return;
+            };
+            if is_start_menu_host(process) {
+                let _ = CloseHandle(process);
+                // Diagnóstico: registra toda vez que o Iniciar ganha o foco,
+                // para cruzar com os WIN_TAP do mesmo log.
+                trace(TRACE_START_FOREGROUND, 0);
+                if LAST_ELEVATED.with(|last| last.replace(false)) {
+                    trace(TRACE_ELEVATED_START, 0);
+                    let on_tap = ON_TAP.with(|slot| slot.borrow().clone());
+                    if let Some(on_tap) = on_tap {
+                        on_tap();
+                    }
+                }
+                return;
+            }
+            let elevated = is_elevated(process);
+            let _ = CloseHandle(process);
+            LAST_ELEVATED.with(|last| last.set(elevated));
+        }
+
+        unsafe fn is_start_menu_host(process: HANDLE) -> bool {
+            let mut buf = [0u16; 512];
+            let mut len = buf.len() as u32;
+            if QueryFullProcessImageNameW(
+                process,
+                PROCESS_NAME_WIN32,
+                windows::core::PWSTR(buf.as_mut_ptr()),
+                &mut len,
+            )
+            .is_err()
+            {
+                return false;
+            }
+            let path = String::from_utf16_lossy(&buf[..len as usize]);
+            let name = path.rsplit(['\\', '/']).next().unwrap_or(&path);
+            START_MENU_HOSTS
+                .iter()
+                .any(|host| name.eq_ignore_ascii_case(host))
+        }
+
+        /// Processo elevado (ou com token inacessível para nós, o que, para
+        /// uma janela de primeiro plano da sessão, também indica elevação).
+        unsafe fn is_elevated(process: HANDLE) -> bool {
+            let mut token = HANDLE::default();
+            if OpenProcessToken(process, TOKEN_QUERY, &mut token).is_err() {
+                return true;
+            }
+            let mut elevation = TOKEN_ELEVATION::default();
+            let mut returned = 0u32;
+            let ok = GetTokenInformation(
+                token,
+                TokenElevation,
+                Some(&mut elevation as *mut _ as *mut _),
+                size_of::<TOKEN_ELEVATION>() as u32,
+                &mut returned,
+            )
+            .is_ok();
+            let _ = CloseHandle(token);
+            ok && elevation.TokenIsElevated != 0
+        }
+    }
+
+    /// Argumento do processo auxiliar que segura a tecla Windows.
+    ///
+    /// O hook LL roda num processo separado do Pulse: com o hook no mesmo
+    /// processo da janela em foco (runner/janela principal, WebView2), o Iniciar
+    /// do Windows abria mesmo com o toque engolido. Com o hook em outro processo
+    /// (como fazem WindhawkPal/AutoHotkey) isso não acontece.
+    pub const HOOK_HOST_ARG: &str = "--win-key-hook";
+
+    /// Processo que segura os hooks LL.
+    enum Host {
+        /// Filho comum (integridade média): não vê teclas de janelas elevadas.
+        Child(std::process::Child),
+        /// Cópia protegida iniciada elevada pela tarefa agendada. O Pulse comum
+        /// não pode encerrá-la; ela sai quando este evento é sinalizado.
+        Task { stop_event: isize },
+    }
+
+    impl Host {
+        fn stop(self) {
+            match self {
+                Host::Child(mut child) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+                Host::Task { stop_event } => unsafe {
+                    let event = HANDLE(stop_event as *mut _);
+                    let _ = SetEvent(event);
+                    let _ = CloseHandle(event);
+                },
+            }
+        }
+    }
+
     pub struct Hook {
-        hook_thread_id: u32,
         dispatch_thread_id: u32,
-        hook_handle: Option<std::thread::JoinHandle<()>>,
         dispatch_handle: Option<std::thread::JoinHandle<()>>,
+        host: Option<Host>,
     }
 
     impl Hook {
         pub fn install(on_tap: Arc<dyn Fn() + Send + Sync>) -> Result<Self> {
-            // Thread de despacho recebe os eventos via PostThreadMessageW para
-            // manter o callback do hook livre de alocações, I/O e bloqueios.
+            // Thread de despacho recebe os eventos do processo auxiliar via
+            // PostThreadMessageW (trace, toque, Win+L) e observa o foco.
             let (dispatch_tx, dispatch_rx) = std::sync::mpsc::channel::<u32>();
+            let (host_ready_tx, host_ready_rx) = std::sync::mpsc::channel::<()>();
             let dispatch_handle = std::thread::Builder::new()
                 .name("pulse-win-key-dispatch".into())
                 .spawn(move || unsafe {
                     let mut msg = MSG::default();
                     let _ = PeekMessageW(&mut msg, None, WM_USER, WM_USER, PM_NOREMOVE);
+                    let elevated_watch = elevated::watch(on_tap.clone());
                     let _ = dispatch_tx.send(GetCurrentThreadId());
                     while GetMessageW(&mut msg, None, 0, 0).as_bool() {
                         match msg.message {
                             WM_PULSE_WIN_TAP => on_tap(),
+                            WM_PULSE_HOOK_READY => {
+                                let _ = host_ready_tx.send(());
+                            }
                             WM_PULSE_WIN_LOCK => {
                                 if let Err(error) = LockWorkStation() {
                                     crate::debug::record_failure(
@@ -472,6 +675,7 @@ mod platform {
                             _ => {}
                         }
                     }
+                    drop(elevated_watch);
                 })
                 .map_err(|error| {
                     windows::core::Error::new(windows::core::HRESULT(-1), error.to_string())
@@ -488,94 +692,85 @@ mod platform {
                 }
             };
 
-            let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<u32>>();
-            let hook_handle = match std::thread::Builder::new()
-                .name("pulse-win-key".into())
-                .spawn(move || unsafe {
-                    let installed = (|| -> Result<(HHOOK, HHOOK)> {
-                        let module = GetModuleHandleW(None)?;
-                        let keyboard = SetWindowsHookExW(
-                            WH_KEYBOARD_LL,
-                            Some(keyboard_proc),
-                            Some(module.into()),
-                            0,
-                        )?;
-                        match SetWindowsHookExW(
-                            WH_MOUSE_LL,
-                            Some(mouse_proc),
-                            Some(module.into()),
-                            0,
-                        ) {
-                            Ok(mouse) => Ok((keyboard, mouse)),
-                            Err(error) => {
-                                let _ = UnhookWindowsHookEx(keyboard);
-                                Err(error)
-                            }
+            let stop_dispatch = |dispatch_handle: std::thread::JoinHandle<()>| {
+                unsafe {
+                    let _ = PostThreadMessageW(dispatch_thread_id, WM_QUIT, WPARAM(0), LPARAM(0));
+                }
+                let _ = dispatch_handle.join();
+            };
+
+            // Elevado (tarefa agendada) quando configurado e em dia; senão, ou se
+            // a tarefa não responder, o processo comum.
+            if super::super::win_key_admin::status()
+                == super::super::win_key_admin::WinKeyAdminState::Ready
+            {
+                match start_task_host(dispatch_thread_id) {
+                    Ok(stop_event) => {
+                        let host = Host::Task { stop_event };
+                        if host_ready_rx
+                            .recv_timeout(std::time::Duration::from_secs(4))
+                            .is_ok()
+                        {
+                            return Ok(Self {
+                                dispatch_thread_id,
+                                dispatch_handle: Some(dispatch_handle),
+                                host: Some(host),
+                            });
                         }
-                    })();
-
-                    let (keyboard, mouse) = match installed {
-                        Ok(hooks) => hooks,
-                        Err(error) => {
-                            let _ = ready_tx.send(Err(error));
-                            return;
-                        }
-                    };
-
-                    // Estado inicial com as teclas já pressionadas ao ativar o hook.
-                    let arbiter = Arbiter::seeded(|vk| GetAsyncKeyState(vk as i32) < 0);
-                    ARBITER.with(|state| state.set(arbiter));
-                    DISPATCH_THREAD_ID.with(|slot| slot.set(dispatch_thread_id));
-
-                    let _ = ready_tx.send(Ok(GetCurrentThreadId()));
-                    let mut msg = MSG::default();
-                    while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-                        let _ = DispatchMessageW(&msg);
+                        host.stop();
+                        crate::debug::record_failure(
+                            "launcher_win_key_admin",
+                            4000,
+                            crate::debug::Failure::new(
+                                "O processo da tecla como administrador não respondeu; usando o processo comum",
+                            )
+                            .stage("task_ready"),
+                        );
                     }
-                    let _ = UnhookWindowsHookEx(keyboard);
-                    let _ = UnhookWindowsHookEx(mouse);
-                }) {
-                Ok(handle) => handle,
+                    Err(error) => crate::debug::record_failure(
+                        "launcher_win_key_admin",
+                        0,
+                        crate::debug::Failure::new(
+                            "Não foi possível iniciar o processo da tecla como administrador; usando o processo comum",
+                        )
+                        .stage("run_task")
+                        .detail(error),
+                    ),
+                }
+            }
+
+            let host = match spawn_host(dispatch_thread_id) {
+                Ok(child) => child,
                 Err(error) => {
-                    unsafe {
-                        let _ =
-                            PostThreadMessageW(dispatch_thread_id, WM_QUIT, WPARAM(0), LPARAM(0));
-                    }
-                    let _ = dispatch_handle.join();
+                    stop_dispatch(dispatch_handle);
                     return Err(windows::core::Error::new(
                         windows::core::HRESULT(-1),
-                        error.to_string(),
+                        format!("Não foi possível iniciar o processo da tecla Windows: {error}"),
                     ));
                 }
             };
 
-            let stop_after_failure =
-                |hook_handle: std::thread::JoinHandle<()>,
-                 dispatch_handle: std::thread::JoinHandle<()>| {
-                    unsafe {
-                        let _ =
-                            PostThreadMessageW(dispatch_thread_id, WM_QUIT, WPARAM(0), LPARAM(0));
-                    }
-                    let _ = hook_handle.join();
-                    let _ = dispatch_handle.join();
-                };
-
-            match ready_rx.recv() {
-                Ok(Ok(hook_thread_id)) => Ok(Self {
-                    hook_thread_id,
+            match host_ready_rx.recv_timeout(std::time::Duration::from_secs(5)) {
+                Ok(()) => Ok(Self {
                     dispatch_thread_id,
-                    hook_handle: Some(hook_handle),
                     dispatch_handle: Some(dispatch_handle),
+                    host: Some(Host::Child(host)),
                 }),
-                Ok(Err(error)) => {
-                    stop_after_failure(hook_handle, dispatch_handle);
-                    Err(error)
-                }
                 Err(_) => {
-                    stop_after_failure(hook_handle, dispatch_handle);
+                    let mut host = host;
+                    let status = host.try_wait().ok().flatten();
+                    let _ = host.kill();
+                    let _ = host.wait();
+                    stop_dispatch(dispatch_handle);
                     Err(windows::core::Error::new(
                         windows::core::HRESULT(-1),
-                        "O hook da tecla Windows parou antes de concluir a inicialização.",
+                        match status {
+                            Some(status) => format!(
+                                "O processo da tecla Windows encerrou antes de instalar o hook ({status})."
+                            ),
+                            None => "O processo da tecla Windows não instalou o hook em 5s."
+                                .to_string(),
+                        },
                     ))
                 }
             }
@@ -584,16 +779,193 @@ mod platform {
 
     impl Drop for Hook {
         fn drop(&mut self) {
-            unsafe {
-                let _ = PostThreadMessageW(self.hook_thread_id, WM_QUIT, WPARAM(0), LPARAM(0));
-                let _ = PostThreadMessageW(self.dispatch_thread_id, WM_QUIT, WPARAM(0), LPARAM(0));
+            // Encerrar o processo remove os hooks LL junto.
+            if let Some(host) = self.host.take() {
+                host.stop();
             }
-            if let Some(handle) = self.hook_handle.take() {
-                let _ = handle.join();
+            unsafe {
+                let _ = PostThreadMessageW(self.dispatch_thread_id, WM_QUIT, WPARAM(0), LPARAM(0));
             }
             if let Some(handle) = self.dispatch_handle.take() {
                 let _ = handle.join();
             }
+        }
+    }
+
+    fn spawn_host(dispatch_thread_id: u32) -> std::io::Result<std::process::Child> {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let exe = std::env::current_exe()?;
+        std::process::Command::new(exe)
+            .args([
+                HOOK_HOST_ARG,
+                &dispatch_thread_id.to_string(),
+                &std::process::id().to_string(),
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+    }
+
+    /// Arquivo com que o Pulse passa `<thread de despacho> <pid> <evento>` à
+    /// tarefa agendada (que não recebe argumentos variáveis).
+    fn handoff_path() -> std::path::PathBuf {
+        crate::storage::paths::pulse_local_dir().join("win-key-hook.handoff")
+    }
+
+    fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    /// Cria o evento de parada, grava o handoff e dispara a tarefa agendada.
+    fn start_task_host(dispatch_thread_id: u32) -> std::result::Result<isize, String> {
+        static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        let pid = std::process::id();
+        let name = format!("Local\\PulseWinKeyHookStop-{pid}-{seq}");
+        let name_w = wide(&name);
+        let event = unsafe { CreateEventW(None, true, false, PCWSTR(name_w.as_ptr())) }
+            .map_err(|error| format!("CreateEventW: {error}"))?;
+        let stop_event = event.0 as isize;
+        let fail = |error: String| {
+            unsafe {
+                let _ = CloseHandle(event);
+            }
+            error
+        };
+        let path = handoff_path();
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        std::fs::write(&path, format!("{dispatch_thread_id} {pid} {name}"))
+            .map_err(|error| fail(format!("handoff: {error}")))?;
+        super::super::win_key_admin::run_task().map_err(fail)?;
+        Ok(stop_event)
+    }
+
+    /// O processo é uma instância do Pulse (`pulse-windows.exe`).
+    fn is_pulse_process(pid: u32) -> bool {
+        unsafe {
+            let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+                return false;
+            };
+            let mut buffer = [0u16; 1024];
+            let mut len = buffer.len() as u32;
+            let ok = QueryFullProcessImageNameW(
+                process,
+                PROCESS_NAME_WIN32,
+                windows::core::PWSTR(buffer.as_mut_ptr()),
+                &mut len,
+            )
+            .is_ok();
+            let _ = CloseHandle(process);
+            ok && String::from_utf16_lossy(&buffer[..len as usize])
+                .rsplit('\\')
+                .next()
+                .is_some_and(|file| file.eq_ignore_ascii_case("pulse-windows.exe"))
+        }
+    }
+
+    /// Modo processo auxiliar. Comum: `--win-key-hook <thread de despacho> <pid do Pulse>`.
+    /// Elevado (tarefa agendada): `--win-key-hook-task`, lendo o handoff.
+    /// Instala os hooks LL, avisa o Pulse e bombeia mensagens até o Pulse sair.
+    pub fn run_host_if_requested() -> bool {
+        let args: Vec<String> = std::env::args().collect();
+        if args
+            .iter()
+            .any(|arg| arg == super::super::win_key_admin::TASK_HOST_ARG)
+        {
+            let Ok(handoff) = std::fs::read_to_string(handoff_path()) else {
+                return true;
+            };
+            let mut parts = handoff.split_whitespace();
+            let (Some(tid), Some(pid), Some(event)) = (
+                parts.next().and_then(|v| v.parse::<u32>().ok()),
+                parts.next().and_then(|v| v.parse::<u32>().ok()),
+                parts.next(),
+            ) else {
+                return true;
+            };
+            if !is_pulse_process(pid) {
+                return true;
+            }
+            let event_w = wide(event);
+            let Ok(stop) = (unsafe {
+                OpenEventW(SYNCHRONIZATION_SYNCHRONIZE, false, PCWSTR(event_w.as_ptr()))
+            }) else {
+                return true;
+            };
+            // O Pulse já desistiu desta instância (timeout): não instala nada.
+            if unsafe { WaitForSingleObject(stop, 0) } == WAIT_OBJECT_0 {
+                return true;
+            }
+            run_host(tid, pid, Some(stop.0 as isize));
+            return true;
+        }
+        let Some(pos) = args.iter().position(|arg| arg == HOOK_HOST_ARG) else {
+            return false;
+        };
+        let parse = |offset: usize| args.get(pos + offset).and_then(|v| v.parse::<u32>().ok());
+        if let (Some(dispatch_thread_id), Some(parent_pid)) = (parse(1), parse(2)) {
+            run_host(dispatch_thread_id, parent_pid, None);
+        }
+        true
+    }
+
+    fn run_host(dispatch_thread_id: u32, parent_pid: u32, stop_event: Option<isize>) {
+        unsafe {
+            // Sai junto com o Pulse (inclusive se ele cair sem chamar Drop) ou
+            // quando o Pulse sinaliza o evento de parada (modo elevado).
+            let Ok(parent) = OpenProcess(PROCESS_SYNCHRONIZE, false, parent_pid) else {
+                return;
+            };
+            let parent_raw = parent.0 as isize;
+            std::thread::spawn(move || {
+                let parent = HANDLE(parent_raw as *mut _);
+                match stop_event {
+                    Some(stop) => {
+                        let _ = WaitForMultipleObjects(
+                            &[parent, HANDLE(stop as *mut _)],
+                            false,
+                            INFINITE,
+                        );
+                    }
+                    None => {
+                        let _ = WaitForSingleObject(parent, INFINITE);
+                    }
+                }
+                std::process::exit(0);
+            });
+
+            // O Windows ignora a resposta de um hook LL que demora
+            // (LowLevelHooksTimeout): a thread só decide e repassa, em prioridade máxima.
+            let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+            let Ok(module) = GetModuleHandleW(None) else {
+                return;
+            };
+            let Ok(keyboard) =
+                SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), Some(module.into()), 0)
+            else {
+                return;
+            };
+            let Ok(mouse) =
+                SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), Some(module.into()), 0)
+            else {
+                let _ = UnhookWindowsHookEx(keyboard);
+                return;
+            };
+
+            // Estado inicial com as teclas já pressionadas ao ativar o hook.
+            let arbiter = Arbiter::seeded(|vk| GetAsyncKeyState(vk as i32) < 0);
+            ARBITER.with(|state| state.set(arbiter));
+            DISPATCH_THREAD_ID.with(|slot| slot.set(dispatch_thread_id));
+            post_dispatch(WM_PULSE_HOOK_READY, 0, 0);
+
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                let _ = DispatchMessageW(&msg);
+            }
+            let _ = UnhookWindowsHookEx(keyboard);
+            let _ = UnhookWindowsHookEx(mouse);
         }
     }
 
@@ -739,6 +1111,19 @@ pub fn set_enabled(enabled: bool, on_tap: impl Fn() + Send + Sync + 'static) -> 
         let _ = on_tap;
         HOOK_ENABLED.store(enabled, Ordering::Release);
         Ok(())
+    }
+}
+
+/// Se o binário foi iniciado como processo auxiliar da tecla Windows
+/// (`--win-key-hook`), roda o hook até o Pulse sair e devolve `true`.
+pub fn run_hook_host_if_requested() -> bool {
+    #[cfg(windows)]
+    {
+        platform::run_host_if_requested()
+    }
+    #[cfg(not(windows))]
+    {
+        false
     }
 }
 

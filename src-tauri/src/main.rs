@@ -48,6 +48,12 @@ fn acquire_instance() -> Result<Option<pulse_windows_lib::single_instance::unix:
 }
 
 fn main() {
+    // Processo auxiliar que segura a tecla Windows para o Pulse Runner: sem
+    // instância única nem GUI; sai sozinho quando o Pulse encerra.
+    if pulse_windows_lib::launcher::win_key::run_hook_host_if_requested() {
+        return;
+    }
+
     // Modo sentinela da Dock Beta: não adquire instância única nem abre GUI;
     // apenas aguarda o término do processo principal para restaurar a taskbar.
     if pulse_windows_lib::custom_dock::run_watchdog_if_requested() {

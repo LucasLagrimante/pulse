@@ -113,3 +113,10 @@ export const DEFAULT_BETA_FEATURES: BetaFeaturesConfig = {
   topBarQuotaProviders: [],
   topBarPeripheralDevices: [],
 };
+
+/** Estado do processo da tecla Windows com privilégio de administrador (`win_key_admin_status`). */
+export type WinKeyAdminState = "unsupported" | "off" | "ready" | "outdated";
+
+export interface WinKeyAdminStatus {
+  state: WinKeyAdminState;
+}

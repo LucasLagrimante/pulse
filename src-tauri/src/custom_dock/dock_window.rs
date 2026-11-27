@@ -124,6 +124,8 @@ const WM_APP_HOLD: u32 = WM_APP + 26;
 /// Tempo em que a Dock permanece visível após um toque na tecla Windows,
 /// mesmo com auto-hide ligado ou com um jogo em tela cheia.
 const HOTKEY_REVEAL_MS: u64 = 2500;
+/// Tempo extra visível quando o Iniciar fecha com o cursor sobre a Dock (clique em curso).
+const START_CLOSE_GRACE_MS: u64 = 1500;
 
 const TIMER_RECONCILE_ID: usize = 1;
 const TIMER_RECONCILE_MS: u32 = 1100;
@@ -818,6 +820,12 @@ impl DockState {
     }
 
     fn reposition_window(&mut self) {
+        // Mesmo motivo de reassert_topmost: SetWindowPos(HWND_TOPMOST) aqui
+        // sobe a Dock na frente do menu de contexto. O layout é reaplicado
+        // logo depois que o popup fecha (handle_right_click).
+        if self.menu_open {
+            return;
+        }
         let mon = primary_monitor_rect();
         let dpi = unsafe { GetDpiForWindow(self.hwnd) };
         let scale = if dpi > 0 { dpi as f32 / 96.0 } else { 1.0 };
@@ -843,7 +851,7 @@ impl DockState {
         unsafe {
             let _ = SetWindowPos(
                 self.hwnd,
-                Some(HWND_TOPMOST),
+                Some(self.z_anchor()),
                 self.win_x,
                 self.win_y,
                 width,
@@ -1627,6 +1635,13 @@ impl DockState {
 
             let mut pt = POINT::default();
             let _ = GetCursorPos(&mut pt);
+            // Como na barra nativa, o menu abre inteiro acima da Dock: alinhar
+            // a base ao cursor fazia o popup cobrir os ícones. Com
+            // TPM_BOTTOMALIGN, pt.y é a base do menu.
+            let pill_top = self.win_y + self.pill_rect.top.round() as i32;
+            if pill_top < pt.y {
+                pt.y = pill_top;
+            }
             let _ = SetForegroundWindow(self.hwnd);
             // O menu modal captura o mouse e dispara WM_MOUSELEAVE na Dock. Sem
             // esta proteção, o timer de auto-hide escondia a janela enquanto o
@@ -1643,6 +1658,9 @@ impl DockState {
             );
             self.menu_open = false;
             let _ = DestroyMenu(menu);
+            // Reaplica layout e TOPMOST agora que o popup fechou (o guard em
+            // reposition_window/reassert_topmost impede fazer isso durante).
+            self.reposition_window();
             self.update_visibility_state();
             self.render();
 
@@ -1691,16 +1709,49 @@ impl DockState {
     /// topo da Z-order. Reafirmar TOPMOST a cada tick mantém a Dock acima deles
     /// (em jogos borderless isso é suficiente).
     fn reassert_topmost(&self) {
+        // Com o menu de contexto aberto (TrackPopupMenu), reafirmar TOPMOST
+        // sobe a Dock acima do próprio popup — ele é topmost e filho desta
+        // janela. A Z-order volta a ser reafirmada quando o menu fecha.
+        if self.menu_open {
+            return;
+        }
         unsafe {
             let _ = SetWindowPos(
                 self.hwnd,
-                Some(HWND_TOPMOST),
+                Some(self.z_anchor()),
                 0,
                 0,
                 0,
                 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
             );
+        }
+    }
+
+    /// O cursor está sobre a janela da Dock.
+    fn cursor_over_dock(&self) -> bool {
+        let mut cursor = POINT::default();
+        let mut rect = RECT::default();
+        unsafe {
+            if GetCursorPos(&mut cursor).is_err() || GetWindowRect(self.hwnd, &mut rect).is_err() {
+                return false;
+            }
+        }
+        cursor.x >= rect.left
+            && cursor.x < rect.right
+            && cursor.y >= rect.top
+            && cursor.y < rect.bottom
+    }
+
+    /// Posição na Z-order: acima de tudo, exceto com o Iniciar nativo aberto.
+    /// Nesse caso a Dock fica logo abaixo dele (como a barra nativa): o
+    /// Iniciar se ancora na altura da barra de 48 px, e a Dock maior (e a lupa,
+    /// que cresce para cima) cobria a borda inferior do menu.
+    fn z_anchor(&self) -> HWND {
+        if self.start_menu_open && self.start_probe.1 && self.start_probe.0 != 0 {
+            HWND(self.start_probe.0 as *mut _)
+        } else {
+            HWND_TOPMOST
         }
     }
 
@@ -1775,6 +1826,14 @@ impl DockState {
                 },
             );
             self.start_menu_open = start_open;
+            // Reaplica a Z-order na hora: abaixo do Iniciar ou de volta ao topo.
+            self.reassert_topmost();
+            // Clicar na Dock fecha o Iniciar no mouse-down; com um jogo em tela
+            // cheia por trás, o tick seguinte escondia a Dock antes do
+            // mouse-up e o clique se perdia. Com o cursor sobre ela, segura.
+            if !start_open && self.cursor_over_dock() {
+                self.reveal_until = Some(now + Duration::from_millis(START_CLOSE_GRACE_MS));
+            }
         }
         let forced_visible =
             self.reveal_until.is_some() || self.hold_from_launcher || self.start_menu_open;
@@ -1807,6 +1866,13 @@ impl DockState {
             want_hide_auto = !(near_bottom || inside_pill);
         }
 
+        // Com o popup aberto, o timer não pode mexer em Z-order nem em posição:
+        // qualquer SetWindowPos(HWND_TOPMOST) na Dock a coloca na frente do
+        // menu. O estado fica adiado para o primeiro tick depois de fechar.
+        if self.menu_open {
+            return;
+        }
+
         if fullscreen != self.fullscreen_active || want_hide_auto != self.hidden_by_autohide {
             if fullscreen != self.fullscreen_active {
                 shell_log::info(
@@ -1829,7 +1895,7 @@ impl DockState {
                 self.reassert_topmost();
                 self.render();
             }
-        } else if !self.hidden_by_autohide && (forced_visible || self.menu_open) {
+        } else if !self.hidden_by_autohide && forced_visible {
             // Enquanto estiver visível por atalho, compete com a Z-order do jogo.
             self.reassert_topmost();
         }
@@ -2222,6 +2288,11 @@ unsafe extern "system" fn dock_wndproc(
                 );
             }
             state.hold_from_launcher = hold;
+            if !hold {
+                // O toque que fecha o runner também dispara o reveal de ~2,5s;
+                // descartá-lo faz a Dock sumir junto com o runner.
+                state.reveal_until = None;
+            }
             state.update_visibility_state();
             if hold && !state.hidden_by_autohide {
                 state.reassert_topmost();
@@ -2635,6 +2706,10 @@ fn launch_source(source: &str) {
     } else {
         store_app_id(source).unwrap_or_else(|| source.to_owned())
     };
+    // Pulse elevado: o app abre pelo Explorer, sem herdar o administrador.
+    if crate::shell_launch::try_open_unelevated(&target, None) {
+        return;
+    }
     let wide: Vec<u16> = OsStr::new(&target)
         .encode_wide()
         .chain(std::iter::once(0))

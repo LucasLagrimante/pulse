@@ -147,6 +147,16 @@ pub fn open_main_window() {
     }
 }
 
+/// Encerra o Pulse a partir da Barra Superior. Roda fora da thread da barra:
+/// `shutdown` derruba as janelas do Shell e não pode esperar a própria thread.
+pub fn exit_pulse_from_shell() {
+    if let Some(app) = clone_app_handle() {
+        tauri::async_runtime::spawn(async move {
+            crate::tray::exit_app(app);
+        });
+    }
+}
+
 pub fn open_main_module(module: &str) {
     if let Some(app) = clone_app_handle() {
         let target = module.to_owned();
