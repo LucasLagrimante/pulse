@@ -209,6 +209,17 @@ describe("SubscriptionUsage", () => {
     ])).toHaveLength(2);
   });
 
+  it("keeps the monthly window of a provider that has three measured quotas", () => {
+    const windows = [
+      { id: "go-5h", label: "Sessão · 5 horas", remainingPercent: 72, windowMinutes: 300 },
+      { id: "go-week", label: "Semanal", remainingPercent: 55, windowMinutes: 10080 },
+      { id: "go-month", label: "Mensal", remainingPercent: 31, windowMinutes: 43200 },
+    ];
+    const picked = selectFlyoutQuotaWindows(windows);
+    expect(picked).toHaveLength(3);
+    expect(picked.map(window => window.id)).toEqual(["go-5h", "go-week", "go-month"]);
+  });
+
   it("renders a disabled provider as inactive and re-enables it on demand", async () => {
     const disabledClaude = { ...report.providers[0], disabled: true };
     const settings = { openrouterConfigured: false, opencodeGoConfigured: false, disabledProviders: ["claude"] };

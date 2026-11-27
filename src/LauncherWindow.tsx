@@ -500,322 +500,324 @@ export function LauncherWindow() {
   };
 
   return (
-    <main
-      className="launcher-shell"
-      aria-label="Pulse Runner"
-      onKeyDown={handleKeyDown}
-    >
-      <header className="launcher-header">
-        <div className="launcher-search-bar">
-          <div className="launcher-brand-slot" aria-hidden="true">
-            {isEmptyQuery ? (
-              <PulseMark />
-            ) : (
-              <Search className="launcher-search-glyph" size={20} strokeWidth={2.1} />
-            )}
-          </div>
+    <div className="launcher-window">
+      <main
+        className="launcher-shell"
+        aria-label="Pulse Runner"
+        onKeyDown={handleKeyDown}
+      >
+        <header className="launcher-header">
+          <div className="launcher-search-bar">
+            <div className="launcher-brand-slot" aria-hidden="true">
+              {isEmptyQuery ? (
+                <PulseMark />
+              ) : (
+                <Search className="launcher-search-glyph" size={20} strokeWidth={2.1} />
+              )}
+            </div>
 
-          <input
-            ref={inputRef}
-            type="text"
-            className="launcher-input"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Buscar apps, arquivos, módulos do Pulse ou calcular…"
-            aria-label="Buscar no Pulse Runner"
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
+            <input
+              ref={inputRef}
+              type="text"
+              className="launcher-input"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Buscar apps, arquivos, módulos do Pulse ou calcular…"
+              aria-label="Buscar no Pulse Runner"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
 
-          {!isEmptyQuery && (
-            <button
-              type="button"
-              className="launcher-clear-btn"
-              onClick={() => {
-                setQuery("");
-                setSelectedIndex(0);
-                inputRef.current?.focus();
-              }}
-              aria-label="Limpar busca"
-              title="Limpar busca"
-            >
-              <X size={14} strokeWidth={2.2} />
-            </button>
-          )}
-
-          <div className="launcher-shortcut-badges" aria-hidden="true">
-            <kbd className="launcher-kbd launcher-kbd-accent">Win</kbd>
-            <kbd className="launcher-kbd">Esc</kbd>
-          </div>
-        </div>
-
-        <nav className="launcher-chips" aria-label="Filtrar resultados por categoria">
-          {CATEGORIES.map((chip) => {
-            const active = category === chip.id;
-            return (
+            {!isEmptyQuery && (
               <button
-                key={chip.id}
                 type="button"
-                role="tab"
-                aria-selected={active}
-                className={`launcher-chip${active ? " is-active" : ""}`}
+                className="launcher-clear-btn"
                 onClick={() => {
-                  setCategory(chip.id);
+                  setQuery("");
                   setSelectedIndex(0);
                   inputRef.current?.focus();
                 }}
+                aria-label="Limpar busca"
+                title="Limpar busca"
               >
-                {chip.label}
+                <X size={14} strokeWidth={2.2} />
               </button>
-            );
-          })}
-          <span className="launcher-tab-hint" aria-hidden="true">
-            <kbd className="launcher-kbd">Tab</kbd>
-          </span>
-        </nav>
-      </header>
+            )}
 
-      {statusError && (
-        <div className="launcher-alert" role="alert">
-          <span>{statusError}</span>
-          <button
-            type="button"
-            className="launcher-alert-close"
-            onClick={() => setStatusError(null)}
-            aria-label="Fechar aviso"
-          >
-            <X size={13} />
-          </button>
-        </div>
-      )}
-
-      <section className="launcher-body" aria-label="Resultados do Pulse Runner">
-        {/* Cartão destacado de Calculadora Instantânea */}
-        {response.calc && (
-          <div className="launcher-section">
-            <div className="launcher-section-label">
-              <Calculator size={13} aria-hidden="true" />
-              <span>Calculadora instantânea</span>
+            <div className="launcher-shortcut-badges" aria-hidden="true">
+              <kbd className="launcher-kbd launcher-kbd-accent">Win</kbd>
+              <kbd className="launcher-kbd">Esc</kbd>
             </div>
-            <button
-              ref={setRowRef(0)}
-              type="button"
-              className={`launcher-calc-card${safeSelectedIndex === 0 ? " is-selected" : ""}`}
-              onMouseEnter={() => setSelectedIndex(0)}
-              onClick={() => {
-                if (entries[0]) void executeEntry(entries[0]);
-              }}
-            >
-              <div className="launcher-calc-expr">
-                <span className="launcher-calc-tag">=</span>
-                <code>{response.calc.expression}</code>
-              </div>
-              <div className="launcher-calc-value-row">
-                <strong className="launcher-calc-result">{response.calc.formatted}</strong>
-                <span
-                  className={`launcher-calc-copy-pill${
-                    copiedText === response.calc.formatted ? " is-copied" : ""
-                  }`}
+          </div>
+
+          <nav className="launcher-chips" aria-label="Filtrar resultados por categoria">
+            {CATEGORIES.map((chip) => {
+              const active = category === chip.id;
+              return (
+                <button
+                  key={chip.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className={`launcher-chip${active ? " is-active" : ""}`}
+                  onClick={() => {
+                    setCategory(chip.id);
+                    setSelectedIndex(0);
+                    inputRef.current?.focus();
+                  }}
                 >
-                  {copiedText === response.calc.formatted ? (
-                    <>
-                      <Check size={13} strokeWidth={2.4} />
-                      <span>Copiado!</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Copiar</span>
-                      <kbd className="launcher-kbd launcher-kbd-inline">↵</kbd>
-                    </>
-                  )}
-                </span>
-              </div>
+                  {chip.label}
+                </button>
+              );
+            })}
+            <span className="launcher-tab-hint" aria-hidden="true">
+              <kbd className="launcher-kbd">Tab</kbd>
+            </span>
+          </nav>
+        </header>
+
+        {statusError && (
+          <div className="launcher-alert" role="alert">
+            <span>{statusError}</span>
+            <button
+              type="button"
+              className="launcher-alert-close"
+              onClick={() => setStatusError(null)}
+              aria-label="Fechar aviso"
+            >
+              <X size={13} />
             </button>
           </div>
         )}
 
-        {/* Seção Recentes quando a busca está vazia */}
-        {isEmptyQuery && response.recent.length > 0 && (
-          <div className="launcher-section">
-            <div className="launcher-section-label">
-              <Clock size={13} aria-hidden="true" />
-              <span>Recentes</span>
+        <section className="launcher-body" aria-label="Resultados do Pulse Runner">
+          {/* Cartão destacado de Calculadora Instantânea */}
+          {response.calc && (
+            <div className="launcher-section">
+              <div className="launcher-section-label">
+                <Calculator size={13} aria-hidden="true" />
+                <span>Calculadora instantânea</span>
+              </div>
+              <button
+                ref={setRowRef(0)}
+                type="button"
+                className={`launcher-calc-card${safeSelectedIndex === 0 ? " is-selected" : ""}`}
+                onMouseEnter={() => setSelectedIndex(0)}
+                onClick={() => {
+                  if (entries[0]) void executeEntry(entries[0]);
+                }}
+              >
+                <div className="launcher-calc-expr">
+                  <span className="launcher-calc-tag">=</span>
+                  <code>{response.calc.expression}</code>
+                </div>
+                <div className="launcher-calc-value-row">
+                  <strong className="launcher-calc-result">{response.calc.formatted}</strong>
+                  <span
+                    className={`launcher-calc-copy-pill${
+                      copiedText === response.calc.formatted ? " is-copied" : ""
+                    }`}
+                  >
+                    {copiedText === response.calc.formatted ? (
+                      <>
+                        <Check size={13} strokeWidth={2.4} />
+                        <span>Copiado!</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Copiar</span>
+                        <kbd className="launcher-kbd launcher-kbd-inline">↵</kbd>
+                      </>
+                    )}
+                  </span>
+                </div>
+              </button>
             </div>
-            <ul className="launcher-list" role="listbox" aria-label="Itens recentes">
-              {response.recent.map((item, idx) => {
-                const flatIndex = calcOffset + idx;
-                const selected = safeSelectedIndex === flatIndex;
-                return (
-                  <li key={`recent:${item.id}`} role="option" aria-selected={selected}>
-                    <button
-                      ref={setRowRef(flatIndex)}
-                      type="button"
-                      className={`launcher-row${selected ? " is-selected" : ""}`}
-                      onMouseEnter={() => setSelectedIndex(flatIndex)}
-                      onClick={() => {
-                        const entry = entries[flatIndex];
-                        if (entry) void executeEntry(entry);
-                      }}
-                    >
-                      <span className={`launcher-row-icon ${iconToneClass(item)}`}>
-                        {renderItemIcon(item)}
-                      </span>
-                      <span className="launcher-row-text">
-                        <span className="launcher-row-title">{item.title}</span>
-                        <span className="launcher-row-subtitle">{item.subtitle}</span>
-                      </span>
-                      <span className="launcher-row-meta">
-                        <span className="launcher-badge">{item.badge}</span>
-                        {selected && (
-                          <span className="launcher-enter-hint">
-                            <span>{item.actionLabel || "Abrir"}</span>
-                            <CornerDownLeft size={12} aria-hidden="true" />
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+          )}
 
-        {/* Lista principal (acesso rápido vazio ou resultados ranqueados) */}
-        {response.items.length > 0 && (
-          <div className="launcher-section">
-            <div className="launcher-section-label">
-              <span>
-                {isEmptyQuery
-                  ? emptySectionTitle(category)
-                  : `Resultados (${response.items.length})`}
-              </span>
+          {/* Seção Recentes quando a busca está vazia */}
+          {isEmptyQuery && response.recent.length > 0 && (
+            <div className="launcher-section">
+              <div className="launcher-section-label">
+                <Clock size={13} aria-hidden="true" />
+                <span>Recentes</span>
+              </div>
+              <ul className="launcher-list" role="listbox" aria-label="Itens recentes">
+                {response.recent.map((item, idx) => {
+                  const flatIndex = calcOffset + idx;
+                  const selected = safeSelectedIndex === flatIndex;
+                  return (
+                    <li key={`recent:${item.id}`} role="option" aria-selected={selected}>
+                      <button
+                        ref={setRowRef(flatIndex)}
+                        type="button"
+                        className={`launcher-row${selected ? " is-selected" : ""}`}
+                        onMouseEnter={() => setSelectedIndex(flatIndex)}
+                        onClick={() => {
+                          const entry = entries[flatIndex];
+                          if (entry) void executeEntry(entry);
+                        }}
+                      >
+                        <span className={`launcher-row-icon ${iconToneClass(item)}`}>
+                          {renderItemIcon(item)}
+                        </span>
+                        <span className="launcher-row-text">
+                          <span className="launcher-row-title">{item.title}</span>
+                          <span className="launcher-row-subtitle">{item.subtitle}</span>
+                        </span>
+                        <span className="launcher-row-meta">
+                          <span className="launcher-badge">{item.badge}</span>
+                          {selected && (
+                            <span className="launcher-enter-hint">
+                              <span>{item.actionLabel || "Abrir"}</span>
+                              <CornerDownLeft size={12} aria-hidden="true" />
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-            <ul className="launcher-list" role="listbox" aria-label="Resultados encontrados">
-              {response.items.map((item, idx) => {
-                const flatIndex = itemsStartIndex + idx;
-                const selected = safeSelectedIndex === flatIndex;
-                return (
-                  <li key={`item:${item.id}`} role="option" aria-selected={selected}>
-                    <button
-                      ref={setRowRef(flatIndex)}
-                      type="button"
-                      className={`launcher-row${selected ? " is-selected" : ""}`}
-                      onMouseEnter={() => setSelectedIndex(flatIndex)}
-                      onClick={() => {
-                        const entry = entries[flatIndex];
-                        if (entry) void executeEntry(entry);
-                      }}
-                    >
-                      <span className={`launcher-row-icon ${iconToneClass(item)}`}>
-                        {renderItemIcon(item)}
-                      </span>
-                      <span className="launcher-row-text">
-                        <span className="launcher-row-title">{item.title}</span>
-                        <span className="launcher-row-subtitle">{item.subtitle}</span>
-                      </span>
-                      <span className="launcher-row-meta">
-                        <span className="launcher-badge">{item.badge}</span>
-                        {selected && (
-                          <span className="launcher-enter-hint">
-                            <span>{item.actionLabel || "Abrir"}</span>
-                            <CornerDownLeft size={12} aria-hidden="true" />
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+          )}
 
-        {/* Dica interativa de calculadora na tela inicial */}
-        {isEmptyQuery && (
-          <div className="launcher-calc-tip" aria-label="Dica de calculadora instantânea">
-            <div className="launcher-calc-tip-head">
-              <Calculator size={14} aria-hidden="true" />
-              <span>Cálculo instantâneo direto na busca</span>
+          {/* Lista principal (acesso rápido vazio ou resultados ranqueados) */}
+          {response.items.length > 0 && (
+            <div className="launcher-section">
+              <div className="launcher-section-label">
+                <span>
+                  {isEmptyQuery
+                    ? emptySectionTitle(category)
+                    : `Resultados (${response.items.length})`}
+                </span>
+              </div>
+              <ul className="launcher-list" role="listbox" aria-label="Resultados encontrados">
+                {response.items.map((item, idx) => {
+                  const flatIndex = itemsStartIndex + idx;
+                  const selected = safeSelectedIndex === flatIndex;
+                  return (
+                    <li key={`item:${item.id}`} role="option" aria-selected={selected}>
+                      <button
+                        ref={setRowRef(flatIndex)}
+                        type="button"
+                        className={`launcher-row${selected ? " is-selected" : ""}`}
+                        onMouseEnter={() => setSelectedIndex(flatIndex)}
+                        onClick={() => {
+                          const entry = entries[flatIndex];
+                          if (entry) void executeEntry(entry);
+                        }}
+                      >
+                        <span className={`launcher-row-icon ${iconToneClass(item)}`}>
+                          {renderItemIcon(item)}
+                        </span>
+                        <span className="launcher-row-text">
+                          <span className="launcher-row-title">{item.title}</span>
+                          <span className="launcher-row-subtitle">{item.subtitle}</span>
+                        </span>
+                        <span className="launcher-row-meta">
+                          <span className="launcher-badge">{item.badge}</span>
+                          {selected && (
+                            <span className="launcher-enter-hint">
+                              <span>{item.actionLabel || "Abrir"}</span>
+                              <CornerDownLeft size={12} aria-hidden="true" />
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-            <div className="launcher-calc-examples">
-              {CALC_EXAMPLES.map((expr) => (
-                <button
-                  key={expr}
-                  type="button"
-                  className="launcher-example-pill"
-                  onClick={() => {
-                    setCategory("all");
-                    setQuery(expr);
-                    inputRef.current?.focus();
-                  }}
-                >
-                  {expr}
-                </button>
-              ))}
+          )}
+
+          {/* Dica interativa de calculadora na tela inicial */}
+          {isEmptyQuery && (
+            <div className="launcher-calc-tip" aria-label="Dica de calculadora instantânea">
+              <div className="launcher-calc-tip-head">
+                <Calculator size={14} aria-hidden="true" />
+                <span>Cálculo instantâneo direto na busca</span>
+              </div>
+              <div className="launcher-calc-examples">
+                {CALC_EXAMPLES.map((expr) => (
+                  <button
+                    key={expr}
+                    type="button"
+                    className="launcher-example-pill"
+                    onClick={() => {
+                      setCategory("all");
+                      setQuery(expr);
+                      inputRef.current?.focus();
+                    }}
+                  >
+                    {expr}
+                  </button>
+                ))}
+              </div>
             </div>
+          )}
+
+          {/* Estado vazio quando nada bateu com a consulta */}
+          {!isEmptyQuery && !response.calc && response.items.length === 0 && (
+            <div className="launcher-empty">
+              <Search size={24} strokeWidth={1.6} aria-hidden="true" />
+              <strong>Nenhum resultado para “{query.trim()}”</strong>
+              <p>
+                Tente outro termo, use <code>f:</code> para buscar somente arquivos locais ou digite
+                uma expressão como <code>1280 * 0.85</code>.
+              </p>
+            </div>
+          )}
+
+          {/* Dica na aba Arquivos quando o campo está vazio */}
+          {isEmptyQuery && category === "files" && response.recent.length === 0 && (
+            <div className="launcher-empty">
+              <Folder size={24} strokeWidth={1.6} aria-hidden="true" />
+              <strong>Busca rápida em pastas locais</strong>
+              <p>
+                Digite ao menos 2 caracteres para localizar arquivos e pastas em Documentos,
+                Downloads, Área de Trabalho e pastas personalizadas.
+              </p>
+            </div>
+          )}
+        </section>
+
+        <footer className="launcher-footer">
+          <div className="launcher-footer-hints" aria-hidden="true">
+            <span>
+              <kbd className="launcher-kbd">↑</kbd>
+              <kbd className="launcher-kbd">↓</kbd> Navegar
+            </span>
+            <span>
+              <kbd className="launcher-kbd">↵</kbd> Executar
+            </span>
+            <span>
+              <kbd className="launcher-kbd">Tab</kbd> Filtrar
+            </span>
           </div>
-        )}
 
-        {/* Estado vazio quando nada bateu com a consulta */}
-        {!isEmptyQuery && !response.calc && response.items.length === 0 && (
-          <div className="launcher-empty">
-            <Search size={24} strokeWidth={1.6} aria-hidden="true" />
-            <strong>Nenhum resultado para “{query.trim()}”</strong>
-            <p>
-              Tente outro termo, use <code>f:</code> para buscar somente arquivos locais ou digite
-              uma expressão como <code>1280 * 0.85</code>.
-            </p>
+          <div className="launcher-footer-status">
+            <span className="launcher-index-meta">
+              {response.isIndexing || refreshingIndex
+                ? "Indexando aplicativos…"
+                : `${response.indexedAppCount} apps no índice`}
+            </span>
+            <button
+              type="button"
+              className={`launcher-refresh-btn${refreshingIndex ? " is-spinning" : ""}`}
+              onClick={() => void handleRefreshIndex()}
+              disabled={refreshingIndex}
+              aria-label="Atualizar índice de aplicativos"
+              title="Atualizar índice de aplicativos"
+            >
+              <RefreshCw size={13} strokeWidth={2.1} />
+            </button>
           </div>
-        )}
-
-        {/* Dica na aba Arquivos quando o campo está vazio */}
-        {isEmptyQuery && category === "files" && response.recent.length === 0 && (
-          <div className="launcher-empty">
-            <Folder size={24} strokeWidth={1.6} aria-hidden="true" />
-            <strong>Busca rápida em pastas locais</strong>
-            <p>
-              Digite ao menos 2 caracteres para localizar arquivos e pastas em Documentos,
-              Downloads, Área de Trabalho e pastas personalizadas.
-            </p>
-          </div>
-        )}
-      </section>
-
-      <footer className="launcher-footer">
-        <div className="launcher-footer-hints" aria-hidden="true">
-          <span>
-            <kbd className="launcher-kbd">↑</kbd>
-            <kbd className="launcher-kbd">↓</kbd> Navegar
-          </span>
-          <span>
-            <kbd className="launcher-kbd">↵</kbd> Executar
-          </span>
-          <span>
-            <kbd className="launcher-kbd">Tab</kbd> Filtrar
-          </span>
-        </div>
-
-        <div className="launcher-footer-status">
-          <span className="launcher-index-meta">
-            {response.isIndexing || refreshingIndex
-              ? "Indexando aplicativos…"
-              : `${response.indexedAppCount} apps no índice`}
-          </span>
-          <button
-            type="button"
-            className={`launcher-refresh-btn${refreshingIndex ? " is-spinning" : ""}`}
-            onClick={() => void handleRefreshIndex()}
-            disabled={refreshingIndex}
-            aria-label="Atualizar índice de aplicativos"
-            title="Atualizar índice de aplicativos"
-          >
-            <RefreshCw size={13} strokeWidth={2.1} />
-          </button>
-        </div>
-      </footer>
-    </main>
+          </footer>
+      </main>
+    </div>
   );
 }
 

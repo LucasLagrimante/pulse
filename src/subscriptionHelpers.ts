@@ -68,6 +68,9 @@ export function shortQuotaWindowLabel(window: QuotaWindow): string {
   return fallback.length > 6 ? `${fallback.slice(0, 4)}…` : fallback;
 }
 
+/** 28 dias: piso para considerar uma cota como mensal. */
+const MONTHLY_WINDOW_MINUTES = 28 * 1440;
+
 export function selectFlyoutQuotaWindows(windows: QuotaWindow[], limit = 2): QuotaWindow[] {
   const measured = (Array.isArray(windows) ? windows : []).filter(
     window => safePercent(window.remainingPercent) != null && !window.unavailableReason,
@@ -83,9 +86,14 @@ export function selectFlyoutQuotaWindows(windows: QuotaWindow[], limit = 2): Quo
       byWindow.set(key, window);
     }
   }
-  return [...byWindow.values()]
-    .sort((a, b) => (measuredWindowMinutes(a) ?? Number.MAX_SAFE_INTEGER) - (measuredWindowMinutes(b) ?? Number.MAX_SAFE_INTEGER))
-    .slice(0, limit);
+  const sorted = [...byWindow.values()].sort(
+    (a, b) => (measuredWindowMinutes(a) ?? Number.MAX_SAFE_INTEGER) - (measuredWindowMinutes(b) ?? Number.MAX_SAFE_INTEGER),
+  );
+  // Provedores com cota mensal (OpenCode Go) ficam com a janela mais longa de
+  // fora quando o painel corta em duas: ela não aparece em lugar nenhum. Nesse
+  // caso o painel mostra uma linha a mais.
+  const hasMonthlyWindow = sorted.some(window => (measuredWindowMinutes(window) ?? 0) >= MONTHLY_WINDOW_MINUTES);
+  return sorted.slice(0, hasMonthlyWindow ? Math.max(limit, 3) : limit);
 }
 
 export function isWindowChartEligible(window: QuotaWindow): boolean {

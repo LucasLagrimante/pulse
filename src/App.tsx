@@ -2211,863 +2211,865 @@ export function TrayFlyout({
   };
 
   return (
-    <aside
-      ref={flyoutContainerRef}
-      className={`tray-flyout-container${flyoutMode !== "full" ? " is-modular-popup" : ""}`}
-      role="complementary"
-      aria-label="Painel rápido do tray"
-    >
-      <header className="flyout-header">
-        <div className="flyout-brand">
-          <span
-            className="flyout-brand-mark"
-            role={!overview || isQuotaRefreshing ? "status" : undefined}
-            aria-label={!overview ? "Conectando à telemetria local" : isQuotaRefreshing ? "Atualizando cotas de IA" : undefined}
-            title={!overview ? "Conectando à telemetria local…" : isQuotaRefreshing ? "Atualizando cotas de IA…" : undefined}
-          >
-            <PulseMark animated={!overview || isQuotaRefreshing} />
-          </span>
-          <div>
-            <h2>Pulse</h2>
-            <div className="flyout-brand-sub">
-              <p>{flyoutSubtitle}</p>
-              {!overview && flyoutMode === "full" && <span className="flyout-loading-tag">CONECTANDO</span>}
-            </div>
-          </div>
-          {showQuotasSection && typeof openrouterCredits === "number" && Number.isFinite(openrouterCredits) && (
-            <span className="flyout-training-credit" title="Saldo OpenRouter disponível em dólares (USD)" aria-label="Saldo OpenRouter disponível em dólares (USD)">
-              {formatUsd(openrouterCredits)}
+    <div className="tray-flyout-window">
+      <aside
+        ref={flyoutContainerRef}
+        className={`tray-flyout-container${flyoutMode !== "full" ? " is-modular-popup" : ""}`}
+        role="complementary"
+        aria-label="Painel rápido do tray"
+      >
+        <header className="flyout-header">
+          <div className="flyout-brand">
+            <span
+              className="flyout-brand-mark"
+              role={!overview || isQuotaRefreshing ? "status" : undefined}
+              aria-label={!overview ? "Conectando à telemetria local" : isQuotaRefreshing ? "Atualizando cotas de IA" : undefined}
+              title={!overview ? "Conectando à telemetria local…" : isQuotaRefreshing ? "Atualizando cotas de IA…" : undefined}
+            >
+              <PulseMark animated={!overview || isQuotaRefreshing} />
             </span>
-          )}
-        </div>
-        <div className="flyout-header-actions">
-          <button
-            type="button"
-            className="flyout-theme-toggle"
-            aria-label={`Alternar para tema ${theme === "light" ? "escuro" : "claro"}`}
-            title={`Tema atual: ${theme === "light" ? "Claro (Porcelain)" : "Escuro (Obsidian)"}`}
-            onClick={toggleTheme}
-          >
-            {theme === "light" ? (
-              <Sun className="theme-toggle-icon" size={20} aria-hidden="true" />
-            ) : (
-              <Moon className="theme-toggle-icon" size={20} aria-hidden="true" />
-            )}
-          </button>
-          <button
-            aria-label="Fechar painel rápido"
-            className="flyout-close-button"
-            onClick={() => void handleClose()}
-          >
-            ✕
-          </button>
-        </div>
-      </header>
-
-      {flyoutMode === "clock" && (
-        <Suspense fallback={<PulseLoading />}>
-          <ShellClockPopup />
-        </Suspense>
-      )}
-
-      {showMetricsSection && (
-      <section className="flyout-metrics">
-        <div className="flyout-metrics-header">
-          <span>TELEMETRIA ({telemetryPrefs.trayMetrics.length}/{MAX_TRAY_METRICS})</span>
-          <button
-            type="button"
-            className={`flyout-customize-btn ${customizeOpen ? "is-active" : ""}`}
-            aria-expanded={customizeOpen}
-            aria-label="Personalizar gráficos do painel rápido"
-            onClick={() => setCustomizeOpen(v => !v)}
-          >
-            <SlidersHorizontal size={11} aria-hidden="true" />
-            <span>{customizeOpen ? "Concluir" : "Personalizar"}</span>
-          </button>
-        </div>
-
-        {customizeOpen && (
-          <div className="flyout-customize-panel" role="region" aria-label={`Configurar até ${MAX_TRAY_METRICS} gráficos do tray`}>
-            <div className="flyout-customize-slots">
-              {telemetryPrefs.trayMetrics.map((currentId, slotIdx) => (
-                <label key={slotIdx} className="flyout-slot-field">
-                  <div className="flyout-slot-field-head">
-                    <span>GRÁFICO {slotIdx + 1}</span>
-                    {telemetryPrefs.trayMetrics.length > 1 && (
-                      <button
-                        type="button"
-                        className="flyout-slot-remove"
-                        aria-label={`Remover gráfico ${slotIdx + 1}`}
-                        onClick={() => handleRemoveTraySlot(slotIdx)}
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                  <select
-                    aria-label={`Métrica do slot ${slotIdx + 1} do tray`}
-                    value={currentId}
-                    onChange={event => handleSlotChange(slotIdx, event.target.value)}
-                  >
-                    {flyoutUnifiedMetrics.map(option => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                        {option.value != null ? ` (${formatTelemetryNumber(option.value, option.unit)})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))}
+            <div>
+              <h2>Pulse</h2>
+              <div className="flyout-brand-sub">
+                <p>{flyoutSubtitle}</p>
+                {!overview && flyoutMode === "full" && <span className="flyout-loading-tag">CONECTANDO</span>}
+              </div>
             </div>
-            <div className="flyout-customize-footer">
-              {telemetryPrefs.trayMetrics.length < MAX_TRAY_METRICS ? (
+            {showQuotasSection && typeof openrouterCredits === "number" && Number.isFinite(openrouterCredits) && (
+              <span className="flyout-training-credit" title="Saldo OpenRouter disponível em dólares (USD)" aria-label="Saldo OpenRouter disponível em dólares (USD)">
+                {formatUsd(openrouterCredits)}
+              </span>
+            )}
+          </div>
+          <div className="flyout-header-actions">
+            <button
+              type="button"
+              className="flyout-theme-toggle"
+              aria-label={`Alternar para tema ${theme === "light" ? "escuro" : "claro"}`}
+              title={`Tema atual: ${theme === "light" ? "Claro (Porcelain)" : "Escuro (Obsidian)"}`}
+              onClick={toggleTheme}
+            >
+              {theme === "light" ? (
+                <Sun className="theme-toggle-icon" size={20} aria-hidden="true" />
+              ) : (
+                <Moon className="theme-toggle-icon" size={20} aria-hidden="true" />
+              )}
+            </button>
+            <button
+              aria-label="Fechar painel rápido"
+              className="flyout-close-button"
+              onClick={() => void handleClose()}
+            >
+              ✕
+            </button>
+          </div>
+        </header>
+
+        {flyoutMode === "clock" && (
+          <Suspense fallback={<PulseLoading />}>
+            <ShellClockPopup />
+          </Suspense>
+        )}
+
+        {showMetricsSection && (
+        <section className="flyout-metrics">
+          <div className="flyout-metrics-header">
+            <span>TELEMETRIA ({telemetryPrefs.trayMetrics.length}/{MAX_TRAY_METRICS})</span>
+            <button
+              type="button"
+              className={`flyout-customize-btn ${customizeOpen ? "is-active" : ""}`}
+              aria-expanded={customizeOpen}
+              aria-label="Personalizar gráficos do painel rápido"
+              onClick={() => setCustomizeOpen(v => !v)}
+            >
+              <SlidersHorizontal size={11} aria-hidden="true" />
+              <span>{customizeOpen ? "Concluir" : "Personalizar"}</span>
+            </button>
+          </div>
+
+          {customizeOpen && (
+            <div className="flyout-customize-panel" role="region" aria-label={`Configurar até ${MAX_TRAY_METRICS} gráficos do tray`}>
+              <div className="flyout-customize-slots">
+                {telemetryPrefs.trayMetrics.map((currentId, slotIdx) => (
+                  <label key={slotIdx} className="flyout-slot-field">
+                    <div className="flyout-slot-field-head">
+                      <span>GRÁFICO {slotIdx + 1}</span>
+                      {telemetryPrefs.trayMetrics.length > 1 && (
+                        <button
+                          type="button"
+                          className="flyout-slot-remove"
+                          aria-label={`Remover gráfico ${slotIdx + 1}`}
+                          onClick={() => handleRemoveTraySlot(slotIdx)}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    <select
+                      aria-label={`Métrica do slot ${slotIdx + 1} do tray`}
+                      value={currentId}
+                      onChange={event => handleSlotChange(slotIdx, event.target.value)}
+                    >
+                      {flyoutUnifiedMetrics.map(option => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                          {option.value != null ? ` (${formatTelemetryNumber(option.value, option.unit)})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+              <div className="flyout-customize-footer">
+                {telemetryPrefs.trayMetrics.length < MAX_TRAY_METRICS ? (
+                  <button
+                    type="button"
+                    className="flyout-reset-btn"
+                    onClick={handleAddTraySlot}
+                  >
+                    + Adicionar atalho ({telemetryPrefs.trayMetrics.length}/{MAX_TRAY_METRICS})
+                  </button>
+                ) : (
+                  <small>Limite de {MAX_TRAY_METRICS} atalhos atingido</small>
+                )}
                 <button
                   type="button"
                   className="flyout-reset-btn"
-                  onClick={handleAddTraySlot}
+                  onClick={() =>
+                    saveFlyoutTelemetryPrefs({
+                      ...telemetryPrefs,
+                      trayMetrics: [...DEFAULT_TRAY_METRICS],
+                    })
+                  }
                 >
-                  + Adicionar atalho ({telemetryPrefs.trayMetrics.length}/{MAX_TRAY_METRICS})
+                  Restaurar padrão
                 </button>
-              ) : (
-                <small>Limite de {MAX_TRAY_METRICS} atalhos atingido</small>
-              )}
-              <button
-                type="button"
-                className="flyout-reset-btn"
-                onClick={() =>
-                  saveFlyoutTelemetryPrefs({
-                    ...telemetryPrefs,
-                    trayMetrics: [...DEFAULT_TRAY_METRICS],
-                  })
-                }
-              >
-                Restaurar padrão
-              </button>
-            </div>
-          </div>
-        )}
-
-        {usingDefaultTray ? (
-          <>
-            <div className="flyout-metrics-row">
-              <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — CPU")}>
-                <div className="flyout-metric-head">
-                  <span>CPU</span>
-                  <strong title={flyoutCpuSensor ? `${flyoutCpuSensor.label} · ${flyoutCpuSensor.source}` : undefined}>
-                    {overview ? (
-                      `${metric(overview.cpuPercent, "%")}${flyoutCpuSensor ? ` · ${metric(flyoutCpuSensor.celsius, " °C")}` : ""}`
-                    ) : (
-                      <span className="flyout-skeleton-value" aria-hidden="true" />
-                    )}
-                  </strong>
-                </div>
-                <SparklineChart
-                  data={cpuHistory}
-                  color="var(--neu-accent)"
-                  height={20}
-                  ariaLabel="Gráfico de histórico de CPU no tray"
-                />
-              </div>
-
-              <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — Memória RAM")}>
-                <div className="flyout-metric-head">
-                  <span>RAM</span>
-                  <strong>
-                    {overview ? (
-                      `${metric(overview.memoryUsedGb, " GB")} (${metric(memoryPercent, "%")})`
-                    ) : (
-                      <span className="flyout-skeleton-value" aria-hidden="true" />
-                    )}
-                  </strong>
-                </div>
-                <SparklineChart
-                  data={ramHistory}
-                  color="var(--neu-signal-secondary)"
-                  height={20}
-                  ariaLabel="Gráfico de histórico de Memória RAM no tray"
-                />
               </div>
             </div>
+          )}
 
-            <div className="flyout-metrics-row flyout-metrics-row--split">
-              <div
-                className={`flyout-metric-card disk-health-card disk-health-${diskHealth} is-clickable`}
-                style={showFlyoutGpuCard ? undefined : { gridColumn: "1 / -1" }}
-                {...metricCardLink("Armazenamento", `Abrir Armazenamento — ${pc.systemDisk}`)}
-              >
-                <div className="flyout-metric-head">
-                  <div className="disk-metric-label">
-                    <span>{pc.systemDiskUpper}</span>
-                    {overview && <DiskHealthBadge health={diskHealth} />}
-                  </div>
-                  <strong>
-                    {overview ? metric(diskPercent, "%") : <span className="flyout-skeleton-value" aria-hidden="true" />}
-                  </strong>
-                </div>
-                <MiniCapacityBar
-                  usedGb={overview?.diskUsedGb}
-                  totalGb={overview?.diskTotalGb}
-                  percent={diskPercent}
-                  color={diskCapacityColor(diskHealth)}
-                  loading={flyoutLoading}
-                  ariaLabel="Gráfico de alocação de disco no tray"
-                />
-              </div>
-
-              {showFlyoutGpuCard && (
-                <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — GPU")}>
+          {usingDefaultTray ? (
+            <>
+              <div className="flyout-metrics-row">
+                <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — CPU")}>
                   <div className="flyout-metric-head">
-                    <span>GPU</span>
-                    <strong
-                      title={
-                        flyoutLoading
-                          ? undefined
-                          : flyoutGpuSensor
-                            ? `${flyoutGpuSensor.label} · ${flyoutGpuSensor.source}`
-                            : "Nenhum sensor de temperatura da GPU respondeu"
-                      }
-                    >
-                      {flyoutLoading ? (
-                        <span className="flyout-skeleton-value" aria-hidden="true" />
-                      ) : flyoutGpuSensor ? (
-                        `${metric(flyoutGpuSensor.celsius)} °C`
+                    <span>CPU</span>
+                    <strong title={flyoutCpuSensor ? `${flyoutCpuSensor.label} · ${flyoutCpuSensor.source}` : undefined}>
+                      {overview ? (
+                        `${metric(overview.cpuPercent, "%")}${flyoutCpuSensor ? ` · ${metric(flyoutCpuSensor.celsius, " °C")}` : ""}`
                       ) : (
-                        "—"
+                        <span className="flyout-skeleton-value" aria-hidden="true" />
                       )}
                     </strong>
                   </div>
-                  <MiniUsageBar
-                    percent={flyoutGpuUsage}
-                    color="var(--neu-info)"
-                    ariaLabel="Uso da GPU no tray"
-                    leftLabel={flyoutLoading ? undefined : `USO ${metric(flyoutGpuUsage, "%")}`}
-                    rightLabel={flyoutLoading ? undefined : flyoutGpuSensor ? flyoutGpuSensor.source : "SEM SENSOR"}
+                  <SparklineChart
+                    data={cpuHistory}
+                    color="var(--neu-accent)"
+                    height={20}
+                    ariaLabel="Gráfico de histórico de CPU no tray"
                   />
                 </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="flyout-metrics-row">
-            {telemetryPrefs.trayMetrics.slice(0, MAX_TRAY_METRICS).map(slotId => {
-              const item = flyoutMetricsById.get(slotId);
-              if (slotId === "storage.system_disk") {
+
+                <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — Memória RAM")}>
+                  <div className="flyout-metric-head">
+                    <span>RAM</span>
+                    <strong>
+                      {overview ? (
+                        `${metric(overview.memoryUsedGb, " GB")} (${metric(memoryPercent, "%")})`
+                      ) : (
+                        <span className="flyout-skeleton-value" aria-hidden="true" />
+                      )}
+                    </strong>
+                  </div>
+                  <SparklineChart
+                    data={ramHistory}
+                    color="var(--neu-signal-secondary)"
+                    height={20}
+                    ariaLabel="Gráfico de histórico de Memória RAM no tray"
+                  />
+                </div>
+              </div>
+
+              <div className="flyout-metrics-row flyout-metrics-row--split">
+                <div
+                  className={`flyout-metric-card disk-health-card disk-health-${diskHealth} is-clickable`}
+                  style={showFlyoutGpuCard ? undefined : { gridColumn: "1 / -1" }}
+                  {...metricCardLink("Armazenamento", `Abrir Armazenamento — ${pc.systemDisk}`)}
+                >
+                  <div className="flyout-metric-head">
+                    <div className="disk-metric-label">
+                      <span>{pc.systemDiskUpper}</span>
+                      {overview && <DiskHealthBadge health={diskHealth} />}
+                    </div>
+                    <strong>
+                      {overview ? metric(diskPercent, "%") : <span className="flyout-skeleton-value" aria-hidden="true" />}
+                    </strong>
+                  </div>
+                  <MiniCapacityBar
+                    usedGb={overview?.diskUsedGb}
+                    totalGb={overview?.diskTotalGb}
+                    percent={diskPercent}
+                    color={diskCapacityColor(diskHealth)}
+                    loading={flyoutLoading}
+                    ariaLabel="Gráfico de alocação de disco no tray"
+                  />
+                </div>
+
+                {showFlyoutGpuCard && (
+                  <div className="flyout-metric-card is-clickable" {...metricCardLink("Desempenho", "Abrir Desempenho — GPU")}>
+                    <div className="flyout-metric-head">
+                      <span>GPU</span>
+                      <strong
+                        title={
+                          flyoutLoading
+                            ? undefined
+                            : flyoutGpuSensor
+                              ? `${flyoutGpuSensor.label} · ${flyoutGpuSensor.source}`
+                              : "Nenhum sensor de temperatura da GPU respondeu"
+                        }
+                      >
+                        {flyoutLoading ? (
+                          <span className="flyout-skeleton-value" aria-hidden="true" />
+                        ) : flyoutGpuSensor ? (
+                          `${metric(flyoutGpuSensor.celsius)} °C`
+                        ) : (
+                          "—"
+                        )}
+                      </strong>
+                    </div>
+                    <MiniUsageBar
+                      percent={flyoutGpuUsage}
+                      color="var(--neu-info)"
+                      ariaLabel="Uso da GPU no tray"
+                      leftLabel={flyoutLoading ? undefined : `USO ${metric(flyoutGpuUsage, "%")}`}
+                      rightLabel={flyoutLoading ? undefined : flyoutGpuSensor ? flyoutGpuSensor.source : "SEM SENSOR"}
+                    />
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flyout-metrics-row">
+              {telemetryPrefs.trayMetrics.slice(0, MAX_TRAY_METRICS).map(slotId => {
+                const item = flyoutMetricsById.get(slotId);
+                if (slotId === "storage.system_disk") {
+                  return (
+                    <div
+                      key={slotId}
+                      className={`flyout-metric-card disk-health-card disk-health-${diskHealth} is-clickable`}
+                      {...metricCardLink("Armazenamento", `Abrir Armazenamento — ${pc.systemDisk}`)}
+                    >
+                      <div className="flyout-metric-head">
+                        <div className="disk-metric-label">
+                          <span>{pc.systemDiskUpper}</span>
+                          {overview && <DiskHealthBadge health={diskHealth} />}
+                        </div>
+                        <strong>{overview ? metric(diskPercent, "%") : "—"}</strong>
+                      </div>
+                      <MiniCapacityBar
+                        usedGb={overview?.diskUsedGb}
+                        totalGb={overview?.diskTotalGb}
+                        percent={diskPercent}
+                        color={diskCapacityColor(diskHealth)}
+                        loading={flyoutLoading}
+                        ariaLabel="Gráfico de alocação de disco no tray"
+                      />
+                    </div>
+                  );
+                }
+                const history =
+                  slotId === "cpu.usage"
+                    ? cpuHistory
+                    : slotId === "ram.usage"
+                      ? ramHistory
+                      : flyoutMetricHistories[slotId] ??
+                        (item && typeof item.value === "number" ? [item.value] : []);
+                const label = item?.shortLabel ?? slotId.toUpperCase();
+                const valueText = item ? formatTelemetryNumber(item.value, item.unit) : "Indisponível";
+                const color = item ? telemetryMetricColor(item) : "var(--neu-accent)";
+                const autoScale = item ? item.maxValue == null && item.unit !== "%" : true;
+                const maxVal = item?.maxValue ?? (item?.unit === "%" ? 100 : 10);
                 return (
                   <div
                     key={slotId}
-                    className={`flyout-metric-card disk-health-card disk-health-${diskHealth} is-clickable`}
-                    {...metricCardLink("Armazenamento", `Abrir Armazenamento — ${pc.systemDisk}`)}
+                    className="flyout-metric-card is-clickable"
+                    {...metricCardLink("Desempenho", `Abrir Desempenho — ${item?.label ?? slotId}`)}
                   >
                     <div className="flyout-metric-head">
-                      <div className="disk-metric-label">
-                        <span>{pc.systemDiskUpper}</span>
-                        {overview && <DiskHealthBadge health={diskHealth} />}
-                      </div>
-                      <strong>{overview ? metric(diskPercent, "%") : "—"}</strong>
+                      <span title={item?.label}>{label}</span>
+                      <strong title={item?.detail ?? item?.source}>{valueText}</strong>
                     </div>
-                    <MiniCapacityBar
-                      usedGb={overview?.diskUsedGb}
-                      totalGb={overview?.diskTotalGb}
-                      percent={diskPercent}
-                      color={diskCapacityColor(diskHealth)}
-                      loading={flyoutLoading}
-                      ariaLabel="Gráfico de alocação de disco no tray"
+                    <SparklineChart
+                      data={history}
+                      color={color}
+                      height={20}
+                      max={maxVal}
+                      autoScale={autoScale}
+                      loading={flyoutLoading && history.length === 0}
+                      ariaLabel={`Gráfico de ${item?.label ?? slotId} no tray`}
                     />
                   </div>
                 );
-              }
-              const history =
-                slotId === "cpu.usage"
-                  ? cpuHistory
-                  : slotId === "ram.usage"
-                    ? ramHistory
-                    : flyoutMetricHistories[slotId] ??
-                      (item && typeof item.value === "number" ? [item.value] : []);
-              const label = item?.shortLabel ?? slotId.toUpperCase();
-              const valueText = item ? formatTelemetryNumber(item.value, item.unit) : "Indisponível";
-              const color = item ? telemetryMetricColor(item) : "var(--neu-accent)";
-              const autoScale = item ? item.maxValue == null && item.unit !== "%" : true;
-              const maxVal = item?.maxValue ?? (item?.unit === "%" ? 100 : 10);
-              return (
-                <div
-                  key={slotId}
-                  className="flyout-metric-card is-clickable"
-                  {...metricCardLink("Desempenho", `Abrir Desempenho — ${item?.label ?? slotId}`)}
-                >
-                  <div className="flyout-metric-head">
-                    <span title={item?.label}>{label}</span>
-                    <strong title={item?.detail ?? item?.source}>{valueText}</strong>
-                  </div>
-                  <SparklineChart
-                    data={history}
-                    color={color}
-                    height={20}
-                    max={maxVal}
-                    autoScale={autoScale}
-                    loading={flyoutLoading && history.length === 0}
-                    ariaLabel={`Gráfico de ${item?.label ?? slotId} no tray`}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-      )}
-
-      {showAudioSection && (
-      <section className="flyout-audio" aria-labelledby="flyout-audio-title">
-        <div className="flyout-section-title">
-          <span id="flyout-audio-title">{pc.flyoutAudio}</span>
-          <small>PADRÕES</small>
-        </div>
-        {audioDevices?.unavailableReason ? (
-          <p className="flyout-audio-unavailable" role="status">{audioDevices.unavailableReason}</p>
-        ) : (
-          <div className="flyout-audio-grid">
-            <label className="flyout-audio-field">
-              <span>SAÍDA PADRÃO</span>
-              <select
-                aria-label="Dispositivo de saída padrão"
-                value={audioDevices?.outputDefaultId || ""}
-                disabled={!audioDevices || audioDevices.output.length === 0 || audioBusy != null}
-                onChange={event => void changeAudioDevice("output", event.target.value)}
-              >
-                {!audioDevices && <option value="">Consultando dispositivos…</option>}
-                {audioDevices?.output.length === 0 && <option value="">Nenhuma saída disponível</option>}
-                {audioDevices?.output.map(device => <option value={device.id} key={device.id}>{device.name}</option>)}
-              </select>
-            </label>
-            <label className="flyout-audio-field">
-              <span>ENTRADA PADRÃO</span>
-              <select
-                aria-label="Dispositivo de entrada padrão"
-                value={audioDevices?.inputDefaultId || ""}
-                disabled={!audioDevices || audioDevices.input.length === 0 || audioBusy != null}
-                onChange={event => void changeAudioDevice("input", event.target.value)}
-              >
-                {!audioDevices && <option value="">Consultando dispositivos…</option>}
-                {audioDevices?.input.length === 0 && <option value="">Nenhuma entrada disponível</option>}
-                {audioDevices?.input.map(device => <option value={device.id} key={device.id}>{device.name}</option>)}
-              </select>
-            </label>
-          </div>
-        )}
-        {audioBusy && <p className="flyout-audio-status" role="status">Aplicando dispositivo de {audioBusy === "input" ? "entrada" : "saída"}…</p>}
-        {audioError && <p className="flyout-audio-error" role="alert">{audioError}</p>}
-        <div className="flyout-mixer">
-          <button
-            type="button"
-            className="flyout-mixer-toggle"
-            aria-expanded={mixerOpen}
-            aria-controls="flyout-volume-mixer"
-            onClick={toggleMixer}
-          >
-            <span className="flyout-mixer-chevron" aria-hidden="true">{mixerOpen ? "▾" : "▸"}</span>
-            VOLUME MIXER
-            {mixerOpen && mixerAppCount > 0 && (
-              <small>{mixerAppCount} {mixerAppCount === 1 ? "APP" : "APPS"}</small>
-            )}
-          </button>
-          {mixerOpen && (
-            <div className="flyout-mixer-body" id="flyout-volume-mixer">
-              {mixerLoading && !mixer ? (
-                <p className="flyout-audio-status" role="status">Consultando apps com áudio…</p>
-              ) : mixerError ? (
-                <p className="flyout-audio-error" role="alert">{mixerError}</p>
-              ) : mixer?.unavailableReason ? (
-                <p className="flyout-audio-unavailable" role="status">{mixer.unavailableReason}</p>
-              ) : (
-                <>
-                  {masterLevel != null && (
-                    <div className="flyout-mixer-row flyout-mixer-master">
-                      <div className="flyout-mixer-head">
-                        <span className="flyout-mixer-name" title={mixer?.deviceName ?? "Saída atual"}>VOLUME GERAL</span>
-                        <span className="flyout-mixer-pct">{Math.round(masterLevel * 100)}%</span>
-                      </div>
-                      <div className="flyout-mixer-controls">
-                        <button
-                          type="button"
-                          className="flyout-mixer-mute"
-                          aria-pressed={mixer?.masterMuted ?? false}
-                          aria-label={`${mixer?.masterMuted ? "Ativar som da saída " : "Silenciar saída "}${mixer?.deviceName ?? "atual"}`}
-                          disabled={mixerBusy != null}
-                          onClick={handleMasterMuteToggle}
-                        >
-                          <MixerSpeakerIcon muted={mixer?.masterMuted ?? false} />
-                        </button>
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          step={1}
-                          value={Math.round(masterLevel * 100)}
-                          aria-label={`Volume geral da saída ${mixer?.deviceName ?? "atual"}`}
-                          disabled={mixerBusy != null}
-                          onChange={event => handleMasterVolumeSlider(Number(event.target.value))}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  {mixer && mixerAppCount > 0 ? (
-                    <ul className="flyout-mixer-list">
-                      {mixer.apps.map(app => {
-                        const level = sanitizeMixerLevel(app.volume) ?? 0;
-                        const label = app.displayName || app.appName;
-                        return (
-                          <li key={app.appName} className="flyout-mixer-row">
-                            <div className="flyout-mixer-head">
-                              <span className="flyout-mixer-icon" aria-hidden="true">
-                                {app.icon ? (
-                                  <img src={app.icon} alt="" loading="lazy" />
-                                ) : (
-                                  <MixerSpeakerIcon muted={app.muted} />
-                                )}
-                              </span>
-                              <span
-                                className="flyout-mixer-name"
-                                title={`${label}${app.sessionCount > 1 ? ` · ${app.sessionCount} sessões` : ""}`}
-                              >
-                                {label}
-                              </span>
-                              <span className="flyout-mixer-pct">{app.muted ? "MUDO" : `${Math.round(level * 100)}%`}</span>
-                            </div>
-                            <div className="flyout-mixer-controls">
-                              <button
-                                type="button"
-                                className="flyout-mixer-mute"
-                                aria-pressed={app.muted}
-                                aria-label={app.muted ? `Ativar som de ${label}` : `Silenciar ${label}`}
-                                disabled={mixerBusy != null}
-                                onClick={() => handleAppMuteToggle(app)}
-                              >
-                                <MixerSpeakerIcon muted={app.muted} />
-                              </button>
-                              <input
-                                type="range"
-                                min={0}
-                                max={100}
-                                step={1}
-                                value={Math.round(level * 100)}
-                                aria-label={`Volume de ${label}`}
-                                disabled={mixerBusy != null}
-                                onChange={event => handleAppVolumeSlider(app.appName, Number(event.target.value))}
-                              />
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : (
-                    <p className="flyout-audio-unavailable" role="status">Nenhum app com áudio ativo nesta saída.</p>
-                  )}
-                  <button
-                    type="button"
-                    className="flyout-mixer-refresh"
-                    disabled={mixerLoading}
-                    onClick={() => void loadMixer(mixerOutputId)}
-                  >
-                    ⟳ ATUALIZAR
-                  </button>
-                </>
-              )}
+              })}
             </div>
           )}
-          {pc.osLabel === "Windows" && (
-            <div className="flyout-audio-legacy">
-              <button
-                type="button"
-                className="flyout-mixer-toggle"
-                onClick={() => {
-                  setLegacyAudioError("");
-                  void invoke("open_legacy_audio_panel").catch(error => {
-                    setLegacyAudioError(typeof error === "string" ? error : "Não foi possível abrir o painel de áudio do Windows.");
-                  });
-                }}
-              >
-                Abrir painel de áudio clássico do Windows
-              </button>
-              {legacyAudioError && <p className="flyout-audio-error" role="alert">{legacyAudioError}</p>}
-            </div>
-          )}
-        </div>
-        {showDevPortsSub && (
-        <div className="flyout-dev-ports">
-          <button
-            type="button"
-            className="flyout-mixer-toggle flyout-dev-ports-toggle"
-            aria-expanded={devPortsOpen}
-            aria-controls="flyout-dev-ports-list"
-            onClick={toggleDevPorts}
-          >
-            <span className="flyout-mixer-chevron" aria-hidden="true">{devPortsOpen ? "▾" : "▸"}</span>
-            PORTAS &amp; PROJETOS DEV
-            <small className={devPortCount > 0 ? "is-active" : undefined}>
-              {devPortCount > 0 ? `${devPortCount} ${devPortCount === 1 ? "ATIVO" : "ATIVOS"}` : "0 ATIVOS"}
-            </small>
-          </button>
-          {devPortsOpen && (
-            <div className="flyout-dev-ports-body" id="flyout-dev-ports-list">
-              {devPortsLoading && !devPorts ? (
-                <p className="flyout-audio-status" role="status">Verificando portas locais e WSL…</p>
-              ) : devPortsError ? (
-                <p className="flyout-audio-error" role="alert">{devPortsError}</p>
-              ) : devPorts?.unavailableReason ? (
-                <p className="flyout-audio-unavailable" role="status">{devPorts.unavailableReason}</p>
-              ) : devPorts && devPortCount > 0 ? (
-                <ul className="flyout-dev-ports-list">
-                  {devPorts.ports.map(entry => {
-                    const envLabel = entry.environment === "wsl"
-                      ? `WSL${entry.wslDistro ? ` (${entry.wslDistro})` : ""}`
-                      : "Win";
-                    const detailsTitle = [
-                      entry.projectName,
-                      entry.url,
-                      entry.projectPath,
-                      entry.commandLine,
-                    ]
-                      .filter(Boolean)
-                      .join("\n");
-                    const isKilling = killingPortId === entry.id;
-                    const isCopied = copiedPortId === entry.id;
-
-                    return (
-                      <li key={entry.id} className="flyout-port-row">
-                        <button
-                          type="button"
-                          className="flyout-port-badge"
-                          title={`Abrir ${entry.url} no navegador`}
-                          aria-label={`Abrir porta ${entry.port} de ${entry.projectName} (${entry.url})`}
-                          onClick={() => handleOpenPortUrl(entry)}
-                        >
-                          :{entry.port}
-                        </button>
-                        <div className="flyout-port-identity" title={detailsTitle}>
-                          <strong>{entry.projectName}</strong>
-                          <small>
-                            {entry.runtime} · {envLabel} · PID {entry.pid}
-                          </small>
-                        </div>
-                        <div className="flyout-port-actions">
-                          <button
-                            type="button"
-                            className={`flyout-port-action-btn${isCopied ? " is-copied" : ""}`}
-                            title={isCopied ? "URL copiada!" : `Copiar ${entry.url}`}
-                            aria-label={`Copiar URL de ${entry.projectName} (${entry.url})`}
-                            onClick={() => void handleCopyPortUrl(entry)}
-                          >
-                            {isCopied ? "✓" : "⧉"}
-                          </button>
-                          <button
-                            type="button"
-                            className="flyout-port-action-btn"
-                            title={`Abrir ${entry.url}`}
-                            aria-label={`Abrir ${entry.url} no navegador`}
-                            onClick={() => handleOpenPortUrl(entry)}
-                          >
-                            ↗
-                          </button>
-                          <button
-                            type="button"
-                            className="flyout-process-close"
-                            title={`Encerrar ${entry.processName} (PID ${entry.pid}) na porta ${entry.port}`}
-                            aria-label={`Encerrar ${entry.projectName} na porta ${entry.port}`}
-                            disabled={killingPortId != null}
-                            onClick={() => void handleKillDevPort(entry)}
-                          >
-                            {isKilling ? "…" : "✕"}
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <p className="flyout-audio-unavailable" role="status">
-                  Nenhuma porta de desenvolvimento em escuta.
-                </p>
-              )}
-              <button
-                type="button"
-                className="flyout-mixer-refresh"
-                disabled={devPortsLoading}
-                onClick={() => void loadDevPorts(true)}
-              >
-                ⟳ ATUALIZAR
-              </button>
-            </div>
-          )}
-        </div>
-        )}
-      </section>
-      )}
-
-      {showPeripheralsSection && flyoutMode === "peripherals" && (
-        <section className="flyout-peripherals flyout-peripherals-dedicated" aria-label="Periféricos">
-          <Suspense fallback={<PulseLoading />}>
-            <PeripheralBattery compact />
-          </Suspense>
         </section>
-      )}
+        )}
 
-      {showPeripheralsSection && flyoutMode === "full" && (
-        <section className="flyout-peripherals" aria-label="Periféricos">
+        {showAudioSection && (
+        <section className="flyout-audio" aria-labelledby="flyout-audio-title">
           <div className="flyout-section-title">
-            <span>PERIFÉRICOS</span>
-            <small>
-              {flyoutPeripherals.length} {flyoutPeripherals.length === 1 ? "CONECTADO" : "CONECTADOS"}
-            </small>
+            <span id="flyout-audio-title">{pc.flyoutAudio}</span>
+            <small>PADRÕES</small>
           </div>
-          <div className="flyout-peripheral-strip">
-            {flyoutPeripherals.map(device => {
-              const pct = Math.round(device.batteryPercent.value as number);
-              const isLow = pct <= 20;
-              const isCharging = device.charging === true;
-              const kindLabel = peripheralKindShort(device.kind);
-              const titleParts = [
-                device.name,
-                device.hardwareName && device.hardwareName !== device.name
-                  ? `(${device.hardwareName})`
-                  : null,
-                `${kindLabel} · ${pct}%${isCharging ? " · Carregando" : ""}`,
-                "Clique para abrir Recursos Beta",
-              ].filter(Boolean);
-
-              return (
-                <button
-                  key={device.id}
-                  type="button"
-                  className={`flyout-peripheral-chip${isLow ? " is-low" : ""}${isCharging ? " is-charging" : ""}`}
-                  title={titleParts.join(" — ")}
-                  aria-label={`${device.name}, ${kindLabel}, ${pct}%${isCharging ? ", carregando" : ""}${isLow ? ", bateria baixa" : ""}. Abrir Recursos Beta`}
-                  onClick={() => openMainArea("Recursos Beta")}
+          {audioDevices?.unavailableReason ? (
+            <p className="flyout-audio-unavailable" role="status">{audioDevices.unavailableReason}</p>
+          ) : (
+            <div className="flyout-audio-grid">
+              <label className="flyout-audio-field">
+                <span>SAÍDA PADRÃO</span>
+                <select
+                  aria-label="Dispositivo de saída padrão"
+                  value={audioDevices?.outputDefaultId || ""}
+                  disabled={!audioDevices || audioDevices.output.length === 0 || audioBusy != null}
+                  onChange={event => void changeAudioDevice("output", event.target.value)}
                 >
-                  <span className="flyout-peripheral-kind">{kindLabel}</span>
-                  <strong className="flyout-peripheral-name">{device.name}</strong>
-                  <span className={`flyout-peripheral-pct${isLow ? " is-low" : isCharging ? " is-charging" : ""}`}>
-                    {isCharging ? <span aria-hidden="true">⚡</span> : null}
-                    {pct}%
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {showQuotasSection && (
-      <section className="flyout-quotas" aria-label="Cotas de assinaturas de IA">
-        <div className="flyout-section-title">
-          <span>COTAS DE IA</span>
-          <small>
-            {visibleQuotaProviders.length || "—"} DISPONÍVEIS
-            {isQuotaRefreshing && (
-              <span className="flyout-quota-sync" role="status" aria-label="Atualizando cotas de IA">
-                <i aria-hidden="true" />ATUALIZANDO…
-              </span>
+                  {!audioDevices && <option value="">Consultando dispositivos…</option>}
+                  {audioDevices?.output.length === 0 && <option value="">Nenhuma saída disponível</option>}
+                  {audioDevices?.output.map(device => <option value={device.id} key={device.id}>{device.name}</option>)}
+                </select>
+              </label>
+              <label className="flyout-audio-field">
+                <span>ENTRADA PADRÃO</span>
+                <select
+                  aria-label="Dispositivo de entrada padrão"
+                  value={audioDevices?.inputDefaultId || ""}
+                  disabled={!audioDevices || audioDevices.input.length === 0 || audioBusy != null}
+                  onChange={event => void changeAudioDevice("input", event.target.value)}
+                >
+                  {!audioDevices && <option value="">Consultando dispositivos…</option>}
+                  {audioDevices?.input.length === 0 && <option value="">Nenhuma entrada disponível</option>}
+                  {audioDevices?.input.map(device => <option value={device.id} key={device.id}>{device.name}</option>)}
+                </select>
+              </label>
+            </div>
+          )}
+          {audioBusy && <p className="flyout-audio-status" role="status">Aplicando dispositivo de {audioBusy === "input" ? "entrada" : "saída"}…</p>}
+          {audioError && <p className="flyout-audio-error" role="alert">{audioError}</p>}
+          <div className="flyout-mixer">
+            <button
+              type="button"
+              className="flyout-mixer-toggle"
+              aria-expanded={mixerOpen}
+              aria-controls="flyout-volume-mixer"
+              onClick={toggleMixer}
+            >
+              <span className="flyout-mixer-chevron" aria-hidden="true">{mixerOpen ? "▾" : "▸"}</span>
+              VOLUME MIXER
+              {mixerOpen && mixerAppCount > 0 && (
+                <small>{mixerAppCount} {mixerAppCount === 1 ? "APP" : "APPS"}</small>
+              )}
+            </button>
+            {mixerOpen && (
+              <div className="flyout-mixer-body" id="flyout-volume-mixer">
+                {mixerLoading && !mixer ? (
+                  <p className="flyout-audio-status" role="status">Consultando apps com áudio…</p>
+                ) : mixerError ? (
+                  <p className="flyout-audio-error" role="alert">{mixerError}</p>
+                ) : mixer?.unavailableReason ? (
+                  <p className="flyout-audio-unavailable" role="status">{mixer.unavailableReason}</p>
+                ) : (
+                  <>
+                    {masterLevel != null && (
+                      <div className="flyout-mixer-row flyout-mixer-master">
+                        <div className="flyout-mixer-head">
+                          <span className="flyout-mixer-name" title={mixer?.deviceName ?? "Saída atual"}>VOLUME GERAL</span>
+                          <span className="flyout-mixer-pct">{Math.round(masterLevel * 100)}%</span>
+                        </div>
+                        <div className="flyout-mixer-controls">
+                          <button
+                            type="button"
+                            className="flyout-mixer-mute"
+                            aria-pressed={mixer?.masterMuted ?? false}
+                            aria-label={`${mixer?.masterMuted ? "Ativar som da saída " : "Silenciar saída "}${mixer?.deviceName ?? "atual"}`}
+                            disabled={mixerBusy != null}
+                            onClick={handleMasterMuteToggle}
+                          >
+                            <MixerSpeakerIcon muted={mixer?.masterMuted ?? false} />
+                          </button>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={Math.round(masterLevel * 100)}
+                            aria-label={`Volume geral da saída ${mixer?.deviceName ?? "atual"}`}
+                            disabled={mixerBusy != null}
+                            onChange={event => handleMasterVolumeSlider(Number(event.target.value))}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {mixer && mixerAppCount > 0 ? (
+                      <ul className="flyout-mixer-list">
+                        {mixer.apps.map(app => {
+                          const level = sanitizeMixerLevel(app.volume) ?? 0;
+                          const label = app.displayName || app.appName;
+                          return (
+                            <li key={app.appName} className="flyout-mixer-row">
+                              <div className="flyout-mixer-head">
+                                <span className="flyout-mixer-icon" aria-hidden="true">
+                                  {app.icon ? (
+                                    <img src={app.icon} alt="" loading="lazy" />
+                                  ) : (
+                                    <MixerSpeakerIcon muted={app.muted} />
+                                  )}
+                                </span>
+                                <span
+                                  className="flyout-mixer-name"
+                                  title={`${label}${app.sessionCount > 1 ? ` · ${app.sessionCount} sessões` : ""}`}
+                                >
+                                  {label}
+                                </span>
+                                <span className="flyout-mixer-pct">{app.muted ? "MUDO" : `${Math.round(level * 100)}%`}</span>
+                              </div>
+                              <div className="flyout-mixer-controls">
+                                <button
+                                  type="button"
+                                  className="flyout-mixer-mute"
+                                  aria-pressed={app.muted}
+                                  aria-label={app.muted ? `Ativar som de ${label}` : `Silenciar ${label}`}
+                                  disabled={mixerBusy != null}
+                                  onClick={() => handleAppMuteToggle(app)}
+                                >
+                                  <MixerSpeakerIcon muted={app.muted} />
+                                </button>
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={100}
+                                  step={1}
+                                  value={Math.round(level * 100)}
+                                  aria-label={`Volume de ${label}`}
+                                  disabled={mixerBusy != null}
+                                  onChange={event => handleAppVolumeSlider(app.appName, Number(event.target.value))}
+                                />
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="flyout-audio-unavailable" role="status">Nenhum app com áudio ativo nesta saída.</p>
+                    )}
+                    <button
+                      type="button"
+                      className="flyout-mixer-refresh"
+                      disabled={mixerLoading}
+                      onClick={() => void loadMixer(mixerOutputId)}
+                    >
+                      ⟳ ATUALIZAR
+                    </button>
+                  </>
+                )}
+              </div>
             )}
-          </small>
-        </div>
-        {isQuotaRefreshing && !hasQuotaResult ? <p className="flyout-quota-empty">Consultando fontes locais…</p> : visibleQuotaProviders.length > 0 ? (
-          <div className="flyout-quota-grid">
-            {visibleQuotaProviders.map(provider => {
-              const trayWindows = selectFlyoutQuotaWindows(provider.windows);
-              const planName = provider.plan?.trim() ? provider.plan.toUpperCase() : "ATUAL";
-
-              const openQuotas = () => openMainArea("Cotas de IA");
-              const windowPaces = trayWindows.map(w => computeQuotaPace(w));
-              const urgentPace =
-                windowPaces.find(p => p?.status === "exhausted") ??
-                windowPaces.find(p => p?.status === "will-deplete") ??
-                windowPaces.find(p => p?.status === "tight") ??
-                null;
-              const urgentBadge =
-                urgentPace?.status === "exhausted"
-                  ? { tone: "danger" as const, label: "ESGOTADA", title: "Cota esgotada — aguardando reset" }
-                  : urgentPace?.status === "will-deplete" && urgentPace.timeToDepleteMs != null
-                    ? {
-                        tone: "danger" as const,
-                        label: `! ~${formatCompactDuration(urgentPace.timeToDepleteMs)}`,
-                        title: `No ritmo atual, esgota em ~${formatCompactDuration(urgentPace.timeToDepleteMs)} antes do reset`,
-                      }
-                    : urgentPace?.status === "tight"
-                      ? { tone: "warning" as const, label: "NO LIMITE", title: "No ritmo atual, chega perto de 100% antes do reset" }
-                      : null;
-              const resetSummary = trayWindows
-                .map(window => {
-                  const countdown = formatCountdown(window.resetsAtUnixSeconds);
-                  return countdown ? `${shortQuotaWindowLabel(window)} renova em ${countdown}` : null;
-                })
-                .filter(Boolean)
-                .join(" · ");
-
-              return (
-                <article
-                  className="flyout-quota-mini-card is-clickable"
-                  key={provider.id}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Abrir Cotas de IA: ${provider.provider}${resetSummary ? ` — ${resetSummary}` : ""}`}
-                  title={[urgentBadge?.title, resetSummary, "Clique para abrir Cotas de IA"].filter(Boolean).join("\n")}
-                  onClick={openQuotas}
-                  onKeyDown={event => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      openQuotas();
-                    }
+            {pc.osLabel === "Windows" && (
+              <div className="flyout-audio-legacy">
+                <button
+                  type="button"
+                  className="flyout-mixer-toggle"
+                  onClick={() => {
+                    setLegacyAudioError("");
+                    void invoke("open_legacy_audio_panel").catch(error => {
+                      setLegacyAudioError(typeof error === "string" ? error : "Não foi possível abrir o painel de áudio do Windows.");
+                    });
                   }}
                 >
-                  <header className="flyout-quota-head">
-                    <div className="flyout-quota-brand">
-                      <ProviderIcon providerId={provider.id} size={15} />
-                      <strong title={provider.provider}>{provider.provider}</strong>
-                    </div>
-                    <div className="flyout-quota-badges">
-                      {urgentBadge && (
-                        <span
-                          className={`flyout-quota-alert is-${urgentBadge.tone}`}
-                          title={urgentBadge.title}
-                        >
-                          {urgentBadge.label}
-                        </span>
-                      )}
-                      <small className="flyout-quota-plan">{planName}</small>
-                    </div>
-                  </header>
-                  {provider.id === "openrouter" && provider.creditsRemaining != null ? (
-                    <div className="flyout-quota-usd">
-                      <span>SALDO</span>
-                      <strong>{formatUsd(provider.creditsRemaining)}</strong>
-                    </div>
-                  ) : trayWindows.length > 0 ? (
-                    <div className="flyout-quota-bars">
-                      {trayWindows.map((window, idx) => {
-                        const remaining = safePercent(window.remainingPercent) ?? 0;
-                        const shortLabel = shortQuotaWindowLabel(window);
-                        const countdown = formatCountdown(window.resetsAtUnixSeconds);
-
-                        return (
-                          <div className="flyout-quota-row" key={window.id || `${provider.id}-${idx}`}>
-                            <span className="flyout-quota-window-label" title={window.label}>
-                              {shortLabel}
-                            </span>
-                            <div className={`flyout-quota-bar${countdown ? " has-countdown" : ""}`}>
-                              <i
-                                style={{ width: `${remaining}%` }}
-                                className={remaining <= 20 ? "is-critical" : remaining <= 45 ? "is-warning" : ""}
-                              />
-                              {countdown && (
-                                <span className="flyout-quota-countdown" aria-hidden="true">
-                                  {countdown === "renovado" ? "renovado" : `↻ ${countdown}`}
-                                </span>
-                              )}
-                            </div>
-                            <span className="flyout-quota-value">{Math.round(remaining)}%</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="flyout-quota-credit">
-                      <span>COTA</span>
-                      <strong>Confirmada</strong>
-                    </div>
-                  )}
-                </article>
-              );
-            })}
+                  Abrir painel de áudio clássico do Windows
+                </button>
+                {legacyAudioError && <p className="flyout-audio-error" role="alert">{legacyAudioError}</p>}
+              </div>
+            )}
           </div>
-        ) : <p className="flyout-quota-empty">Nenhuma cota confirmada nesta consulta.</p>}
-      </section>
-      )}
+          {showDevPortsSub && (
+          <div className="flyout-dev-ports">
+            <button
+              type="button"
+              className="flyout-mixer-toggle flyout-dev-ports-toggle"
+              aria-expanded={devPortsOpen}
+              aria-controls="flyout-dev-ports-list"
+              onClick={toggleDevPorts}
+            >
+              <span className="flyout-mixer-chevron" aria-hidden="true">{devPortsOpen ? "▾" : "▸"}</span>
+              PORTAS &amp; PROJETOS DEV
+              <small className={devPortCount > 0 ? "is-active" : undefined}>
+                {devPortCount > 0 ? `${devPortCount} ${devPortCount === 1 ? "ATIVO" : "ATIVOS"}` : "0 ATIVOS"}
+              </small>
+            </button>
+            {devPortsOpen && (
+              <div className="flyout-dev-ports-body" id="flyout-dev-ports-list">
+                {devPortsLoading && !devPorts ? (
+                  <p className="flyout-audio-status" role="status">Verificando portas locais e WSL…</p>
+                ) : devPortsError ? (
+                  <p className="flyout-audio-error" role="alert">{devPortsError}</p>
+                ) : devPorts?.unavailableReason ? (
+                  <p className="flyout-audio-unavailable" role="status">{devPorts.unavailableReason}</p>
+                ) : devPorts && devPortCount > 0 ? (
+                  <ul className="flyout-dev-ports-list">
+                    {devPorts.ports.map(entry => {
+                      const envLabel = entry.environment === "wsl"
+                        ? `WSL${entry.wslDistro ? ` (${entry.wslDistro})` : ""}`
+                        : "Win";
+                      const detailsTitle = [
+                        entry.projectName,
+                        entry.url,
+                        entry.projectPath,
+                        entry.commandLine,
+                      ]
+                        .filter(Boolean)
+                        .join("\n");
+                      const isKilling = killingPortId === entry.id;
+                      const isCopied = copiedPortId === entry.id;
 
-      {showProcessesSection && (
-      <section className="flyout-processes">
-        <div className="flyout-section-title">
-          <span>TOP PROCESSOS</span>
-          <small>{!overview ? "CONECTANDO…" : "MAIOR CONSUMO DE MEMÓRIA"}</small>
-        </div>
-        <ul className="flyout-process-list">
-          {!overview ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <li key={`skeleton-${i}`} className="flyout-process-skeleton" aria-hidden="true">
-                <span className="flyout-skeleton-box rank" />
-                <div className="flyout-skeleton-details">
-                  <span className="flyout-skeleton-box title" />
-                  <span className="flyout-skeleton-box sub" />
-                </div>
-                <span className="flyout-skeleton-box mem" />
-              </li>
-            ))
-          ) : overview.topProcesses?.length ? (
-            overview.topProcesses.slice(0, 5).map((p, i) => (
-              <li key={p.id}>
-                <span className="flyout-process-rank">{String(i + 1).padStart(2, "0")}</span>
-                <div className="flyout-process-identity">
-                  <span className={`flyout-process-icon ${p.icon ? "" : "flyout-process-icon-empty"}`} aria-hidden="true">
-                    {p.icon ? <img src={p.icon} alt="" /> : <ProcessFallbackIcon kind={p.systemKind} />}
-                  </span>
-                  <span className="flyout-process-name" title={[p.displayName || p.name, p.name, p.publisher].filter(Boolean).join(" · ")}>
-                    <strong>{p.displayName || p.name}</strong>
-                    <small>
-                      {[p.name, p.publisher].filter(Boolean).join(" · ") || `PID ${p.id}`}
-                      {(p.processCount ?? 1) > 1 ? ` · ${p.processCount} processos` : ""}
-                    </small>
-                  </span>
-                </div>
-                <span className="flyout-process-mem">{metric(p.memoryMb, " MB")}</span>
+                      return (
+                        <li key={entry.id} className="flyout-port-row">
+                          <button
+                            type="button"
+                            className="flyout-port-badge"
+                            title={`Abrir ${entry.url} no navegador`}
+                            aria-label={`Abrir porta ${entry.port} de ${entry.projectName} (${entry.url})`}
+                            onClick={() => handleOpenPortUrl(entry)}
+                          >
+                            :{entry.port}
+                          </button>
+                          <div className="flyout-port-identity" title={detailsTitle}>
+                            <strong>{entry.projectName}</strong>
+                            <small>
+                              {entry.runtime} · {envLabel} · PID {entry.pid}
+                            </small>
+                          </div>
+                          <div className="flyout-port-actions">
+                            <button
+                              type="button"
+                              className={`flyout-port-action-btn${isCopied ? " is-copied" : ""}`}
+                              title={isCopied ? "URL copiada!" : `Copiar ${entry.url}`}
+                              aria-label={`Copiar URL de ${entry.projectName} (${entry.url})`}
+                              onClick={() => void handleCopyPortUrl(entry)}
+                            >
+                              {isCopied ? "✓" : "⧉"}
+                            </button>
+                            <button
+                              type="button"
+                              className="flyout-port-action-btn"
+                              title={`Abrir ${entry.url}`}
+                              aria-label={`Abrir ${entry.url} no navegador`}
+                              onClick={() => handleOpenPortUrl(entry)}
+                            >
+                              ↗
+                            </button>
+                            <button
+                              type="button"
+                              className="flyout-process-close"
+                              title={`Encerrar ${entry.processName} (PID ${entry.pid}) na porta ${entry.port}`}
+                              aria-label={`Encerrar ${entry.projectName} na porta ${entry.port}`}
+                              disabled={killingPortId != null}
+                              onClick={() => void handleKillDevPort(entry)}
+                            >
+                              {isKilling ? "…" : "✕"}
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="flyout-audio-unavailable" role="status">
+                    Nenhuma porta de desenvolvimento em escuta.
+                  </p>
+                )}
                 <button
                   type="button"
-                  className="flyout-process-close"
-                  aria-label={`Fechar ${p.displayName || p.name}`}
-                  disabled={p.name.toLocaleLowerCase("pt-BR").startsWith("pulse")}
-                  onClick={() => { setProcessError(""); setProcessToClose(p); }}
+                  className="flyout-mixer-refresh"
+                  disabled={devPortsLoading}
+                  onClick={() => void loadDevPorts(true)}
                 >
-                  ✕
+                  ⟳ ATUALIZAR
                 </button>
-              </li>
-            ))
-          ) : (
-            <li className="flyout-process-empty muted">Processos indisponíveis nesta coleta.</li>
-          )}
-        </ul>
-      </section>
-      )}
-
-      <footer className="flyout-actions">
-        <button
-          aria-label="Abrir interface completa"
-          className="flyout-btn-primary"
-          onClick={onOpenMain}
-        >
-          ABRIR INTERFACE COMPLETA ↗
-        </button>
-        <button
-          aria-label="Sair do aplicativo"
-          className="flyout-btn-danger"
-          onClick={() => void handleExit()}
-        >
-          SAIR
-        </button>
-      </footer>
-      {processToClose && (
-        <div className="process-confirmation" role="dialog" aria-modal="true" aria-label="Confirmar encerramento do processo">
-          <p>Fechar <strong>{processToClose.displayName || processToClose.name}</strong>?</p>
-          <small>
-            {isWslHostProcess(processToClose)
-              ? "Isso desligará o WSL e encerrará todas as distribuições e processos Linux em execução."
-              : `Serão encerrados todos os ${processToClose.processCount ?? 1} processos deste grupo${(processToClose.processCount ?? 1) === 1 ? "" : " ao mesmo tempo"}. Se necessário, será usado o encerramento forçado. Trabalho não salvo pode ser perdido.`}
-          </small>
-          {processError && <span role="status">{processError}</span>}
-          <div>
-            <button type="button" onClick={() => void confirmTerminateProcess()} disabled={terminatingId != null}>
-              {terminatingId != null ? "FECHANDO…" : "FECHAR AGORA"}
-            </button>
-            <button type="button" onClick={() => setProcessToClose(null)} disabled={terminatingId != null}>CANCELAR</button>
+              </div>
+            )}
           </div>
-        </div>
-      )}
-    </aside>
+          )}
+        </section>
+        )}
+
+        {showPeripheralsSection && flyoutMode === "peripherals" && (
+          <section className="flyout-peripherals flyout-peripherals-dedicated" aria-label="Periféricos">
+            <Suspense fallback={<PulseLoading />}>
+              <PeripheralBattery compact />
+            </Suspense>
+          </section>
+        )}
+
+        {showPeripheralsSection && flyoutMode === "full" && (
+          <section className="flyout-peripherals" aria-label="Periféricos">
+            <div className="flyout-section-title">
+              <span>PERIFÉRICOS</span>
+              <small>
+                {flyoutPeripherals.length} {flyoutPeripherals.length === 1 ? "CONECTADO" : "CONECTADOS"}
+              </small>
+            </div>
+            <div className="flyout-peripheral-strip">
+              {flyoutPeripherals.map(device => {
+                const pct = Math.round(device.batteryPercent.value as number);
+                const isLow = pct <= 20;
+                const isCharging = device.charging === true;
+                const kindLabel = peripheralKindShort(device.kind);
+                const titleParts = [
+                  device.name,
+                  device.hardwareName && device.hardwareName !== device.name
+                    ? `(${device.hardwareName})`
+                    : null,
+                  `${kindLabel} · ${pct}%${isCharging ? " · Carregando" : ""}`,
+                  "Clique para abrir Recursos Beta",
+                ].filter(Boolean);
+
+                return (
+                  <button
+                    key={device.id}
+                    type="button"
+                    className={`flyout-peripheral-chip${isLow ? " is-low" : ""}${isCharging ? " is-charging" : ""}`}
+                    title={titleParts.join(" — ")}
+                    aria-label={`${device.name}, ${kindLabel}, ${pct}%${isCharging ? ", carregando" : ""}${isLow ? ", bateria baixa" : ""}. Abrir Recursos Beta`}
+                    onClick={() => openMainArea("Recursos Beta")}
+                  >
+                    <span className="flyout-peripheral-kind">{kindLabel}</span>
+                    <strong className="flyout-peripheral-name">{device.name}</strong>
+                    <span className={`flyout-peripheral-pct${isLow ? " is-low" : isCharging ? " is-charging" : ""}`}>
+                      {isCharging ? <span aria-hidden="true">⚡</span> : null}
+                      {pct}%
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {showQuotasSection && (
+        <section className="flyout-quotas" aria-label="Cotas de assinaturas de IA">
+          <div className="flyout-section-title">
+            <span>COTAS DE IA</span>
+            <small>
+              {visibleQuotaProviders.length || "—"} DISPONÍVEIS
+              {isQuotaRefreshing && (
+                <span className="flyout-quota-sync" role="status" aria-label="Atualizando cotas de IA">
+                  <i aria-hidden="true" />ATUALIZANDO…
+                </span>
+              )}
+            </small>
+          </div>
+          {isQuotaRefreshing && !hasQuotaResult ? <p className="flyout-quota-empty">Consultando fontes locais…</p> : visibleQuotaProviders.length > 0 ? (
+            <div className="flyout-quota-grid">
+              {visibleQuotaProviders.map(provider => {
+                const trayWindows = selectFlyoutQuotaWindows(provider.windows);
+                const planName = provider.plan?.trim() ? provider.plan.toUpperCase() : "ATUAL";
+
+                const openQuotas = () => openMainArea("Cotas de IA");
+                const windowPaces = trayWindows.map(w => computeQuotaPace(w));
+                const urgentPace =
+                  windowPaces.find(p => p?.status === "exhausted") ??
+                  windowPaces.find(p => p?.status === "will-deplete") ??
+                  windowPaces.find(p => p?.status === "tight") ??
+                  null;
+                const urgentBadge =
+                  urgentPace?.status === "exhausted"
+                    ? { tone: "danger" as const, label: "ESGOTADA", title: "Cota esgotada — aguardando reset" }
+                    : urgentPace?.status === "will-deplete" && urgentPace.timeToDepleteMs != null
+                      ? {
+                          tone: "danger" as const,
+                          label: `! ~${formatCompactDuration(urgentPace.timeToDepleteMs)}`,
+                          title: `No ritmo atual, esgota em ~${formatCompactDuration(urgentPace.timeToDepleteMs)} antes do reset`,
+                        }
+                      : urgentPace?.status === "tight"
+                        ? { tone: "warning" as const, label: "NO LIMITE", title: "No ritmo atual, chega perto de 100% antes do reset" }
+                        : null;
+                const resetSummary = trayWindows
+                  .map(window => {
+                    const countdown = formatCountdown(window.resetsAtUnixSeconds);
+                    return countdown ? `${shortQuotaWindowLabel(window)} renova em ${countdown}` : null;
+                  })
+                  .filter(Boolean)
+                  .join(" · ");
+
+                return (
+                  <article
+                    className="flyout-quota-mini-card is-clickable"
+                    key={provider.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Abrir Cotas de IA: ${provider.provider}${resetSummary ? ` — ${resetSummary}` : ""}`}
+                    title={[urgentBadge?.title, resetSummary, "Clique para abrir Cotas de IA"].filter(Boolean).join("\n")}
+                    onClick={openQuotas}
+                    onKeyDown={event => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openQuotas();
+                      }
+                    }}
+                  >
+                    <header className="flyout-quota-head">
+                      <div className="flyout-quota-brand">
+                        <ProviderIcon providerId={provider.id} size={15} />
+                        <strong title={provider.provider}>{provider.provider}</strong>
+                      </div>
+                      <div className="flyout-quota-badges">
+                        {urgentBadge && (
+                          <span
+                            className={`flyout-quota-alert is-${urgentBadge.tone}`}
+                            title={urgentBadge.title}
+                          >
+                            {urgentBadge.label}
+                          </span>
+                        )}
+                        <small className="flyout-quota-plan">{planName}</small>
+                      </div>
+                    </header>
+                    {provider.id === "openrouter" && provider.creditsRemaining != null ? (
+                      <div className="flyout-quota-usd">
+                        <span>SALDO</span>
+                        <strong>{formatUsd(provider.creditsRemaining)}</strong>
+                      </div>
+                    ) : trayWindows.length > 0 ? (
+                      <div className="flyout-quota-bars">
+                        {trayWindows.map((window, idx) => {
+                          const remaining = safePercent(window.remainingPercent) ?? 0;
+                          const shortLabel = shortQuotaWindowLabel(window);
+                          const countdown = formatCountdown(window.resetsAtUnixSeconds);
+
+                          return (
+                            <div className="flyout-quota-row" key={window.id || `${provider.id}-${idx}`}>
+                              <span className="flyout-quota-window-label" title={window.label}>
+                                {shortLabel}
+                              </span>
+                              <div className={`flyout-quota-bar${countdown ? " has-countdown" : ""}`}>
+                                <i
+                                  style={{ width: `${remaining}%` }}
+                                  className={remaining <= 20 ? "is-critical" : remaining <= 45 ? "is-warning" : ""}
+                                />
+                                {countdown && (
+                                  <span className="flyout-quota-countdown" aria-hidden="true">
+                                    {countdown === "renovado" ? "renovado" : `↻ ${countdown}`}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="flyout-quota-value">{Math.round(remaining)}%</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="flyout-quota-credit">
+                        <span>COTA</span>
+                        <strong>Confirmada</strong>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          ) : <p className="flyout-quota-empty">Nenhuma cota confirmada nesta consulta.</p>}
+        </section>
+        )}
+
+        {showProcessesSection && (
+        <section className="flyout-processes">
+          <div className="flyout-section-title">
+            <span>TOP PROCESSOS</span>
+            <small>{!overview ? "CONECTANDO…" : "MAIOR CONSUMO DE MEMÓRIA"}</small>
+          </div>
+          <ul className="flyout-process-list">
+            {!overview ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <li key={`skeleton-${i}`} className="flyout-process-skeleton" aria-hidden="true">
+                  <span className="flyout-skeleton-box rank" />
+                  <div className="flyout-skeleton-details">
+                    <span className="flyout-skeleton-box title" />
+                    <span className="flyout-skeleton-box sub" />
+                  </div>
+                  <span className="flyout-skeleton-box mem" />
+                </li>
+              ))
+            ) : overview.topProcesses?.length ? (
+              overview.topProcesses.slice(0, 5).map((p, i) => (
+                <li key={p.id}>
+                  <span className="flyout-process-rank">{String(i + 1).padStart(2, "0")}</span>
+                  <div className="flyout-process-identity">
+                    <span className={`flyout-process-icon ${p.icon ? "" : "flyout-process-icon-empty"}`} aria-hidden="true">
+                      {p.icon ? <img src={p.icon} alt="" /> : <ProcessFallbackIcon kind={p.systemKind} />}
+                    </span>
+                    <span className="flyout-process-name" title={[p.displayName || p.name, p.name, p.publisher].filter(Boolean).join(" · ")}>
+                      <strong>{p.displayName || p.name}</strong>
+                      <small>
+                        {[p.name, p.publisher].filter(Boolean).join(" · ") || `PID ${p.id}`}
+                        {(p.processCount ?? 1) > 1 ? ` · ${p.processCount} processos` : ""}
+                      </small>
+                    </span>
+                  </div>
+                  <span className="flyout-process-mem">{metric(p.memoryMb, " MB")}</span>
+                  <button
+                    type="button"
+                    className="flyout-process-close"
+                    aria-label={`Fechar ${p.displayName || p.name}`}
+                    disabled={p.name.toLocaleLowerCase("pt-BR").startsWith("pulse")}
+                    onClick={() => { setProcessError(""); setProcessToClose(p); }}
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))
+            ) : (
+              <li className="flyout-process-empty muted">Processos indisponíveis nesta coleta.</li>
+            )}
+          </ul>
+        </section>
+        )}
+
+        <footer className="flyout-actions">
+          <button
+            aria-label="Abrir interface completa"
+            className="flyout-btn-primary"
+            onClick={onOpenMain}
+          >
+            ABRIR INTERFACE COMPLETA ↗
+          </button>
+          <button
+            aria-label="Sair do aplicativo"
+            className="flyout-btn-danger"
+            onClick={() => void handleExit()}
+          >
+            SAIR
+          </button>
+        </footer>
+        {processToClose && (
+          <div className="process-confirmation" role="dialog" aria-modal="true" aria-label="Confirmar encerramento do processo">
+            <p>Fechar <strong>{processToClose.displayName || processToClose.name}</strong>?</p>
+            <small>
+              {isWslHostProcess(processToClose)
+                ? "Isso desligará o WSL e encerrará todas as distribuições e processos Linux em execução."
+                : `Serão encerrados todos os ${processToClose.processCount ?? 1} processos deste grupo${(processToClose.processCount ?? 1) === 1 ? "" : " ao mesmo tempo"}. Se necessário, será usado o encerramento forçado. Trabalho não salvo pode ser perdido.`}
+            </small>
+            {processError && <span role="status">{processError}</span>}
+            <div>
+              <button type="button" onClick={() => void confirmTerminateProcess()} disabled={terminatingId != null}>
+                {terminatingId != null ? "FECHANDO…" : "FECHAR AGORA"}
+              </button>
+              <button type="button" onClick={() => setProcessToClose(null)} disabled={terminatingId != null}>CANCELAR</button>
+            </div>
+          </div>
+        )}
+      </aside>
+    </div>
   );
 }
 
@@ -3258,9 +3260,17 @@ function App() {
   useEffect(() => {
     invoke<string>("get_current_window_label")
       .then(label => {
-        if (label) setWindowLabel(label);
+        if (label) {
+          // Marca a janela no <html> antes do primeiro CSS da árvore: o Runner
+          // precisa de fundo transparente, as demais janelas seguem opacas.
+          document.documentElement.dataset.window = label;
+          setWindowLabel(label);
+        }
       })
-      .catch(() => setWindowLabel("main"));
+      .catch(() => {
+        document.documentElement.dataset.window = "main";
+        setWindowLabel("main");
+      });
   }, []);
 
   // Revela a janela nativa após a primeira pintura do React: a janela `main`
@@ -4224,6 +4234,14 @@ function App() {
             >
               <span aria-hidden="true">i</span>
               Sobre o Pulse
+            </button>
+            <button
+              type="button"
+              className="about-nav"
+              onClick={() => void handleExitApp()}
+            >
+              <span aria-hidden="true">⏻</span>
+              Sair do Pulse
             </button>
             <div className="sidebar-status">
               <span className="connection-state">LOCAL</span>

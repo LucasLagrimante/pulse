@@ -19,6 +19,19 @@ html, body, #root {
   background: var(--neu-bg);
 }
 
+/* Janela do Runner: o fundo solido do documento cortaria a sombra do shell e
+   pintaria um retangulo opaco atras da moldura. O seletor usa :has() para não
+   depender do data-window que o App.tsx aplica de forma assíncrona. */
+html:has(.launcher-window),
+html:has(.launcher-window) body,
+html:has(.launcher-window) #root,
+html:has(.launcher-shell) body,
+html:has(.launcher-shell) #root {
+  /* identity.css pinta o documento com !important; a janela do Runner precisa
+     da mesma força para deixar a sombra do shell visível sobre a área de trabalho. */
+  background: transparent !important;
+}
+
 body {
   min-width: 320px;
   min-height: 100vh;
@@ -4073,7 +4086,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   min-height: 0;
   height: 100%;
   gap: 12px;
-  overflow: hidden;
+  /* Mesma regra do .workspace: os painéis têm sombra raised-sm (4+10) e gap de
+     12px entre eles; o clip-margin deixa o degradê terminar sem corte reto. */
+  overflow: clip;
+  overflow-clip-margin: 20px;
 }
 
 .disk-workspace.mode-split {
