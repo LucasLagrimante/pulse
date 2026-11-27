@@ -19,17 +19,12 @@ html, body, #root {
   background: var(--neu-bg);
 }
 
-/* Janela do Runner: o fundo solido do documento cortaria a sombra do shell e
-   pintaria um retangulo opaco atras da moldura. O seletor usa :has() para não
-   depender do data-window que o App.tsx aplica de forma assíncrona. */
+/* Janela do Runner é opaca e do tamanho do painel: o documento pinta o mesmo
+   fundo da superfície, então não há moldura visível em volta do painel. */
 html:has(.launcher-window),
 html:has(.launcher-window) body,
-html:has(.launcher-window) #root,
-html:has(.launcher-shell) body,
-html:has(.launcher-shell) #root {
-  /* identity.css pinta o documento com !important; a janela do Runner precisa
-     da mesma força para deixar a sombra do shell visível sobre a área de trabalho. */
-  background: transparent !important;
+html:has(.launcher-window) #root {
+  background: var(--neu-bg) !important;
 }
 
 body {
