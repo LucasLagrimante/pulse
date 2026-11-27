@@ -1860,9 +1860,10 @@ select:focus {
 
 .tray-flyout-container {
   background: var(--neu-surface) !important;
-  border-radius: 20px !important;
+  /* Curva e contorno pertencem à janela (DWM). Ver LauncherWindow.css. */
+  border-radius: 0 !important;
   box-shadow: inset 0 1px 0 var(--neu-bevel-light), inset 0 -1px 0 var(--neu-bevel-dark) !important;
-  border: var(--neu-border) !important;
+  border: 0 !important;
   padding: 16px !important;
   color: var(--neu-text-primary);
   overflow: hidden !important;
