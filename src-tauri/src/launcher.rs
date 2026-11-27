@@ -213,6 +213,20 @@ pub fn toggle_launcher_window(app: &AppHandle) {
     }
     let _ = window.emit("pulse://foreground-changed", true);
     let _ = window.emit(EVENT_LAUNCHER_OPENED, ());
+
+    // O WebView2 suspende o renderer enquanto a janela está oculta: o `emit`
+    // feito logo após `show()` chega antes de o JS voltar a rodar e o reset da
+    // busca se perde (o Runner reabria com o texto anterior). Reemite depois do
+    // primeiro frame, quando o renderer já está ativo, e força o reset por um
+    // evento de DOM como segunda via.
+    {
+        let window = window.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let _ = window.emit(EVENT_LAUNCHER_OPENED, ());
+            let _ = window.eval("window.dispatchEvent(new Event('pulse:launcher-reset'))");
+        });
+    }
 }
 
 /// Instante do último toque na tecla Windows engolido pelo runner e quantas

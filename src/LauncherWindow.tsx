@@ -339,16 +339,24 @@ export function LauncherWindow() {
     // perdido (o Runner reabria com a busca anterior preenchida). O
     // `visibilitychange` é disparado pelo próprio Chromium no mesmo instante
     // em que a janela volta a ser visível, sem depender de IPC.
-    const handleVisibility = () => {
-      if (disposed || document.visibilityState !== "visible") return;
+    const resetAndFocus = () => {
+      if (disposed) return;
       resetToIdle();
       window.requestAnimationFrame(() => inputRef.current?.focus());
     };
+    const handleVisibility = () => {
+      if (disposed || document.visibilityState !== "visible") return;
+      resetAndFocus();
+    };
     document.addEventListener("visibilitychange", handleVisibility);
+    // Segunda via, disparada pelo backend depois do `show()`: não depende de o
+    // Chromium considerar o documento oculto nem de o IPC chegar antes do JS.
+    window.addEventListener("pulse:launcher-reset", resetAndFocus);
 
     return () => {
       disposed = true;
       document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pulse:launcher-reset", resetAndFocus);
       unlisteners.forEach((cleanup) => cleanup());
       if (copiedTimerRef.current != null) {
         window.clearTimeout(copiedTimerRef.current);

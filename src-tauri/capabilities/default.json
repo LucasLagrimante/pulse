@@ -1,8 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for main and tray-flyout windows",
-  "windows": ["main", "tray-flyout"],
+  "description": "Capability for main, tray-flyout, launcher and files windows",
+  "windows": [
+    "main",
+    "tray-flyout",
+    "launcher",
+    "files"
+  ],
   "permissions": [
     "core:default",
     "opener:default"
