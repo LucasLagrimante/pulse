@@ -66,8 +66,12 @@ export function FileIcon({ folder = false }: { folder?: boolean }) {
   );
 }
 
-export function PulseLoading({ compact = false }: { compact?: boolean }) {
+/** `minimal`: só a marca animada (arranque sem splash nativa); sem textos nem legendas. */
+export function PulseLoading({ compact = false, minimal = false }: { compact?: boolean; minimal?: boolean }) {
   const pc = usePlatformCopy();
+  if (minimal) {
+    return <div className="pulse-loading minimal" role="status" aria-label="Iniciando o Pulse"><PulseMark animated /></div>;
+  }
   return <div className={compact ? "pulse-loading compact" : "pulse-loading"} role="status">
     <PulseMark animated />
     <div><strong>{compact ? "Lendo o sistema" : "Pulse"}</strong><p>Conectando à telemetria local…</p></div>

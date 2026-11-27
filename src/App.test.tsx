@@ -1449,6 +1449,7 @@ describe("Pulse application shell", () => {
         case "exit_app":
         case "show_main_window":
         case "frontend_ready":
+        case "boot_complete":
         case "hide_tray_flyout":
         case "open_recent_file":
         case "open_recent_file_location":
@@ -1506,11 +1507,46 @@ describe("Pulse application shell", () => {
     clearTimeoutSpy.mockRestore();
   });
 
+  it("starts the initial collection with the splash active and reveals the main window when the boot ends", async () => {
+    vi.mocked(invoke).mockImplementation((command: string) => {
+      if (command === "get_current_window_label") return Promise.resolve("main") as never;
+      // A `main` está oculta atrás da splash: nunca recebe foco antes do boot.
+      if (command === "is_current_window_foreground") return Promise.resolve(false) as never;
+      if (command === "frontend_ready") return Promise.resolve(true) as never;
+      if (command === "get_system_overview") {
+        return Promise.resolve({
+          cpuPercent: 12,
+          memoryUsedGb: 8,
+          memoryTotalGb: 16,
+          diskUsedGb: 120,
+          diskTotalGb: 500,
+          startupItemCount: 1,
+          topProcesses: [],
+          sampledAtUnixMs: 1725000000,
+          source: "Native Win32",
+        }) as never;
+      }
+      if (command === "get_startup_registration") return Promise.resolve({ enabled: false }) as never;
+      if (command === "get_performance_details") return Promise.resolve({}) as never;
+      return Promise.resolve([]) as never;
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("get_system_overview");
+    });
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("boot_complete");
+    }, { timeout: 4000 });
+  });
+
   it("renders the product identity, primary areas and unified dashboard", async () => {
     const { container } = render(<App />);
 
     expect(screen.getByRole("heading", { name: "Pulse" })).toBeInTheDocument();
-    expect(screen.getByText("POR LUCAS LAGRIMANTE")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Iniciando o Pulse" })).toBeInTheDocument();
+    expect(screen.queryByText("POR LUCAS LAGRIMANTE")).not.toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Navegação principal" })).toHaveTextContent(
       "Visão geral",
     );

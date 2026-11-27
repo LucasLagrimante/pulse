@@ -778,6 +778,9 @@ fn format_celsius(value: f64) -> String {
 }
 
 fn show_main_internal(app: &AppHandle) -> Result<(), String> {
+    // Qualquer caminho que abre a `main` (tray, 2ª instância, boot_complete)
+    // encerra a splash; o fade roda por cima da janela já visível.
+    crate::splash::dismiss();
     if let Some(flyout) = app.get_webview_window("tray-flyout") {
         let _ = flyout.hide();
     }
@@ -879,11 +882,26 @@ pub fn show_main_module(app: AppHandle, module: String) -> Result<(), String> {
 /// aplicado, eliminando o clarão branco e o salto de resize do arranque.
 /// Respeita o arranque minimizado (inicialização com o Windows / --minimized).
 #[tauri::command]
-pub fn frontend_ready(app: AppHandle) -> Result<(), String> {
+pub fn frontend_ready(app: AppHandle) -> Result<bool, String> {
     if crate::startup::should_start_minimized(&std::env::args().collect::<Vec<_>>()) {
-        return Ok(());
+        return Ok(false);
     }
-    show_main_internal(&app)
+    // Com a splash nativa ativa, a `main` só aparece em `boot_complete`.
+    if crate::splash::is_active() {
+        return Ok(true);
+    }
+    show_main_internal(&app)?;
+    Ok(false)
+}
+
+/// Painel pronto: mostra a `main` e encerra a splash com fade (cross-fade).
+/// Idempotente; sem splash ativa não faz nada.
+#[tauri::command]
+pub fn boot_complete(app: AppHandle) -> Result<(), String> {
+    if crate::splash::is_active() {
+        show_main_internal(&app)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

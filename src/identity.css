@@ -2479,6 +2479,11 @@ select:focus {
   animation: signal-trace 1.8s ease-in-out infinite;
 }
 
+.pulse-loading.minimal .pulse-mark {
+  width: 140px;
+  height: 140px;
+}
+
 .pulse-loading.compact {
   flex-direction: row;
   gap: 12px;

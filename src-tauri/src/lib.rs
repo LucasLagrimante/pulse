@@ -31,6 +31,7 @@ pub mod services;
 #[cfg(windows)]
 pub mod shell_launch;
 pub mod single_instance;
+pub mod splash;
 pub mod startup;
 pub mod startup_inventory;
 pub mod storage;
@@ -70,6 +71,19 @@ pub fn run() {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.hide();
                     }
+                } else {
+                    // Splash nativa (só a marca, sem janela) até o painel ficar pronto.
+                    let center = app.get_webview_window("main").and_then(|w| {
+                        let p = w.outer_position().ok()?;
+                        let s = w.outer_size().ok()?;
+                        (s.width > 0 && s.height > 0)
+                            .then(|| (p.x + s.width as i32 / 2, p.y + s.height as i32 / 2))
+                    });
+                    let handle = app.handle().clone();
+                    splash::show(center, move || {
+                        // Watchdog: o app nunca pode ficar invisível.
+                        let _ = tray::show_main_window(handle.clone());
+                    });
                 }
             }
             for label in ["launcher", "tray-flyout"] {
@@ -178,6 +192,7 @@ pub fn run() {
             tray::open_windows_date_time_settings,
             tray::open_legacy_audio_panel,
             tray::frontend_ready,
+            tray::boot_complete,
             tray::toggle_tray_flyout,
             tray::resize_tray_flyout,
             tray::hide_tray_flyout,

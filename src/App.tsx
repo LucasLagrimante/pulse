@@ -75,7 +75,7 @@ export const ALL_NAVIGATION_ITEMS = [
 
 export type NavigationItem = (typeof ALL_NAVIGATION_ITEMS)[number];
 export const navigationItems = ALL_NAVIGATION_ITEMS;
-const INITIAL_BOOT_MINIMUM_MS = 2200;
+const INITIAL_BOOT_MINIMUM_MS = 1200;
 const INITIAL_CHART_SKELETON_MS = INITIAL_BOOT_MINIMUM_MS + 850;
 const INITIAL_CHART_SAMPLE_DELAY_MS = 3600;
 const MIN_CHART_HISTORY_SAMPLES = 2;
@@ -3277,11 +3277,26 @@ function App() {
   // nasce oculta (visible: false) para que o plugin window-state restaure o
   // tamanho salvo e o tema seja aplicado antes de qualquer pixel aparecer,
   // eliminando o clarão branco e o salto de resize do arranque.
+  // Com a splash nativa ativa o Rust devolve `true` e mantém a `main` oculta
+  // até `boot_complete`; sem foreground a coleta inicial nunca começaria, então
+  // ela é liberada aqui. Sem splash (Linux/macOS/falha) o fluxo antigo vale.
   useEffect(() => {
     if (windowLabel === "main") {
-      void Promise.resolve(invoke("frontend_ready")).catch(() => undefined);
+      void Promise.resolve(invoke<boolean | undefined>("frontend_ready"))
+        .then(splashActive => {
+          if (splashActive === true) setInitialLoadAllowed(true);
+        })
+        .catch(() => undefined);
     }
   }, [windowLabel]);
+
+  // Painel pronto: o Rust mostra a `main` e encerra a splash com fade.
+  // Idempotente; sem splash ativa o comando não faz nada.
+  useEffect(() => {
+    if (windowLabel === "main" && !booting) {
+      void Promise.resolve(invoke("boot_complete")).catch(() => undefined);
+    }
+  }, [windowLabel, booting]);
 
   useEffect(() => {
     if (windowLabel === "main" && isWindowForeground === true) {
@@ -4182,7 +4197,7 @@ function App() {
   return (
     <CrashBoundary key={activeArea} onRecover={() => setActiveArea("Visão geral")}>
       <main className="app-shell">
-        {booting && <div className="boot-overlay"><PulseLoading /><button onClick={() => setBooting(false)}>Continuar para o painel</button></div>}
+        {booting && <div className="boot-overlay"><PulseLoading minimal /><button onClick={() => setBooting(false)}>Continuar para o painel</button></div>}
         <aside className="sidebar">
           <div className="brand">
             <PulseMark />
